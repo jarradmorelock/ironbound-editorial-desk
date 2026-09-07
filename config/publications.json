@@ -209,8 +209,8 @@
       ]
     },
     {
-      "key": "best_characters_tbd",
-      "name": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "key": "hollywood_beat",
+      "name": "The Hollywood Beat",
       "tier": "newspaper",
       "source_files": [],
       "recurring_sections": [
@@ -218,7 +218,8 @@
       ],
       "brand_departments": [],
       "editorial_priorities": [
-        "Do not invent a publication identity before a source or user decision exists"
+        "Use The Hollywood Beat as the confirmed publication title",
+        "Do not invent permanent departments or a visual standard before they are established"
       ]
     }
   ]

@@ -36,7 +36,13 @@ def snapshot():
             "publication": "Test Paper",
             "tier": "newspaper",
         },
-        "league": {"name": "Test League", "season": "2026", "roster_positions": ["QB", "RB", "WR", "FLEX", "BN"]},
+        "league": {
+            "name": "Test League",
+            "season": "2026",
+            "roster_positions": ["QB", "RB", "WR", "FLEX", "BN"],
+            "settings": {"league_average_match": 1, "divisions": 2},
+            "metadata": {"division_1": "Forge", "division_2": "Anvil"},
+        },
         "users": [
             {"user_id": "u1", "display_name": "Owner One", "metadata": {"team_name": "One"}},
             {"user_id": "u2", "display_name": "Owner Two", "metadata": {"team_name": "Two"}},
@@ -79,3 +85,28 @@ def test_single_swap_that_changes_result_is_identified():
     assert flip["started_player"] == "Runner One"
     assert flip["bench_player"] == "Runner Two"
     assert flip["revised_team_score"] == 116
+
+
+def test_median_and_named_division_context_are_preserved():
+    dossier = build_weekly_dossier(snapshot())
+    assert dossier["league_median"]["enabled"] is True
+    assert dossier["league_median"]["points"] == 85.5
+    assert dossier["awards"]["bad_beat"]["league_median"]["result"] == "win"
+    assert [row["division_name"] for row in dossier["divisions"]] == [
+        "Forge",
+        "Anvil",
+    ]
+    assert dossier["divisions"][0]["weekly_scoring_rank"] == 1
+
+
+def test_zero_point_preseason_matchups_do_not_create_false_awards_or_records():
+    empty = snapshot()
+    for matchup in empty["matchups"]:
+        matchup["points"] = 0
+        matchup["players_points"] = {
+            player_id: 0 for player_id in matchup["players_points"]
+        }
+    dossier = build_weekly_dossier(empty)
+    assert dossier["awards"]["mvp_card_result"] is None
+    assert dossier["weekly_records"]["status"] == "awaiting_scores"
+    assert dossier["weekly_records"]["highest_score"] is None

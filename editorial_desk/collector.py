@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .config import LeagueConfig
+from .config import LeagueConfig, PublicationConfig
 from .metrics import build_weekly_dossier
 from .render import render_markdown
 from .sleeper import SleeperClient
@@ -16,6 +16,7 @@ def collect_all(
     week: int,
     output_root: Path,
     client: SleeperClient | None = None,
+    publications: dict[str, PublicationConfig] | None = None,
 ) -> list[Path]:
     client = client or SleeperClient()
     state = client.nfl_state()
@@ -30,6 +31,7 @@ def collect_all(
             state,
             player_directory,
             client,
+            (publications or {}).get(league_config.publication_profile),
         )
         directory = output_root / season / f"week-{week:02d}" / league_config.key
         directory.mkdir(parents=True, exist_ok=True)
@@ -53,6 +55,7 @@ def collect_league(
     state: dict[str, Any],
     player_directory: dict[str, Any],
     client: SleeperClient,
+    publication: PublicationConfig | None = None,
 ) -> dict[str, Any]:
     league = client.league(config.sleeper_league_id)
     users = client.users(config.sleeper_league_id)
@@ -66,6 +69,13 @@ def collect_league(
         for matchup in matchups
         for player_id in (matchup.get("players") or [])
     }
+    for transaction in transactions:
+        rostered_ids.update(
+            str(player_id) for player_id in (transaction.get("adds") or {})
+        )
+        rostered_ids.update(
+            str(player_id) for player_id in (transaction.get("drops") or {})
+        )
     players = {
         player_id: _trim_player(player_directory.get(player_id) or {})
         for player_id in sorted(rostered_ids)
@@ -80,6 +90,14 @@ def collect_league(
             "league_key": config.key,
             "configured_name": config.name,
             "publication": config.publication,
+            "publication_profile": {
+                "key": publication.key,
+                "recurring_sections": list(publication.recurring_sections),
+                "brand_departments": list(publication.brand_departments),
+                "editorial_priorities": list(publication.editorial_priorities),
+            }
+            if publication
+            else {"key": config.publication_profile},
             "tier": config.tier,
         },
         "league": league,

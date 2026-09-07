@@ -4,7 +4,7 @@ from collections import defaultdict
 from typing import Any, Iterable
 
 
-NON_STARTER_SLOTS = {"BN", "IR", "TAXI"}
+NON_STARTER_SLOTS = {"BN", "IR", "RESERVE", "TAXI"}
 FLEX_ELIGIBILITY = {
     "FLEX": {"RB", "WR", "TE"},
     "WRRB_FLEX": {"WR", "RB"},
@@ -24,6 +24,10 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     matchup_rows = snapshot.get("matchups") or []
     scoreboard = _scoreboard(matchup_rows, teams)
     all_play = _all_play(matchup_rows, teams)
+    league_median = _league_median(snapshot, teams)
+    median_by_roster = {
+        int(row["roster_id"]): row for row in league_median.get("results") or []
+    }
     lineup = _lineup_efficiency(snapshot, teams)
     winners = [row["winner"] for row in scoreboard if row.get("winner")]
     losers = [row["loser"] for row in scoreboard if row.get("loser")]
@@ -40,16 +44,25 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     bad_beat = max(losers, key=lambda row: row["points"], default=None)
     escape_artist = min(winners, key=lambda row: row["points"], default=None)
     if bad_beat:
-        bad_beat = {**bad_beat, "all_play": all_play[str(bad_beat["roster_id"])]}
+        roster_id = int(bad_beat["roster_id"])
+        bad_beat = {
+            **bad_beat,
+            "all_play": all_play[str(roster_id)],
+            "league_median": median_by_roster.get(roster_id),
+        }
     if escape_artist:
+        roster_id = int(escape_artist["roster_id"])
         escape_artist = {
             **escape_artist,
-            "all_play": all_play[str(escape_artist["roster_id"])],
+            "all_play": all_play[str(roster_id)],
+            "league_median": median_by_roster.get(roster_id),
         }
 
     result_flips = _result_flips(snapshot, scoreboard, teams)
     waiver_stars = _waiver_star_candidates(snapshot, scoreboard, teams)
-    division_summary = _division_summary(snapshot, matchup_rows, teams)
+    division_summary = _division_summary(
+        snapshot, matchup_rows, scoreboard, league_median, teams
+    )
     bench_mvp = _bench_mvp(snapshot, teams)
     weekly_mvp = _weekly_mvp(snapshot, teams)
 
@@ -62,6 +75,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         "information_current_through": snapshot.get("collected_at"),
         "scoreboard": scoreboard,
         "all_play": all_play,
+        "league_median": league_median,
         "lineup_efficiency": lineup,
         "awards": {
             "mvp_card_result": weekly_mvp,
@@ -76,6 +90,24 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         "weekly_records": _weekly_records(scoreboard, matchup_rows, teams),
         "divisions": division_summary,
         "transactions": _transaction_summary(snapshot.get("transactions") or []),
+        "publication_sections": (
+            ((snapshot.get("editorial") or {}).get("publication_profile") or {}).get(
+                "recurring_sections"
+            )
+            or []
+        ),
+        "brand_departments": (
+            ((snapshot.get("editorial") or {}).get("publication_profile") or {}).get(
+                "brand_departments"
+            )
+            or []
+        ),
+        "editorial_priorities": (
+            ((snapshot.get("editorial") or {}).get("publication_profile") or {}).get(
+                "editorial_priorities"
+            )
+            or []
+        ),
         "deferred_until_history_exists": [
             "Giant Killer based on prior power expectations",
             "completed and remaining strength of schedule",
@@ -246,6 +278,50 @@ def _all_play(
     return result
 
 
+def _league_median(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
+    league = snapshot.get("league") or {}
+    enabled = bool((league.get("settings") or {}).get("league_average_match"))
+    scores = sorted(
+        (
+            int(row["roster_id"]),
+            _number(row.get("points")),
+        )
+        for row in (snapshot.get("matchups") or [])
+    )
+    if not scores:
+        return {"enabled": enabled, "points": None, "results": []}
+
+    ordered = sorted(score for _, score in scores)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        median = ordered[middle]
+    else:
+        median = (ordered[middle - 1] + ordered[middle]) / 2
+
+    results = []
+    for roster_id, score in scores:
+        result = "tie"
+        if score > median:
+            result = "win"
+        elif score < median:
+            result = "loss"
+        results.append(
+            {
+                **teams[roster_id],
+                "points": round(score, 2),
+                "result": result,
+                "difference": round(score - median, 2),
+            }
+        )
+    return {
+        "enabled": enabled,
+        "points": round(median, 2),
+        "results": results if enabled else [],
+    }
+
+
 def _bench_mvp(
     snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
 ) -> dict[str, Any] | None:
@@ -298,7 +374,8 @@ def _weekly_mvp(
                     "points": round(_number(points.get(player_id)), 2),
                 }
             )
-    return max(candidates, key=lambda row: row["points"], default=None)
+    winner = max(candidates, key=lambda row: row["points"], default=None)
+    return winner if winner and winner["points"] > 0 else None
 
 
 def _result_flips(
@@ -432,8 +509,17 @@ def _weekly_records(
     ]
     if not scores:
         return {}
+    if not any(row["points"] for row in scores):
+        return {
+            "status": "awaiting_scores",
+            "highest_score": None,
+            "lowest_score": None,
+            "largest_margin": None,
+            "smallest_margin": None,
+        }
     completed = [game for game in scoreboard if game.get("winner")]
     return {
+        "status": "scoring_available",
         "highest_score": max(scores, key=lambda row: row["points"]),
         "lowest_score": min(scores, key=lambda row: row["points"]),
         "largest_margin": max(completed, key=lambda row: row["margin"], default=None),
@@ -444,26 +530,75 @@ def _weekly_records(
 def _division_summary(
     snapshot: dict[str, Any],
     matchups: list[dict[str, Any]],
+    scoreboard: list[dict[str, Any]],
+    league_median: dict[str, Any],
     teams: dict[int, dict[str, Any]],
 ) -> list[dict[str, Any]]:
     rosters = {
         int(row["roster_id"]): row for row in (snapshot.get("rosters") or [])
     }
+    league = snapshot.get("league") or {}
+    metadata = league.get("metadata") or {}
+    outcomes: dict[int, str] = {}
+    for game in scoreboard:
+        if game.get("winner"):
+            outcomes[int(game["winner"]["roster_id"])] = "win"
+            outcomes[int(game["loser"]["roster_id"])] = "loss"
+        else:
+            for team in game.get("teams") or []:
+                outcomes[int(team["roster_id"])] = "tie"
+    median_results = {
+        int(row["roster_id"]): row["result"]
+        for row in league_median.get("results") or []
+    }
+
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for matchup in matchups:
         roster_id = int(matchup["roster_id"])
-        division = str((rosters.get(roster_id, {}).get("settings") or {}).get("division") or "unassigned")
-        grouped[division].append(
-            {**teams[roster_id], "points": _number(matchup.get("points"))}
+        raw_division = (rosters.get(roster_id, {}).get("settings") or {}).get(
+            "division"
         )
-    return [
-        {
-            "division_id": division,
-            "teams": rows,
-            "average_points": round(sum(row["points"] for row in rows) / len(rows), 2),
-        }
-        for division, rows in sorted(grouped.items())
-    ]
+        division = str(raw_division) if raw_division is not None else "unassigned"
+        grouped[division].append(
+            {
+                **teams[roster_id],
+                "points": _number(matchup.get("points")),
+                "head_to_head_result": outcomes.get(roster_id),
+                "median_result": median_results.get(roster_id),
+            }
+        )
+    if not grouped or set(grouped) == {"unassigned"}:
+        return []
+
+    summaries = []
+    for division, rows in grouped.items():
+        summaries.append(
+            {
+                "division_id": division,
+                "division_name": str(
+                    metadata.get(f"division_{division}") or f"Division {division}"
+                ),
+                "teams": rows,
+                "average_points": round(
+                    sum(row["points"] for row in rows) / len(rows), 2
+                ),
+                "head_to_head_record": {
+                    "wins": sum(row["head_to_head_result"] == "win" for row in rows),
+                    "losses": sum(row["head_to_head_result"] == "loss" for row in rows),
+                    "ties": sum(row["head_to_head_result"] == "tie" for row in rows),
+                },
+                "above_median_teams": sum(
+                    row["median_result"] == "win" for row in rows
+                )
+                if league_median.get("enabled")
+                else None,
+                "highest_scoring_team": max(rows, key=lambda row: row["points"]),
+            }
+        )
+    summaries.sort(key=lambda row: (-row["average_points"], row["division_id"]))
+    for rank, summary in enumerate(summaries, start=1):
+        summary["weekly_scoring_rank"] = rank
+    return summaries
 
 
 def _transaction_summary(transactions: list[dict[str, Any]]) -> dict[str, Any]:

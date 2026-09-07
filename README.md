@@ -25,14 +25,17 @@ Each enabled league receives:
 - a human-readable Markdown dossier; and
 - a shared MVP result that a separate card workflow can consume later.
 
-The first metric layer covers matchup results, all-play context, lineup
-efficiency, points left on the bench, Manager of the Week, Bench MVP, Bad Beat,
-Escape Artist, result-flipping start/sit decisions, waiver-impact candidates,
-weekly records, and basic division performance.
+The first metric layer covers matchup results, supporting all-play context,
+league-median results where enabled, lineup efficiency, points left on the
+bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping
+start/sit decisions, waiver-impact candidates, weekly records, and named
+division performance.
 
-Publication-specific departments, historical record books, strength-of-
-schedule analysis, Giant Killer, and persistent editorial memory will be added
-after the source primers and publications have been audited.
+The source primers and publications have been audited into
+`config/publications.json`; see `docs/source-audit.md` for the resulting brand
+and editorial map. Historical record books, multi-week strength-of-schedule
+analysis, Giant Killer, and persistent editorial memory are the next data
+layer.
 
 ## Local dry run
 
@@ -47,7 +50,8 @@ python -m editorial_desk collect --config config/leagues.json --week 1
 
 The Ironbound Sixteen entry remains disabled until its current Sleeper league
 ID is confirmed. The seven other league IDs are carried forward from the
-existing companion transaction reporter.
+existing companion transaction reporter. No credential is required to read
+public Sleeper league data.
 
 ## GitHub dry run
 

@@ -30,6 +30,28 @@ def render_markdown(dossier: dict[str, Any]) -> str:
             f"{row['points_left_on_bench']:.2f} points left"
         )
 
+    median = dossier.get("league_median") or {}
+    if median.get("enabled"):
+        lines.extend(["", "## League Median", ""])
+        lines.append(f"- Weekly median: {median['points']:.2f}")
+        above = [
+            row["team"]
+            for row in median.get("results") or []
+            if row["result"] == "win"
+        ]
+        lines.append(f"- Above the median: {', '.join(above) if above else 'None'}")
+
+    divisions = dossier.get("divisions") or []
+    if divisions:
+        lines.extend(["", "## Division Pulse", ""])
+        for division in divisions:
+            record = division["head_to_head_record"]
+            lines.append(
+                f"- {division['division_name']}: "
+                f"{division['average_points']:.2f} average points; "
+                f"{record['wins']}-{record['losses']}-{record['ties']} head-to-head"
+            )
+
     lines.extend(["", "## Featurette Candidates", ""])
     awards = dossier.get("awards") or {}
     for label, key in (
@@ -46,6 +68,12 @@ def render_markdown(dossier: dict[str, Any]) -> str:
     lines.append(f"- Result-flipping lineup decisions: {len(flips)} candidate(s)")
     waivers = awards.get("waiver_star_candidates") or []
     lines.append(f"- Waiver Star: {len(waivers)} candidate(s)")
+
+    sections = dossier.get("publication_sections") or []
+    if sections:
+        lines.extend(["", "## Publication Desk", ""])
+        for section in sections:
+            lines.append(f"- {section}")
 
     records = dossier.get("weekly_records") or {}
     lines.extend(["", "## Weekly Record Watch", ""])

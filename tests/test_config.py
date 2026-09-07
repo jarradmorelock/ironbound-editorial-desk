@@ -3,7 +3,12 @@ from pathlib import Path
 
 import pytest
 
-from editorial_desk.config import ConfigurationError, load_leagues
+from editorial_desk.config import (
+    ConfigurationError,
+    load_leagues,
+    load_publications,
+    validate_publication_mappings,
+)
 
 
 def write_config(tmp_path: Path, league: dict) -> Path:
@@ -55,3 +60,46 @@ def test_disabled_placeholder_does_not_block_ready_leagues(tmp_path):
     )
     leagues = load_leagues(path)
     assert [league.key for league in leagues] == ["unbound"]
+
+
+def test_publication_profile_must_match_league_name_and_tier(tmp_path):
+    league_path = write_config(
+        tmp_path,
+        {
+            "key": "unbound",
+            "name": "Free Ironbound",
+            "sleeper_league_id": "123",
+            "publication": "Unbound Weekly",
+            "publication_profile": "unbound_weekly",
+            "tier": "flagship",
+        },
+    )
+    publication_path = tmp_path / "publications.json"
+    publication_path.write_text(
+        json.dumps(
+            {
+                "publications": [
+                    {
+                        "key": "unbound_weekly",
+                        "name": "Unbound Weekly",
+                        "tier": "flagship",
+                        "source_files": ["unbound.pdf"],
+                        "recurring_sections": ["Week in review"],
+                        "brand_departments": [],
+                        "editorial_priorities": ["Flagship depth"],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    leagues = load_leagues(league_path)
+    publications = load_publications(publication_path)
+    validate_publication_mappings(leagues, publications)
+
+    wrong = dict(publications)
+    wrong["unbound_weekly"] = publications["unbound_weekly"].__class__(
+        **{**publications["unbound_weekly"].__dict__, "tier": "newspaper"}
+    )
+    with pytest.raises(ConfigurationError, match="tier does not match"):
+        validate_publication_mappings(leagues, wrong)

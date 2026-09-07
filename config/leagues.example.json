@@ -4,7 +4,8 @@
       "key": "ironbound_sixteen",
       "name": "Ironbound Sixteen",
       "sleeper_league_id": "REPLACE_WITH_CURRENT_IRONBOUND_LEAGUE_ID",
-      "publication": "Ironbound",
+      "publication": "The Ironbound Weekly",
+      "publication_profile": "ironbound_weekly",
       "tier": "flagship",
       "enabled": false
     },
@@ -13,6 +14,7 @@
       "name": "Free Ironbound Sixteen",
       "sleeper_league_id": "1339055357728686080",
       "publication": "Unbound Weekly",
+      "publication_profile": "unbound_weekly",
       "tier": "flagship",
       "enabled": true
     },
@@ -20,7 +22,8 @@
       "key": "ballad_of_broken_hearts",
       "name": "Ballad of Broken Hearts",
       "sleeper_league_id": "1391793948728492032",
-      "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "publication": "The Ballad Crier",
+      "publication_profile": "ballad_crier",
       "tier": "newspaper",
       "enabled": true
     },
@@ -29,6 +32,7 @@
       "name": "9-5",
       "sleeper_league_id": "1314710193413554176",
       "publication": "The Stampede",
+      "publication_profile": "the_stampede",
       "tier": "newspaper",
       "enabled": true
     },
@@ -37,6 +41,7 @@
       "name": "Rocky Top Rumble",
       "sleeper_league_id": "1314710277232553984",
       "publication": "The Volunteer Voice",
+      "publication_profile": "volunteer_voice",
       "tier": "newspaper",
       "enabled": true
     },
@@ -45,6 +50,7 @@
       "name": "SEC Dynasty",
       "sleeper_league_id": "1341161857683058688",
       "publication": "The Saturday Standard",
+      "publication_profile": "saturday_standard",
       "tier": "newspaper",
       "enabled": true
     },
@@ -53,6 +59,7 @@
       "name": "Best Characters Dynasty",
       "sleeper_league_id": "1333195168139968512",
       "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "publication_profile": "best_characters_tbd",
       "tier": "newspaper",
       "enabled": true
     },
@@ -61,6 +68,7 @@
       "name": "Don't Tell My Wife I'm In This",
       "sleeper_league_id": "1341970851624402944",
       "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "publication_profile": "dont_tell_my_wife_tbd",
       "tier": "newspaper",
       "enabled": true
     }

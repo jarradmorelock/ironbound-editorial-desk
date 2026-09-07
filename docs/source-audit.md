@@ -50,10 +50,10 @@ possible.
   generic bench calculation.
 - Ballad of Broken Hearts, 9-5, and Rocky Top currently enable a weekly league-
   median matchup in Sleeper.
-- The Rocky Top primer describes seven human managers and a permanent BYE
-  structure. The current 2026 Sleeper league reports six active rosters. Weekly
-  results should follow live Sleeper data while the discrepancy remains flagged
-  for commissioner confirmation.
+- Rocky Top has six managers. Its playoff home-field advantage remains active:
+  the higher seed receives one point per seed difference, capped at five points.
+  The postseason dossier must show both the unadjusted score and the home-field-
+  adjusted score so the published result can be verified.
 - The current Ironbound Sixteen Sleeper league ID does not appear in the supplied
   sources, so that one league remains disabled in the example configuration.
 

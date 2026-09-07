@@ -1,0 +1,68 @@
+{
+  "leagues": [
+    {
+      "key": "ironbound_sixteen",
+      "name": "Ironbound Sixteen",
+      "sleeper_league_id": "REPLACE_WITH_CURRENT_IRONBOUND_LEAGUE_ID",
+      "publication": "Ironbound",
+      "tier": "flagship",
+      "enabled": false
+    },
+    {
+      "key": "free_ironbound_sixteen",
+      "name": "Free Ironbound Sixteen",
+      "sleeper_league_id": "1339055357728686080",
+      "publication": "Unbound Weekly",
+      "tier": "flagship",
+      "enabled": true
+    },
+    {
+      "key": "ballad_of_broken_hearts",
+      "name": "Ballad of Broken Hearts",
+      "sleeper_league_id": "1391793948728492032",
+      "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "tier": "newspaper",
+      "enabled": true
+    },
+    {
+      "key": "nine_five",
+      "name": "9-5",
+      "sleeper_league_id": "1314710193413554176",
+      "publication": "The Stampede",
+      "tier": "newspaper",
+      "enabled": true
+    },
+    {
+      "key": "rocky_top_rumble",
+      "name": "Rocky Top Rumble",
+      "sleeper_league_id": "1314710277232553984",
+      "publication": "The Volunteer Voice",
+      "tier": "newspaper",
+      "enabled": true
+    },
+    {
+      "key": "sec_dynasty",
+      "name": "SEC Dynasty",
+      "sleeper_league_id": "1341161857683058688",
+      "publication": "The Saturday Standard",
+      "tier": "newspaper",
+      "enabled": true
+    },
+    {
+      "key": "best_characters_dynasty",
+      "name": "Best Characters Dynasty",
+      "sleeper_league_id": "1333195168139968512",
+      "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "tier": "newspaper",
+      "enabled": true
+    },
+    {
+      "key": "dont_tell_my_wife",
+      "name": "Don't Tell My Wife I'm In This",
+      "sleeper_league_id": "1341970851624402944",
+      "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
+      "tier": "newspaper",
+      "enabled": true
+    }
+  ]
+}

@@ -15,7 +15,7 @@ ChatGPT project source library and are not copied into this repository.
 | Rocky Top Rumble | The Volunteer Voice | Newspaper | `The_Volunteer_Voice_2026_Preseason_Mockup.pdf` and `Rocky_Top_Rumble_2026_Primer_Rev3.pdf` |
 | SEC Dynasty | The Saturday Standard | Newspaper | `The_Saturday_Standard_SEC_Dynasty_2026.pdf` |
 | Best Characters Dynasty | To be established | Newspaper | No source supplied yet |
-| Don't Tell My Wife I'm In This | To be established | Newspaper | No source supplied yet |
+| Don't Tell My Wife I'm In This | None planned | Data collection only | No newspaper or publication dossier; retain verified data and rankings only |
 
 The Ironbound Weekly and Unbound Weekly are equal flagships. Both require
 magazine-scale analysis, prominent lineup efficiency, deep division coverage,

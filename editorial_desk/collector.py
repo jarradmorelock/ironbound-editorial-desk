@@ -49,14 +49,18 @@ def collect_all(
         directory.mkdir(parents=True, exist_ok=True)
 
         snapshot_path = directory / "snapshot.json"
-        dossier_path = directory / "dossier.json"
-        markdown_path = directory / "dossier.md"
-        dossier = build_weekly_dossier(snapshot)
-
         _write_json(snapshot_path, snapshot)
-        _write_json(dossier_path, dossier)
-        markdown_path.write_text(render_markdown(dossier), encoding="utf-8")
-        generated.extend((snapshot_path, dossier_path, markdown_path))
+        analysis = build_weekly_dossier(snapshot)
+        if league_config.publication_enabled:
+            dossier_path = directory / "dossier.json"
+            markdown_path = directory / "dossier.md"
+            _write_json(dossier_path, analysis)
+            markdown_path.write_text(render_markdown(analysis), encoding="utf-8")
+            generated.extend((snapshot_path, dossier_path, markdown_path))
+        else:
+            analysis_path = directory / "analysis.json"
+            _write_json(analysis_path, analysis)
+            generated.extend((snapshot_path, analysis_path))
 
     return generated
 
@@ -106,6 +110,7 @@ def collect_league(
         "editorial": {
             "league_key": config.key,
             "configured_name": config.name,
+            "publication_enabled": config.publication_enabled,
             "publication": config.publication,
             "publication_profile": {
                 "key": publication.key,
@@ -114,7 +119,7 @@ def collect_league(
                 "editorial_priorities": list(publication.editorial_priorities),
             }
             if publication
-            else {"key": config.publication_profile},
+            else None,
             "tier": config.tier,
             "league_format": config.league_format,
             "ranking_model": config.ranking_model,

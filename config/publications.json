@@ -220,19 +220,6 @@
       "editorial_priorities": [
         "Do not invent a publication identity before a source or user decision exists"
       ]
-    },
-    {
-      "key": "dont_tell_my_wife_tbd",
-      "name": "TO_BE_CONFIRMED_FROM_SOURCES",
-      "tier": "newspaper",
-      "source_files": [],
-      "recurring_sections": [
-        "Verified weekly data packet pending a publication standard"
-      ],
-      "brand_departments": [],
-      "editorial_priorities": [
-        "Do not invent a publication identity before a source or user decision exists"
-      ]
     }
   ]
 }

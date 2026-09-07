@@ -18,12 +18,16 @@ Phase 1.
 
 ## Phase 1 output
 
-Each enabled league receives:
+Each publication-enabled league receives:
 
 - a raw, timestamped weekly snapshot;
 - a machine-readable weekly dossier;
 - a human-readable Markdown dossier; and
 - a shared MVP result that a separate card workflow can consume later.
+
+Leagues marked as data-only still receive a raw snapshot and machine-readable
+analysis, including ranking inputs, but no publication dossier or Markdown
+draft. Don't Tell My Wife I'm In This is intentionally configured this way.
 
 The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
@@ -65,8 +69,9 @@ python -m editorial_desk validate-config --config config/leagues.json
 python -m editorial_desk collect --config config/leagues.json --week 1
 ```
 
-All eight current league IDs are enabled in the example configuration. No
-credential is required to read public Sleeper league data.
+All eight current league IDs are enabled for collection in the example
+configuration. Seven feed publications; Don't Tell My Wife I'm In This remains
+data-only. No credential is required to read public Sleeper league data.
 
 ## GitHub dry run
 

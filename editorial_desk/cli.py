@@ -49,7 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "validate-config":
         print(f"Configuration valid: {len(leagues)} enabled leagues")
         for league in leagues:
-            print(f"- {league.name}: {league.publication} ({league.tier})")
+            if league.publication_enabled:
+                print(f"- {league.name}: {league.publication} ({league.tier})")
+            else:
+                print(f"- {league.name}: data collection only (no publication)")
         return 0
 
     if args.week < 1 or args.week > 18:

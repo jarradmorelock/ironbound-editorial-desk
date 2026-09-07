@@ -81,9 +81,7 @@
       "key": "dont_tell_my_wife",
       "name": "Don't Tell My Wife I'm In This",
       "sleeper_league_id": "1341970851624402944",
-      "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
-      "publication_profile": "dont_tell_my_wife_tbd",
-      "tier": "newspaper",
+      "publication_enabled": false,
       "league_format": "dynasty",
       "ranking_model": "ironbound_dynasty",
       "enabled": true

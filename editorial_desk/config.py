@@ -15,11 +15,12 @@ class LeagueConfig:
     key: str
     name: str
     sleeper_league_id: str
-    publication: str
-    publication_profile: str
+    publication: str | None
+    publication_profile: str | None
     tier: str
     league_format: str
     ranking_model: str
+    publication_enabled: bool
 
 
 @dataclass(frozen=True)
@@ -124,6 +125,8 @@ def validate_publication_mappings(
     leagues: list[LeagueConfig], publications: dict[str, PublicationConfig]
 ) -> None:
     for league in leagues:
+        if not league.publication_enabled:
+            continue
         profile = publications.get(league.publication_profile)
         if profile is None:
             raise ConfigurationError(
@@ -149,9 +152,19 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
     key = required("key")
     name = required("name")
     league_id = required("sleeper_league_id")
-    publication = required("publication")
-    publication_profile = str(raw.get("publication_profile") or key).strip()
-    tier = required("tier").lower()
+    publication_enabled = raw.get("publication_enabled", True)
+    if not isinstance(publication_enabled, bool):
+        raise ConfigurationError(
+            f"{name}: publication_enabled must be true or false"
+        )
+    if publication_enabled:
+        publication = required("publication")
+        publication_profile = str(raw.get("publication_profile") or key).strip()
+        tier = required("tier").lower()
+    else:
+        publication = None
+        publication_profile = None
+        tier = "data_only"
     league_format = required("league_format").lower()
     ranking_model = required("ranking_model")
 
@@ -159,7 +172,7 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
         raise ConfigurationError(f"{name}: key must use letters, numbers, and underscores")
     if not league_id.isdigit():
         raise ConfigurationError(f"{name}: sleeper_league_id must be numeric")
-    if tier not in {"flagship", "newspaper"}:
+    if publication_enabled and tier not in {"flagship", "newspaper"}:
         raise ConfigurationError(f"{name}: tier must be flagship or newspaper")
     if league_format not in {"dynasty", "redraft"}:
         raise ConfigurationError(f"{name}: league_format must be dynasty or redraft")
@@ -182,6 +195,7 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
         tier,
         league_format,
         ranking_model,
+        publication_enabled,
     )
 
 

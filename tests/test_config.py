@@ -128,3 +128,24 @@ def test_redraft_cannot_silently_use_dynasty_ranking_model(tmp_path):
     )
     with pytest.raises(ConfigurationError, match="redraft leagues must use"):
         load_leagues(path)
+
+
+def test_data_only_league_does_not_require_publication_profile(tmp_path):
+    path = write_config(
+        tmp_path,
+        {
+            "key": "private_league",
+            "name": "Private League",
+            "sleeper_league_id": "789",
+            "publication_enabled": False,
+            "league_format": "dynasty",
+            "ranking_model": "ironbound_dynasty",
+        },
+    )
+    leagues = load_leagues(path)
+    validate_publication_mappings(leagues, {})
+
+    assert leagues[0].publication_enabled is False
+    assert leagues[0].publication is None
+    assert leagues[0].publication_profile is None
+    assert leagues[0].tier == "data_only"

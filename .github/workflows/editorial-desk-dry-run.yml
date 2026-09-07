@@ -15,6 +15,11 @@ on:
         description: NFL week to collect when mode is collect
         required: true
         default: "1"
+      send_email:
+        description: Email the publication dossiers after a successful collection
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -61,3 +66,13 @@ jobs:
           path: output/dry-run/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Email publication dossiers
+        if: ${{ inputs.mode == 'collect' && inputs.send_email }}
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: >-
+          python -m editorial_desk email
+          --week ${{ inputs.week }}
+          --output-dir output/dry-run

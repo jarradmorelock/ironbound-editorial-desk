@@ -4,8 +4,8 @@ An isolated, read-only Sleeper data pipeline for the Ironbound family of
 weekly fantasy-football publications.
 
 The project turns verified league data into editorial research dossiers. It
-does not publish magazines, create MVP cards, post to Discord, or send email in
-Phase 1.
+does not publish magazines, create MVP cards, or post to Discord. Email delivery
+is opt-in and uses repository secrets.
 
 ## Safety boundaries
 
@@ -14,7 +14,8 @@ Phase 1.
 - The GitHub workflow is manual-only; there is no scheduled trigger.
 - Generated dry-run output is ignored by Git and uploaded only as a temporary
   workflow artifact.
-- Email credentials and publishing credentials are not used in Phase 1.
+- Gmail credentials are read only from GitHub Actions secrets and are never
+  committed to the repository.
 
 ## Phase 1 output
 
@@ -76,5 +77,19 @@ data-only. No credential is required to read public Sleeper league data.
 ## GitHub dry run
 
 Open **Actions -> Editorial desk dry run -> Run workflow**. Validation is the
-default. Live collection must be selected explicitly and still only creates a
-downloadable research artifact.
+default. Select **collect**, enter the week, and enable **send_email** to deliver
+one email containing the seven publication Markdown dossiers. The data-only
+league remains excluded from the email.
+
+## Email secrets
+
+In the GitHub repository, open **Settings -> Secrets and variables -> Actions**
+and add these repository secrets:
+
+- `IRONBOUND_GMAIL_ADDRESS`: the Gmail address that sends and receives the packet;
+- `IRONBOUND_GMAIL_APP_PASSWORD`: the Google app password, not the normal account
+  password. Spaces in Google's displayed app password are accepted.
+
+For the current setup, `IRONBOUND_GMAIL_ADDRESS` should be
+`the.ironbound.ffl@gmail.com`. Never place the app password in a configuration
+file, commit, issue, or chat message.

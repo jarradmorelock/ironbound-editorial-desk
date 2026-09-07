@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from .collector import collect_all
@@ -10,6 +11,7 @@ from .config import (
     load_publications,
     validate_publication_mappings,
 )
+from .emailer import EmailDeliveryError, send_dossier_email
 
 
 def parser() -> argparse.ArgumentParser:
@@ -33,11 +35,43 @@ def parser() -> argparse.ArgumentParser:
     )
     collect.add_argument("--week", type=int, required=True)
     collect.add_argument("--output-dir", type=Path, default=Path("output/dry-run"))
+
+    email = subcommands.add_parser("email")
+    email.add_argument("--week", type=int, required=True)
+    email.add_argument("--output-dir", type=Path, required=True)
     return command
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+
+    if args.command == "email":
+        sender = os.environ.get("IRONBOUND_GMAIL_ADDRESS", "").strip()
+        app_password = os.environ.get("IRONBOUND_GMAIL_APP_PASSWORD", "")
+        recipient = os.environ.get("IRONBOUND_EMAIL_RECIPIENT", "").strip() or sender
+        if not sender or not app_password:
+            print(
+                "Email configuration error: IRONBOUND_GMAIL_ADDRESS and "
+                "IRONBOUND_GMAIL_APP_PASSWORD are required"
+            )
+            return 2
+        try:
+            attachment_count = send_dossier_email(
+                args.output_dir,
+                args.week,
+                sender,
+                app_password,
+                recipient,
+            )
+        except EmailDeliveryError as exc:
+            print(f"Email delivery error: {exc}")
+            return 1
+        print(
+            f"Email delivered to {recipient} with "
+            f"{attachment_count} publication dossiers"
+        )
+        return 0
+
     try:
         leagues = load_leagues(args.config)
         publications = load_publications(args.publications)

@@ -74,8 +74,8 @@ cannot silently alter a published ranking.
   the higher seed receives one point per seed difference, capped at five points.
   The postseason dossier must show both the unadjusted score and the home-field-
   adjusted score so the published result can be verified.
-- The current Ironbound Sixteen Sleeper league ID does not appear in the supplied
-  sources, so that one league remains disabled in the example configuration.
+- Ironbound Sixteen uses Sleeper league ID `1314016187998294016`, supplied by
+  the commissioner after the source audit, and is enabled in the configuration.
 
 ## Data-versus-copy boundary
 

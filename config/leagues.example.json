@@ -3,13 +3,13 @@
     {
       "key": "ironbound_sixteen",
       "name": "Ironbound Sixteen",
-      "sleeper_league_id": "REPLACE_WITH_CURRENT_IRONBOUND_LEAGUE_ID",
+      "sleeper_league_id": "1314016187998294016",
       "publication": "The Ironbound Weekly",
       "publication_profile": "ironbound_weekly",
       "tier": "flagship",
       "league_format": "dynasty",
       "ranking_model": "ironbound_dynasty",
-      "enabled": false
+      "enabled": true
     },
     {
       "key": "free_ironbound_sixteen",

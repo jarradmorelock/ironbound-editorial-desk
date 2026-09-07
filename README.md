@@ -65,10 +65,8 @@ python -m editorial_desk validate-config --config config/leagues.json
 python -m editorial_desk collect --config config/leagues.json --week 1
 ```
 
-The Ironbound Sixteen entry remains disabled until its current Sleeper league
-ID is confirmed. The seven other league IDs are carried forward from the
-existing companion transaction reporter. No credential is required to read
-public Sleeper league data.
+All eight current league IDs are enabled in the example configuration. No
+credential is required to read public Sleeper league data.
 
 ## GitHub dry run
 

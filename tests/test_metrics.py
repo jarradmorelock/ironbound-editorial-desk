@@ -35,6 +35,8 @@ def snapshot():
             "configured_name": "Test League",
             "publication": "Test Paper",
             "tier": "newspaper",
+            "league_format": "redraft",
+            "ranking_model": "redraft_projection_starters_record",
         },
         "league": {
             "name": "Test League",
@@ -42,6 +44,7 @@ def snapshot():
             "roster_positions": ["QB", "RB", "WR", "FLEX", "BN"],
             "settings": {"league_average_match": 1, "divisions": 2},
             "metadata": {"division_1": "Forge", "division_2": "Anvil"},
+            "scoring_settings": {"proj": 1},
         },
         "users": [
             {"user_id": "u1", "display_name": "Owner One", "metadata": {"team_name": "One"}},
@@ -50,10 +53,10 @@ def snapshot():
             {"user_id": "u4", "display_name": "Owner Four", "metadata": {"team_name": "Four"}},
         ],
         "rosters": [
-            {"roster_id": 1, "owner_id": "u1", "settings": {"division": 1}},
-            {"roster_id": 2, "owner_id": "u2", "settings": {"division": 1}},
-            {"roster_id": 3, "owner_id": "u3", "settings": {"division": 2}},
-            {"roster_id": 4, "owner_id": "u4", "settings": {"division": 2}},
+            {"roster_id": 1, "owner_id": "u1", "players": ["qb1", "rb1", "rb2", "wr1", "wr2"], "settings": {"division": 1, "wins": 0, "losses": 1, "fpts": 101}},
+            {"roster_id": 2, "owner_id": "u2", "players": ["qb2", "rb2", "rb3", "wr3", "wr4"], "settings": {"division": 1, "wins": 1, "losses": 0, "fpts": 110}},
+            {"roster_id": 3, "owner_id": "u3", "players": ["qb1", "rb1", "wr1", "wr2"], "settings": {"division": 2, "wins": 1, "losses": 0, "fpts": 70}},
+            {"roster_id": 4, "owner_id": "u4", "players": ["qb2", "rb2", "wr3", "wr4"], "settings": {"division": 2, "wins": 0, "losses": 1, "fpts": 65}},
         ],
         "players": PLAYERS,
         "matchups": [
@@ -66,6 +69,23 @@ def snapshot():
             {"transaction_id": "tx1", "status": "complete", "type": "waiver", "adds": {"wr3": 2}, "settings": {"waiver_bid": 7}}
         ],
         "traded_picks": [],
+        "ranking_inputs": {
+            "sleeper_projections": {
+                "status": "available",
+                "players": {
+                    "qb1": {"proj": 20},
+                    "qb2": {"proj": 25},
+                    "rb1": {"proj": 10},
+                    "rb2": {"proj": 30},
+                    "rb3": {"proj": 8},
+                    "wr1": {"proj": 15},
+                    "wr2": {"proj": 12},
+                    "wr3": {"proj": 30},
+                    "wr4": {"proj": 25}
+                }
+            },
+            "dynasty_daddy": {"status": "available", "players": {}}
+        },
     }
 
 
@@ -110,3 +130,22 @@ def test_zero_point_preseason_matchups_do_not_create_false_awards_or_records():
     assert dossier["awards"]["mvp_card_result"] is None
     assert dossier["weekly_records"]["status"] == "awaiting_scores"
     assert dossier["weekly_records"]["highest_score"] is None
+
+
+def test_redraft_power_ranking_uses_only_requested_three_inputs():
+    dossier = build_weekly_dossier(snapshot())
+    power = dossier["rankings"]["data_power_ranking"]
+    assert power["status"] == "calculated"
+    assert power["rows"][0]["team"] == "Two"
+    assert set(power["rows"][0]["component_ranks"]) == {
+        "projection",
+        "starting_lineup",
+        "win_loss_record",
+    }
+    assert power["methodology"]["excluded"] == [
+        "dynasty roster value",
+        "future draft capital",
+        "all-play",
+        "lineup efficiency",
+    ]
+    assert dossier["rankings"]["official_standings_status"] == "active"

@@ -41,6 +41,26 @@ a season wrap-up, one rookie-draft preview, and one preseason edition. It also
 makes multi-year Trade Afterlife stories and season/all-time Record Watch
 possible.
 
+## Power-ranking models
+
+The ranking desk must select its model from the league configuration.
+
+- Every dynasty league uses the same editorial model as The Ironbound Weekly
+  and Unbound Weekly. Starter strength and projected scoring lead the analysis;
+  current dynasty value, playoff and title probability, roster balance,
+  schedule context, and future-pick value remain visible supporting evidence.
+  The final published order remains an editorial synthesis, not a hidden
+  arithmetic replacement.
+- Every redraft league uses only three inputs: the submitted-lineup projection,
+  the best legal starting-lineup projection, and the current win-loss record.
+  The research dossier provides an equal-rank consensus and exposes all three
+  component ranks for review.
+
+The collector uses a single daily Dynasty Daddy player-value pull and a single
+weekly Sleeper projection pull for all leagues. It stores source status and the
+trimmed inputs alongside each dossier so a missing or changed external source
+cannot silently alter a published ranking.
+
 ## League-specific findings
 
 - Unbound currently has four live Sleeper divisions: Hammer, Anvil, Crucible,

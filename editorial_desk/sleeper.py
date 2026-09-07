@@ -52,3 +52,9 @@ class SleeperClient:
 
     def traded_picks(self, league_id: str) -> list[dict[str, Any]]:
         return self.get_json(f"league/{league_id}/traded_picks")
+
+    def projections(self, season: str, week: int) -> dict[str, Any]:
+        payload = self.get_json(f"projections/nfl/regular/{season}/{week}")
+        if not isinstance(payload, dict):
+            raise ValueError("Sleeper projection response was not an object")
+        return payload

@@ -18,6 +18,8 @@ class LeagueConfig:
     publication: str
     publication_profile: str
     tier: str
+    league_format: str
+    ranking_model: str
 
 
 @dataclass(frozen=True)
@@ -150,6 +152,8 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
     publication = required("publication")
     publication_profile = str(raw.get("publication_profile") or key).strip()
     tier = required("tier").lower()
+    league_format = required("league_format").lower()
+    ranking_model = required("ranking_model")
 
     if not key.replace("_", "").isalnum():
         raise ConfigurationError(f"{name}: key must use letters, numbers, and underscores")
@@ -157,8 +161,28 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
         raise ConfigurationError(f"{name}: sleeper_league_id must be numeric")
     if tier not in {"flagship", "newspaper"}:
         raise ConfigurationError(f"{name}: tier must be flagship or newspaper")
+    if league_format not in {"dynasty", "redraft"}:
+        raise ConfigurationError(f"{name}: league_format must be dynasty or redraft")
+    allowed_models = {
+        "dynasty": "ironbound_dynasty",
+        "redraft": "redraft_projection_starters_record",
+    }
+    if ranking_model != allowed_models[league_format]:
+        raise ConfigurationError(
+            f"{name}: {league_format} leagues must use "
+            f"{allowed_models[league_format]} ranking_model"
+        )
 
-    return LeagueConfig(key, name, league_id, publication, publication_profile, tier)
+    return LeagueConfig(
+        key,
+        name,
+        league_id,
+        publication,
+        publication_profile,
+        tier,
+        league_format,
+        ranking_model,
+    )
 
 
 def _string_tuple(raw: dict[str, Any], field: str, index: int) -> tuple[str, ...]:

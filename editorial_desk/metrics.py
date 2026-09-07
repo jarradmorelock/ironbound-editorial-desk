@@ -29,6 +29,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         int(row["roster_id"]): row for row in league_median.get("results") or []
     }
     lineup = _lineup_efficiency(snapshot, teams)
+    rankings = _rankings(snapshot, teams)
     winners = [row["winner"] for row in scoreboard if row.get("winner")]
     losers = [row["loser"] for row in scoreboard if row.get("loser")]
 
@@ -77,6 +78,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         "all_play": all_play,
         "league_median": league_median,
         "lineup_efficiency": lineup,
+        "rankings": rankings,
         "awards": {
             "mvp_card_result": weekly_mvp,
             "manager_of_the_week": manager_of_week,
@@ -320,6 +322,326 @@ def _league_median(
         "points": round(median, 2),
         "results": results if enabled else [],
     }
+
+
+def _rankings(
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+) -> dict[str, Any]:
+    league = snapshot.get("league") or {}
+    metadata = league.get("metadata") or {}
+    rosters = snapshot.get("rosters") or []
+    official_rows: list[dict[str, Any]] = []
+    for roster in rosters:
+        roster_id = int(roster["roster_id"])
+        settings = roster.get("settings") or {}
+        wins = int(settings.get("wins") or 0)
+        losses = int(settings.get("losses") or 0)
+        ties = int(settings.get("ties") or 0)
+        games = wins + losses + ties
+        division_id = settings.get("division")
+        official_rows.append(
+            {
+                **teams[roster_id],
+                "wins": wins,
+                "losses": losses,
+                "ties": ties,
+                "win_percentage": round((wins + ties * 0.5) / games, 4)
+                if games
+                else 0.0,
+                "points_for": _roster_points(settings),
+                "division_id": division_id,
+                "division_name": str(
+                    metadata.get(f"division_{division_id}")
+                    or (f"Division {division_id}" if division_id is not None else "")
+                ),
+            }
+        )
+    official_rows.sort(
+        key=lambda row: (
+            -row["win_percentage"],
+            -row["wins"],
+            -row["points_for"],
+            row["team"].casefold(),
+        )
+    )
+    for rank, row in enumerate(official_rows, start=1):
+        row["rank"] = rank
+    official_status = (
+        "active"
+        if any(row["wins"] or row["losses"] or row["ties"] for row in official_rows)
+        else "season_not_started"
+    )
+
+    component_rows, source_status = _ranking_components(
+        snapshot,
+        teams,
+        official_rows,
+    )
+    editorial = snapshot.get("editorial") or {}
+    ranking_model = str(editorial.get("ranking_model") or "")
+    if ranking_model == "redraft_projection_starters_record":
+        data_power_ranking = _redraft_power_ranking(component_rows, source_status)
+    else:
+        data_power_ranking = _dynasty_power_ranking(component_rows, source_status)
+
+    return {
+        "league_format": editorial.get("league_format"),
+        "ranking_model": ranking_model,
+        "sources": source_status,
+        "official_standings_status": official_status,
+        "official_standings": official_rows,
+        "data_power_ranking": data_power_ranking,
+        "prior_published_ranking": {
+            "status": "awaiting_publication_archive",
+            "rows": [],
+        },
+        "editorial_note": data_power_ranking["editorial_note"],
+    }
+
+
+def _ranking_components(
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    official_rows: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    league = snapshot.get("league") or {}
+    scoring_settings = league.get("scoring_settings") or {}
+    slots = starter_slots(league)
+    players = snapshot.get("players") or {}
+    inputs = snapshot.get("ranking_inputs") or {}
+    sleeper_source = inputs.get("sleeper_projections") or {}
+    dynasty_source = inputs.get("dynasty_daddy") or {}
+    projections = sleeper_source.get("players") or {}
+    dynasty_values = dynasty_source.get("players") or {}
+    matchup_starters = {
+        int(row["roster_id"]): [str(value) for value in row.get("starters") or []]
+        for row in (snapshot.get("matchups") or [])
+    }
+    records = {
+        int(row["roster_id"]): _number(row["win_percentage"])
+        for row in official_rows
+    }
+    is_superflex = "SUPER_FLEX" in slots
+    component_rows: list[dict[str, Any]] = []
+    for roster in snapshot.get("rosters") or []:
+        roster_id = int(roster["roster_id"])
+        excluded = {
+            str(player_id)
+            for key in ("reserve", "taxi")
+            for player_id in (roster.get(key) or [])
+        }
+        roster_ids = [
+            str(player_id)
+            for player_id in (roster.get("players") or [])
+            if str(player_id) not in excluded
+        ]
+        projection_points = {
+            player_id: _projected_player_points(
+                projections.get(player_id) or {},
+                scoring_settings,
+            )
+            for player_id in roster_ids
+        }
+        submitted = [
+            str(player_id)
+            for player_id in (
+                matchup_starters.get(roster_id) or roster.get("starters") or []
+            )
+        ]
+        submitted_projection = sum(
+            projection_points.get(player_id, 0.0) for player_id in submitted
+        )
+        optimal_projection, _ = optimal_lineup(
+            roster_ids,
+            projection_points,
+            slots,
+            players,
+        )
+        starter_values = {
+            player_id: _starter_market_score(dynasty_values.get(player_id) or {})
+            for player_id in roster_ids
+        }
+        starter_market_value, _ = optimal_lineup(
+            roster_ids,
+            starter_values,
+            slots,
+            players,
+        )
+        value_field = "sf_trade_value" if is_superflex else "trade_value"
+        total_dynasty_value = sum(
+            _number((dynasty_values.get(player_id) or {}).get(value_field))
+            for player_id in roster_ids
+        )
+        component_rows.append(
+            {
+                **teams[roster_id],
+                "submitted_lineup_projection": round(submitted_projection, 2),
+                "optimal_starting_lineup_projection": round(
+                    optimal_projection, 2
+                ),
+                "dynasty_starter_strength": round(starter_market_value, 2),
+                "dynasty_roster_value": round(total_dynasty_value, 2),
+                "win_loss_percentage": records.get(roster_id, 0.0),
+            }
+        )
+
+    for field in (
+        "submitted_lineup_projection",
+        "optimal_starting_lineup_projection",
+        "dynasty_starter_strength",
+        "dynasty_roster_value",
+        "win_loss_percentage",
+    ):
+        ranks = _metric_ranks(
+            {int(row["roster_id"]): _number(row[field]) for row in component_rows}
+        )
+        for row in component_rows:
+            row[f"{field}_rank"] = ranks[int(row["roster_id"])]
+
+    source_status = {
+        "sleeper_projections": sleeper_source.get("status", "not_collected"),
+        "dynasty_daddy": dynasty_source.get("status", "not_collected"),
+    }
+    return component_rows, source_status
+
+
+def _redraft_power_ranking(
+    rows: list[dict[str, Any]], source_status: dict[str, Any]
+) -> dict[str, Any]:
+    ready = source_status["sleeper_projections"] == "available" and any(
+        row["submitted_lineup_projection"]
+        or row["optimal_starting_lineup_projection"]
+        for row in rows
+    )
+    ranked_rows = []
+    if ready:
+        for row in rows:
+            component_ranks = {
+                "projection": row["submitted_lineup_projection_rank"],
+                "starting_lineup": row["optimal_starting_lineup_projection_rank"],
+                "win_loss_record": row["win_loss_percentage_rank"],
+            }
+            ranked_rows.append(
+                {
+                    **row,
+                    "component_ranks": component_ranks,
+                    "consensus_rank_average": round(
+                        sum(component_ranks.values()) / len(component_ranks), 3
+                    ),
+                }
+            )
+        ranked_rows.sort(
+            key=lambda row: (
+                row["consensus_rank_average"],
+                -row["submitted_lineup_projection"],
+                row["team"].casefold(),
+            )
+        )
+        for rank, row in enumerate(ranked_rows, start=1):
+            row["rank"] = rank
+    return {
+        "status": "calculated" if ready else "awaiting_projection_data",
+        "methodology": {
+            "components": [
+                "submitted lineup projection",
+                "optimal starting lineup projection",
+                "win-loss record",
+            ],
+            "aggregation": "Equal average of the three league-relative ranks.",
+            "excluded": [
+                "dynasty roster value",
+                "future draft capital",
+                "all-play",
+                "lineup efficiency",
+            ],
+        },
+        "rows": ranked_rows,
+        "editorial_note": (
+            "Redraft power rankings use only projection, starting lineup, and "
+            "win-loss record."
+        ),
+    }
+
+
+def _dynasty_power_ranking(
+    rows: list[dict[str, Any]], source_status: dict[str, Any]
+) -> dict[str, Any]:
+    available = [
+        "projected scoring",
+        "starter strength",
+        "current dynasty roster value",
+        "win-loss record",
+    ]
+    missing = [
+        "playoff probability",
+        "title probability",
+        "schedule context",
+        "roster-balance editorial review",
+        "future-pick portfolio value",
+    ]
+    ranked_rows = sorted(
+        rows,
+        key=lambda row: (
+            row["dynasty_starter_strength_rank"],
+            row["optimal_starting_lineup_projection_rank"],
+            row["team"].casefold(),
+        ),
+    )
+    sources_ready = all(
+        source_status[source] == "available"
+        for source in ("sleeper_projections", "dynasty_daddy")
+    )
+    return {
+        "status": (
+            "component_inputs_collected" if sources_ready else "awaiting_sources"
+        ),
+        "methodology": {
+            "model": "The Ironbound Weekly / Unbound Weekly dynasty model",
+            "available_components": available,
+            "pending_components": missing,
+            "aggregation": (
+                "Editorial synthesis led by starter strength and projected "
+                "scoring; no substitute weighted formula is applied."
+            ),
+        },
+        "rows": ranked_rows,
+        "editorial_note": (
+            "Dynasty teams use the flagship Ironbound/Unbound method. The desk "
+            "preserves every component and does not replace it with the redraft "
+            "formula."
+        ),
+    }
+
+
+def _metric_ranks(values: dict[int, float]) -> dict[int, int]:
+    ordered = sorted(set(values.values()), reverse=True)
+    ranks = {value: index + 1 for index, value in enumerate(ordered)}
+    return {roster_id: ranks[value] for roster_id, value in values.items()}
+
+
+def _projected_player_points(
+    projection: dict[str, Any], scoring_settings: dict[str, Any]
+) -> float:
+    return round(
+        sum(
+            _number(projection.get(stat)) * _number(multiplier)
+            for stat, multiplier in scoring_settings.items()
+            if stat in projection
+        ),
+        4,
+    )
+
+
+def _starter_market_score(player: dict[str, Any]) -> float:
+    rank = _number(player.get("avg_ros") or player.get("avg_adp"))
+    return max(0.0, 1000.0 - rank) if rank else 0.0
+
+
+def _roster_points(settings: dict[str, Any]) -> float:
+    whole = _number(settings.get("fpts"))
+    decimal = _number(settings.get("fpts_decimal")) / 100
+    return round(whole + decimal, 2)
 
 
 def _bench_mvp(

@@ -30,6 +30,42 @@ def render_markdown(dossier: dict[str, Any]) -> str:
             f"{row['points_left_on_bench']:.2f} points left"
         )
 
+    rankings = dossier.get("rankings") or {}
+    lines.extend(["", "## Rankings Desk", ""])
+    if rankings.get("official_standings_status") == "season_not_started":
+        lines.append("- Official standings: season has not started")
+    else:
+        for row in rankings.get("official_standings") or []:
+            lines.append(
+                f"- Official #{row['rank']} {row['team']}: "
+                f"{row['wins']}-{row['losses']}-{row['ties']}, "
+                f"{row['points_for']:.2f} points"
+            )
+    power = rankings.get("data_power_ranking") or {}
+    if power.get("status") == "calculated":
+        lines.append("")
+        for row in power.get("rows") or []:
+            lines.append(
+                f"- Data power #{row['rank']} {row['team']}: "
+                f"submitted projection {row['submitted_lineup_projection']:.2f}; "
+                f"optimal starters {row['optimal_starting_lineup_projection']:.2f}; "
+                f"record {row['win_loss_percentage']:.3f}"
+            )
+    elif power.get("status") == "component_inputs_collected":
+        lines.append("")
+        for row in power.get("rows") or []:
+            lines.append(
+                f"- Dynasty inputs, {row['team']}: starter-strength rank "
+                f"#{row['dynasty_starter_strength_rank']}; projection rank "
+                f"#{row['optimal_starting_lineup_projection_rank']}; "
+                f"roster-value rank #{row['dynasty_roster_value_rank']}"
+            )
+    else:
+        lines.append("- Data power ranking: awaiting required source data")
+    lines.append(
+        "- Prior published ranking: awaiting the finalized-edition archive"
+    )
+
     median = dossier.get("league_median") or {}
     if median.get("enabled"):
         lines.extend(["", "## League Median", ""])

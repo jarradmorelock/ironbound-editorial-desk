@@ -29,7 +29,24 @@ The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
 bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping
 start/sit decisions, waiver-impact candidates, weekly records, and named
-division performance.
+division performance. Every dossier also separates official standings from a
+transparent data power ranking. The eventual publication archive will add the
+prior issue's editorial ranking and week-to-week movement without treating the
+formula as the final editorial opinion.
+
+Ranking inputs are fetched once per run and then trimmed to the players in each
+league. Sleeper supplies weekly projections scored against that league's own
+settings. Dynasty Daddy supplies current-season starter ranks and dynasty
+market values. If either optional source is unavailable, collection continues
+and the dossier clearly marks the missing input.
+
+- Dynasty leagues use the Ironbound/Unbound editorial model: starter strength
+  and projected scoring lead, with dynasty value, playoff and title
+  probabilities, roster balance, schedule context, and future-pick value kept
+  as distinct evidence.
+- Redraft leagues use only submitted-lineup projection, optimal starting-lineup
+  projection, and win-loss record. Their automated consensus is the equal
+  average of those three league-relative ranks.
 
 The source primers and publications have been audited into
 `config/publications.json`; see `docs/source-audit.md` for the resulting brand

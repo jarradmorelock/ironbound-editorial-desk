@@ -7,6 +7,8 @@
       "publication": "The Ironbound Weekly",
       "publication_profile": "ironbound_weekly",
       "tier": "flagship",
+      "league_format": "dynasty",
+      "ranking_model": "ironbound_dynasty",
       "enabled": false
     },
     {
@@ -16,6 +18,8 @@
       "publication": "Unbound Weekly",
       "publication_profile": "unbound_weekly",
       "tier": "flagship",
+      "league_format": "dynasty",
+      "ranking_model": "ironbound_dynasty",
       "enabled": true
     },
     {
@@ -25,6 +29,8 @@
       "publication": "The Ballad Crier",
       "publication_profile": "ballad_crier",
       "tier": "newspaper",
+      "league_format": "redraft",
+      "ranking_model": "redraft_projection_starters_record",
       "enabled": true
     },
     {
@@ -34,6 +40,8 @@
       "publication": "The Stampede",
       "publication_profile": "the_stampede",
       "tier": "newspaper",
+      "league_format": "redraft",
+      "ranking_model": "redraft_projection_starters_record",
       "enabled": true
     },
     {
@@ -43,6 +51,8 @@
       "publication": "The Volunteer Voice",
       "publication_profile": "volunteer_voice",
       "tier": "newspaper",
+      "league_format": "redraft",
+      "ranking_model": "redraft_projection_starters_record",
       "enabled": true
     },
     {
@@ -52,6 +62,8 @@
       "publication": "The Saturday Standard",
       "publication_profile": "saturday_standard",
       "tier": "newspaper",
+      "league_format": "dynasty",
+      "ranking_model": "ironbound_dynasty",
       "enabled": true
     },
     {
@@ -61,6 +73,8 @@
       "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
       "publication_profile": "best_characters_tbd",
       "tier": "newspaper",
+      "league_format": "dynasty",
+      "ranking_model": "ironbound_dynasty",
       "enabled": true
     },
     {
@@ -70,6 +84,8 @@
       "publication": "TO_BE_CONFIRMED_FROM_SOURCES",
       "publication_profile": "dont_tell_my_wife_tbd",
       "tier": "newspaper",
+      "league_format": "dynasty",
+      "ranking_model": "ironbound_dynasty",
       "enabled": true
     }
   ]

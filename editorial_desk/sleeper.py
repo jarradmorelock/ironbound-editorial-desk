@@ -53,6 +53,21 @@ class SleeperClient:
     def traded_picks(self, league_id: str) -> list[dict[str, Any]]:
         return self.get_json(f"league/{league_id}/traded_picks")
 
+    def drafts(self, league_id: str) -> list[dict[str, Any]]:
+        return self.get_json(f"league/{league_id}/drafts")
+
+    def draft_picks(self, draft_id: str) -> list[dict[str, Any]]:
+        return self.get_json(f"draft/{draft_id}/picks")
+
+    def draft_traded_picks(self, draft_id: str) -> list[dict[str, Any]]:
+        return self.get_json(f"draft/{draft_id}/traded_picks")
+
+    def winners_bracket(self, league_id: str) -> list[dict[str, Any]]:
+        return self.get_json(f"league/{league_id}/winners_bracket")
+
+    def losers_bracket(self, league_id: str) -> list[dict[str, Any]]:
+        return self.get_json(f"league/{league_id}/losers_bracket")
+
     def projections(self, season: str, week: int) -> dict[str, Any]:
         payload = self.get_json(f"projections/nfl/regular/{season}/{week}")
         if not isinstance(payload, dict):

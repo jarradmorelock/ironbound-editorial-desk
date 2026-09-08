@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 
@@ -66,6 +67,15 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     )
     bench_mvp = _bench_mvp(snapshot, teams)
     weekly_mvp = _weekly_mvp(snapshot, teams)
+    flagship_supplement = _flagship_supplement(snapshot, teams, rankings)
+    deferred = [
+        "Giant Killer based on prior power expectations",
+        "all-time and cross-season record watch",
+        "trade-afterlife trees",
+        "publication-to-publication editorial memory",
+    ]
+    if not flagship_supplement:
+        deferred.insert(1, "completed and remaining strength of schedule")
 
     return {
         "schema_version": 1,
@@ -92,6 +102,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         "weekly_records": _weekly_records(scoreboard, matchup_rows, teams),
         "divisions": division_summary,
         "transactions": _transaction_summary(snapshot.get("transactions") or []),
+        "flagship_supplement": flagship_supplement,
         "publication_sections": (
             ((snapshot.get("editorial") or {}).get("publication_profile") or {}).get(
                 "recurring_sections"
@@ -110,13 +121,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
             )
             or []
         ),
-        "deferred_until_history_exists": [
-            "Giant Killer based on prior power expectations",
-            "completed and remaining strength of schedule",
-            "season and all-time record watch",
-            "trade-afterlife trees",
-            "publication-to-publication editorial memory",
-        ],
+        "deferred_until_history_exists": deferred,
     }
 
 
@@ -921,6 +926,856 @@ def _division_summary(
     for rank, summary in enumerate(summaries, start=1):
         summary["weekly_scoring_rank"] = rank
     return summaries
+
+
+def _flagship_supplement(
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    rankings: dict[str, Any],
+) -> dict[str, Any] | None:
+    context = snapshot.get("flagship_sleeper")
+    if not context:
+        return None
+
+    schedule_source = context.get("schedule") or {}
+    schedule_weeks = schedule_source.get("weeks") or {}
+    league = snapshot.get("league") or {}
+    settings = league.get("settings") or {}
+    playoff_week_start = int(settings.get("playoff_week_start") or 15)
+    regular_season_end = max(1, playoff_week_start - 1)
+    decoded_schedule = {
+        str(week): _schedule_pairings(rows, teams)
+        for week, rows in sorted(
+            schedule_weeks.items(), key=lambda item: int(item[0])
+        )
+    }
+    schedule_strength = _schedule_strength(
+        schedule_weeks,
+        snapshot,
+        teams,
+        rankings,
+        regular_season_end,
+    )
+
+    return {
+        "source_status": {
+            "schedule": schedule_source.get("status", "not_collected"),
+            "transactions": (context.get("transactions") or {}).get(
+                "status", "not_collected"
+            ),
+            "drafts": (context.get("drafts") or {}).get(
+                "status", "not_collected"
+            ),
+            "playoff_brackets": (context.get("playoff_brackets") or {}).get(
+                "status", "not_collected"
+            ),
+            "next_week_projections": (
+                context.get("next_week_projections") or {}
+            ).get("status", "not_collected"),
+        },
+        "schedule": {
+            "weeks_collected": len(schedule_weeks),
+            "regular_season_end": regular_season_end,
+            "games_by_week": decoded_schedule,
+            "strength": schedule_strength,
+            "division_context": _division_schedule_context(
+                schedule_weeks,
+                snapshot,
+                teams,
+                rankings,
+                regular_season_end,
+                schedule_strength,
+            ),
+        },
+        "current_week_lineups": _matchup_lineups(snapshot, teams),
+        "season_records": _season_records(
+            schedule_weeks, snapshot, teams, int(snapshot.get("week") or 0)
+        ),
+        "next_week": _next_week_preview(snapshot, teams, decoded_schedule),
+        "draft_archive": _draft_archive(snapshot, teams),
+        "playoff_brackets": _decoded_brackets(context, teams),
+        "transaction_ledger": _transaction_ledger(snapshot, teams),
+        "traded_pick_ledger": _decoded_traded_picks(snapshot, teams),
+        "roster_availability": _roster_availability(snapshot, teams),
+    }
+
+
+def _schedule_pairings(
+    rows: list[dict[str, Any]], teams: dict[int, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    grouped: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+    for row in rows:
+        grouped[row.get("matchup_id")].append(row)
+    games = []
+    for matchup_id, sides in grouped.items():
+        if matchup_id is None or len(sides) != 2:
+            continue
+        games.append(
+            {
+                "matchup_id": matchup_id,
+                "teams": [
+                    {
+                        **_team_for(teams, int(side["roster_id"])),
+                        "points": round(_number(side.get("points")), 2),
+                    }
+                    for side in sorted(sides, key=lambda row: int(row["roster_id"]))
+                ],
+            }
+        )
+    return sorted(games, key=lambda row: str(row["matchup_id"]))
+
+
+def _matchup_lineups(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    league = snapshot.get("league") or {}
+    slots = starter_slots(league)
+    scoring = league.get("scoring_settings") or {}
+    players = snapshot.get("players") or {}
+    projections = (
+        ((snapshot.get("ranking_inputs") or {}).get("sleeper_projections") or {}).get(
+            "players"
+        )
+        or {}
+    )
+    rosters = {
+        int(row["roster_id"]): row for row in snapshot.get("rosters") or []
+    }
+    rows = []
+    for matchup in snapshot.get("matchups") or []:
+        roster_id = int(matchup["roster_id"])
+        roster = rosters.get(roster_id, {})
+        starters = [str(player_id) for player_id in matchup.get("starters") or []]
+        excluded = {
+            str(player_id)
+            for key in ("reserve", "taxi")
+            for player_id in (roster.get(key) or [])
+        }
+        points = _points_map(matchup)
+
+        def player_row(player_id: str, slot: str | None = None) -> dict[str, Any]:
+            row = {
+                "player_id": player_id,
+                "player": _player_name(player_id, players),
+                "position": (players.get(player_id) or {}).get("position"),
+                "points": round(_number(points.get(player_id)), 2),
+                "projected_points": _projected_player_points(
+                    projections.get(player_id) or {}, scoring
+                ),
+            }
+            if slot is not None:
+                row["slot"] = slot
+            return row
+
+        bench = [
+            str(player_id)
+            for player_id in matchup.get("players") or []
+            if str(player_id) not in set(starters) | excluded
+        ]
+        starter_rows = [
+            player_row(player_id, slots[index] if index < len(slots) else "STARTER")
+            for index, player_id in enumerate(starters)
+        ]
+        bench_rows = sorted(
+            (player_row(player_id) for player_id in bench),
+            key=lambda row: (-row["points"], row["player"]),
+        )
+        rows.append(
+            {
+                **_team_for(teams, roster_id),
+                "actual_points": round(_number(matchup.get("points")), 2),
+                "submitted_projection": round(
+                    sum(row["projected_points"] for row in starter_rows), 2
+                ),
+                "starters": starter_rows,
+                "bench": bench_rows,
+            }
+        )
+    return sorted(rows, key=lambda row: row["team"].casefold())
+
+
+def _season_records(
+    schedule_weeks: dict[str, list[dict[str, Any]]],
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    reviewed_week: int,
+) -> dict[str, Any]:
+    players = snapshot.get("players") or {}
+    team_scores = []
+    margins = []
+    player_scores = []
+    starter_scores = []
+    for raw_week, rows in schedule_weeks.items():
+        week = int(raw_week)
+        if week > reviewed_week or not any(_number(row.get("points")) for row in rows):
+            continue
+        games: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            roster_id = int(row["roster_id"])
+            team_scores.append(
+                {
+                    "week": week,
+                    **_team_for(teams, roster_id),
+                    "points": round(_number(row.get("points")), 2),
+                }
+            )
+            games[row.get("matchup_id")].append(row)
+            point_map = _points_map(row)
+            starters = {str(player_id) for player_id in row.get("starters") or []}
+            for player_id, points in point_map.items():
+                player = players.get(player_id) or {}
+                record = {
+                    "week": week,
+                    **_team_for(teams, roster_id),
+                    "player_id": player_id,
+                    "player": _player_name(player_id, players),
+                    "position": player.get("position"),
+                    "points": round(points, 2),
+                }
+                player_scores.append(record)
+                if player_id in starters:
+                    starter_scores.append(record)
+        for sides in games.values():
+            if len(sides) != 2:
+                continue
+            ordered = sorted(
+                sides, key=lambda row: _number(row.get("points")), reverse=True
+            )
+            if _number(ordered[0].get("points")) == _number(
+                ordered[1].get("points")
+            ):
+                continue
+            winner_id = int(ordered[0]["roster_id"])
+            loser_id = int(ordered[1]["roster_id"])
+            margins.append(
+                {
+                    "week": week,
+                    "winner": _team_for(teams, winner_id),
+                    "loser": _team_for(teams, loser_id),
+                    "margin": round(
+                        _number(ordered[0].get("points"))
+                        - _number(ordered[1].get("points")),
+                        2,
+                    ),
+                    "score": [
+                        round(_number(ordered[0].get("points")), 2),
+                        round(_number(ordered[1].get("points")), 2),
+                    ],
+                }
+            )
+    if not team_scores:
+        return {"status": "awaiting_scores"}
+
+    by_position = {}
+    positions = sorted(
+        {str(row["position"]) for row in starter_scores if row.get("position")}
+    )
+    for position in positions:
+        by_position[position] = max(
+            (row for row in starter_scores if row.get("position") == position),
+            key=lambda row: row["points"],
+        )
+    return {
+        "status": "calculated",
+        "weeks_with_scores": len({row["week"] for row in team_scores}),
+        "highest_team_score": max(team_scores, key=lambda row: row["points"]),
+        "lowest_team_score": min(team_scores, key=lambda row: row["points"]),
+        "largest_margin": max(margins, key=lambda row: row["margin"], default=None),
+        "closest_finish": min(margins, key=lambda row: row["margin"], default=None),
+        "highest_player_score": max(
+            player_scores, key=lambda row: row["points"], default=None
+        ),
+        "highest_started_player_score": max(
+            starter_scores, key=lambda row: row["points"], default=None
+        ),
+        "started_player_records_by_position": by_position,
+    }
+
+
+def _next_week_preview(
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    decoded_schedule: dict[str, list[dict[str, Any]]],
+) -> dict[str, Any]:
+    source = (snapshot.get("flagship_sleeper") or {}).get(
+        "next_week_projections"
+    ) or {}
+    next_week = source.get("week")
+    if next_week is None:
+        return {"status": source.get("status", "not_collected"), "week": None}
+
+    league = snapshot.get("league") or {}
+    scoring = league.get("scoring_settings") or {}
+    slots = starter_slots(league)
+    players = snapshot.get("players") or {}
+    projections = source.get("players") or {}
+    team_projections: dict[int, dict[str, Any]] = {}
+    for roster in snapshot.get("rosters") or []:
+        roster_id = int(roster["roster_id"])
+        excluded = {
+            str(player_id)
+            for key in ("reserve", "taxi")
+            for player_id in (roster.get(key) or [])
+        }
+        roster_ids = [
+            str(player_id)
+            for player_id in roster.get("players") or []
+            if str(player_id) not in excluded
+        ]
+        projected_points = {
+            player_id: _projected_player_points(
+                projections.get(player_id) or {}, scoring
+            )
+            for player_id in roster_ids
+        }
+        submitted = [str(player_id) for player_id in roster.get("starters") or []]
+        optimal_points, _ = optimal_lineup(
+            roster_ids, projected_points, slots, players
+        )
+        team_projections[roster_id] = {
+            "submitted_projection": round(
+                sum(projected_points.get(player_id, 0.0) for player_id in submitted),
+                2,
+            ),
+            "optimal_projection": round(optimal_points, 2),
+        }
+
+    games = []
+    for game in decoded_schedule.get(str(next_week)) or []:
+        games.append(
+            {
+                "matchup_id": game["matchup_id"],
+                "teams": [
+                    {
+                        **team,
+                        **team_projections.get(int(team["roster_id"]), {}),
+                    }
+                    for team in game["teams"]
+                ],
+            }
+        )
+    return {
+        "status": source.get("status", "not_collected"),
+        "week": next_week,
+        "games": games,
+    }
+
+
+def _schedule_strength(
+    schedule_weeks: dict[str, list[dict[str, Any]]],
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    rankings: dict[str, Any],
+    regular_season_end: int,
+) -> list[dict[str, Any]]:
+    power_rows = (rankings.get("data_power_ranking") or {}).get("rows") or []
+    strength_rank = {
+        int(row["roster_id"]): int(
+            row.get("dynasty_starter_strength_rank")
+            or row.get("optimal_starting_lineup_projection_rank")
+            or row.get("rank")
+            or 0
+        )
+        for row in power_rows
+    }
+    reviewed_week = int(snapshot.get("week") or 0)
+    opponents: dict[int, dict[str, list[int]]] = defaultdict(
+        lambda: {"full": [], "completed": [], "remaining": []}
+    )
+    for raw_week, rows in schedule_weeks.items():
+        week = int(raw_week)
+        if week > regular_season_end:
+            continue
+        grouped: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            grouped[row.get("matchup_id")].append(row)
+        week_complete = week < reviewed_week or (
+            week == reviewed_week and any(_number(row.get("points")) for row in rows)
+        )
+        for sides in grouped.values():
+            if len(sides) != 2:
+                continue
+            first = int(sides[0]["roster_id"])
+            second = int(sides[1]["roster_id"])
+            if second in strength_rank:
+                opponents[first]["full"].append(strength_rank[second])
+                opponents[first]["completed" if week_complete else "remaining"].append(
+                    strength_rank[second]
+                )
+            if first in strength_rank:
+                opponents[second]["full"].append(strength_rank[first])
+                opponents[second]["completed" if week_complete else "remaining"].append(
+                    strength_rank[first]
+                )
+
+    results = []
+    for roster_id in sorted(teams):
+        buckets = opponents[roster_id]
+
+        def average(values: list[int]) -> float | None:
+            return round(sum(values) / len(values), 3) if values else None
+
+        results.append(
+            {
+                **_team_for(teams, roster_id),
+                "full_schedule_average_opponent_rank": average(buckets["full"]),
+                "completed_average_opponent_rank": average(buckets["completed"]),
+                "remaining_average_opponent_rank": average(buckets["remaining"]),
+                "completed_games": len(buckets["completed"]),
+                "remaining_games": len(buckets["remaining"]),
+            }
+        )
+    for field, rank_field in (
+        ("full_schedule_average_opponent_rank", "full_schedule_difficulty_rank"),
+        ("remaining_average_opponent_rank", "remaining_schedule_difficulty_rank"),
+    ):
+        ordered = sorted(
+            (row for row in results if row[field] is not None),
+            key=lambda row: (row[field], row["team"].casefold()),
+        )
+        for rank, row in enumerate(ordered, start=1):
+            row[rank_field] = rank
+    return sorted(
+        results,
+        key=lambda row: (
+            row.get("remaining_schedule_difficulty_rank", 999),
+            row["team"].casefold(),
+        ),
+    )
+
+
+def _division_schedule_context(
+    schedule_weeks: dict[str, list[dict[str, Any]]],
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    rankings: dict[str, Any],
+    regular_season_end: int,
+    schedule_strength: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    league = snapshot.get("league") or {}
+    metadata = league.get("metadata") or {}
+    divisions = {
+        int(roster["roster_id"]): str((roster.get("settings") or {}).get("division"))
+        for roster in snapshot.get("rosters") or []
+        if (roster.get("settings") or {}).get("division") is not None
+    }
+    if not divisions:
+        return []
+
+    power_rows = (rankings.get("data_power_ranking") or {}).get("rows") or []
+    power_rank = {
+        int(row["roster_id"]): int(
+            row.get("dynasty_starter_strength_rank")
+            or row.get("optimal_starting_lineup_projection_rank")
+            or row.get("rank")
+            or 0
+        )
+        for row in power_rows
+    }
+    schedule_by_team = {
+        int(row["roster_id"]): row for row in schedule_strength
+    }
+    grouped: dict[str, dict[str, Any]] = defaultdict(
+        lambda: {
+            "team_ids": [],
+            "intra_division_games": 0,
+            "interdivision_games": 0,
+            "interdivision_wins": 0,
+            "interdivision_losses": 0,
+            "interdivision_ties": 0,
+            "interdivision_points": 0.0,
+            "interdivision_completed_games": 0,
+        }
+    )
+    for roster_id, division in divisions.items():
+        grouped[division]["team_ids"].append(roster_id)
+
+    reviewed_week = int(snapshot.get("week") or 0)
+    for raw_week, rows in schedule_weeks.items():
+        week = int(raw_week)
+        if week > regular_season_end:
+            continue
+        matchups: dict[Any, list[dict[str, Any]]] = defaultdict(list)
+        for row in rows:
+            matchups[row.get("matchup_id")].append(row)
+        for sides in matchups.values():
+            if len(sides) != 2:
+                continue
+            first, second = sides
+            first_id = int(first["roster_id"])
+            second_id = int(second["roster_id"])
+            first_division = divisions.get(first_id)
+            second_division = divisions.get(second_id)
+            if first_division is None or second_division is None:
+                continue
+            if first_division == second_division:
+                grouped[first_division]["intra_division_games"] += 1
+                continue
+            grouped[first_division]["interdivision_games"] += 1
+            grouped[second_division]["interdivision_games"] += 1
+            if week > reviewed_week:
+                continue
+            first_points = _number(first.get("points"))
+            second_points = _number(second.get("points"))
+            if first_points == second_points == 0:
+                continue
+            grouped[first_division]["interdivision_points"] += first_points
+            grouped[second_division]["interdivision_points"] += second_points
+            grouped[first_division]["interdivision_completed_games"] += 1
+            grouped[second_division]["interdivision_completed_games"] += 1
+            if first_points > second_points:
+                grouped[first_division]["interdivision_wins"] += 1
+                grouped[second_division]["interdivision_losses"] += 1
+            elif second_points > first_points:
+                grouped[second_division]["interdivision_wins"] += 1
+                grouped[first_division]["interdivision_losses"] += 1
+            else:
+                grouped[first_division]["interdivision_ties"] += 1
+                grouped[second_division]["interdivision_ties"] += 1
+
+    results = []
+    for division, values in grouped.items():
+        team_ids = values.pop("team_ids")
+        power_values = [power_rank[team_id] for team_id in team_ids if team_id in power_rank]
+        full_schedule = [
+            schedule_by_team[team_id]["full_schedule_average_opponent_rank"]
+            for team_id in team_ids
+            if team_id in schedule_by_team
+            and schedule_by_team[team_id]["full_schedule_average_opponent_rank"]
+            is not None
+        ]
+        remaining_schedule = [
+            schedule_by_team[team_id]["remaining_average_opponent_rank"]
+            for team_id in team_ids
+            if team_id in schedule_by_team
+            and schedule_by_team[team_id]["remaining_average_opponent_rank"]
+            is not None
+        ]
+        completed = values["interdivision_completed_games"]
+        results.append(
+            {
+                "division_id": division,
+                "division_name": str(
+                    metadata.get(f"division_{division}") or f"Division {division}"
+                ),
+                "teams": [_team_for(teams, team_id) for team_id in team_ids],
+                "average_current_power_rank": (
+                    round(sum(power_values) / len(power_values), 3)
+                    if power_values
+                    else None
+                ),
+                "full_schedule_average_opponent_rank": (
+                    round(sum(full_schedule) / len(full_schedule), 3)
+                    if full_schedule
+                    else None
+                ),
+                "remaining_average_opponent_rank": (
+                    round(sum(remaining_schedule) / len(remaining_schedule), 3)
+                    if remaining_schedule
+                    else None
+                ),
+                **values,
+                "interdivision_average_points": (
+                    round(values["interdivision_points"] / completed, 2)
+                    if completed
+                    else None
+                ),
+            }
+        )
+
+    for field, rank_field in (
+        ("average_current_power_rank", "division_strength_rank"),
+        ("full_schedule_average_opponent_rank", "full_schedule_difficulty_rank"),
+        (
+            "remaining_average_opponent_rank",
+            "remaining_schedule_difficulty_rank",
+        ),
+    ):
+        ordered = sorted(
+            (row for row in results if row[field] is not None),
+            key=lambda row: (row[field], row["division_name"].casefold()),
+        )
+        for rank, row in enumerate(ordered, start=1):
+            row[rank_field] = rank
+    return sorted(
+        results,
+        key=lambda row: (
+            row.get("division_strength_rank", 999),
+            row["division_name"].casefold(),
+        ),
+    )
+
+
+def _draft_archive(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    players = snapshot.get("players") or {}
+    records = (
+        (((snapshot.get("flagship_sleeper") or {}).get("drafts") or {}).get(
+            "records"
+        ))
+        or []
+    )
+    archive = []
+    for record in records:
+        draft = record.get("draft") or {}
+        picks = sorted(
+            record.get("picks") or [], key=lambda pick: int(pick.get("pick_no") or 0)
+        )
+        first_round = []
+        for pick in picks:
+            if int(pick.get("round") or 0) != 1:
+                continue
+            roster_id = int(pick.get("roster_id") or 0)
+            player_id = str(pick.get("player_id") or "")
+            metadata = pick.get("metadata") or {}
+            name = _player_name(player_id, players)
+            if name == player_id:
+                name = " ".join(
+                    value
+                    for value in (
+                        str(metadata.get("first_name") or "").strip(),
+                        str(metadata.get("last_name") or "").strip(),
+                    )
+                    if value
+                ) or player_id
+            first_round.append(
+                {
+                    "pick_no": pick.get("pick_no"),
+                    "round": pick.get("round"),
+                    "draft_slot": pick.get("draft_slot"),
+                    **_team_for(teams, roster_id),
+                    "player_id": player_id,
+                    "player": name,
+                    "position": metadata.get("position"),
+                    "nfl_team": metadata.get("team"),
+                }
+            )
+        archive.append(
+            {
+                "draft_id": draft.get("draft_id"),
+                "name": (draft.get("metadata") or {}).get("name"),
+                "season": draft.get("season"),
+                "type": draft.get("type"),
+                "status": draft.get("status"),
+                "rounds": (draft.get("settings") or {}).get("rounds"),
+                "pick_count": len(picks),
+                "first_round": first_round,
+                "traded_pick_count": len(record.get("traded_picks") or []),
+            }
+        )
+    return archive
+
+
+def _decoded_brackets(
+    context: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
+    source = context.get("playoff_brackets") or {}
+
+    def decode(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        decoded = []
+        for row in rows:
+            item = dict(row)
+            for field in ("t1", "t2", "w", "l"):
+                roster_id = row.get(field)
+                item[f"{field}_team"] = (
+                    _team_for(teams, int(roster_id))["team"]
+                    if roster_id is not None
+                    else None
+                )
+            decoded.append(item)
+        return decoded
+
+    return {
+        "status": source.get("status", "not_collected"),
+        "winners": decode(source.get("winners") or []),
+        "losers": decode(source.get("losers") or []),
+    }
+
+
+def _transaction_ledger(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> dict[str, Any]:
+    source = (snapshot.get("flagship_sleeper") or {}).get("transactions") or {}
+    transaction_weeks = source.get("weeks") or {}
+    raw_records: dict[str, dict[str, Any]] = {}
+    by_week = []
+    for raw_week, rows in sorted(
+        transaction_weeks.items(), key=lambda item: int(item[0])
+    ):
+        complete = [row for row in rows if row.get("status") == "complete"]
+        by_week.append({"week": int(raw_week), "completed": len(complete)})
+        for index, transaction in enumerate(complete):
+            key = str(
+                transaction.get("transaction_id")
+                or f"week-{raw_week}-transaction-{index}"
+            )
+            raw_records[key] = transaction
+    if not transaction_weeks:
+        for index, transaction in enumerate(snapshot.get("transactions") or []):
+            key = str(
+                transaction.get("transaction_id") or f"current-transaction-{index}"
+            )
+            raw_records[key] = transaction
+
+    records = _decoded_transactions(snapshot, teams, list(raw_records.values()))
+    collected = datetime.fromisoformat(
+        str(snapshot.get("collected_at") or "").replace("Z", "+00:00")
+    )
+    if collected.tzinfo is None:
+        collected = collected.replace(tzinfo=timezone.utc)
+    cutoff_ms = int((collected - timedelta(days=7)).timestamp() * 1000)
+    recent = [row for row in records if int(row.get("created") or 0) >= cutoff_ms]
+    return {
+        "status": source.get("status", "current_week_only"),
+        "weeks_collected": len(transaction_weeks),
+        "by_week": by_week,
+        "season_summary": {
+            "completed": len(records),
+            "trades": sum(row["type"] == "trade" for row in records),
+            "waivers": sum(row["type"] == "waiver" for row in records),
+            "free_agents": sum(row["type"] == "free_agent" for row in records),
+        },
+        "records": records,
+        "recent_window_days": 7,
+        "recent_records": recent,
+    }
+
+
+def _decoded_transactions(
+    snapshot: dict[str, Any],
+    teams: dict[int, dict[str, Any]],
+    transactions: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    players = snapshot.get("players") or {}
+    records = []
+    for transaction in transactions:
+        created = int(transaction.get("created") or 0)
+        if transaction.get("status") != "complete":
+            continue
+        adds = transaction.get("adds") or {}
+        drops = transaction.get("drops") or {}
+        player_moves = []
+        for player_id in sorted(set(adds) | set(drops)):
+            from_roster = int(drops[player_id]) if player_id in drops else None
+            to_roster = int(adds[player_id]) if player_id in adds else None
+            player_moves.append(
+                {
+                    "player_id": str(player_id),
+                    "player": _player_name(str(player_id), players),
+                    "from_team": (
+                        _team_for(teams, from_roster)["team"]
+                        if from_roster is not None
+                        else "Free agency"
+                    ),
+                    "to_team": (
+                        _team_for(teams, to_roster)["team"]
+                        if to_roster is not None
+                        else "Free agency"
+                    ),
+                }
+            )
+        records.append(
+            {
+                "transaction_id": transaction.get("transaction_id"),
+                "type": transaction.get("type"),
+                "created": created,
+                "occurred_at": (
+                    datetime.fromtimestamp(created / 1000, timezone.utc).isoformat()
+                    if created
+                    else None
+                ),
+                "teams": [
+                    _team_for(teams, int(roster_id))["team"]
+                    for roster_id in transaction.get("roster_ids") or []
+                ],
+                "player_moves": player_moves,
+                "draft_picks": [
+                    {
+                        "season": pick.get("season"),
+                        "round": pick.get("round"),
+                        "original_team": _team_for(
+                            teams, int(pick.get("roster_id") or 0)
+                        )["team"],
+                        "from_team": _team_for(
+                            teams, int(pick.get("previous_owner_id") or 0)
+                        )["team"],
+                        "to_team": _team_for(
+                            teams, int(pick.get("owner_id") or 0)
+                        )["team"],
+                    }
+                    for pick in transaction.get("draft_picks") or []
+                ],
+                "faab_bid": (transaction.get("settings") or {}).get("waiver_bid"),
+                "faab_traded": transaction.get("waiver_budget") or [],
+            }
+        )
+    return sorted(records, key=lambda row: row["created"], reverse=True)
+
+
+def _decoded_traded_picks(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "season": pick.get("season"),
+            "round": pick.get("round"),
+            "original_team": _team_for(
+                teams, int(pick.get("roster_id") or 0)
+            )["team"],
+            "previous_team": _team_for(
+                teams, int(pick.get("previous_owner_id") or 0)
+            )["team"],
+            "current_team": _team_for(
+                teams, int(pick.get("owner_id") or 0)
+            )["team"],
+        }
+        for pick in snapshot.get("traded_picks") or []
+    ]
+
+
+def _roster_availability(
+    snapshot: dict[str, Any], teams: dict[int, dict[str, Any]]
+) -> list[dict[str, Any]]:
+    players = snapshot.get("players") or {}
+    alerts = []
+    for roster in snapshot.get("rosters") or []:
+        roster_id = int(roster["roster_id"])
+        for player_id in roster.get("players") or []:
+            player = players.get(str(player_id)) or {}
+            status = str(player.get("status") or "")
+            injury = player.get("injury_status")
+            practice = player.get("practice_participation")
+            if not injury and not practice and status.casefold() in {"", "active"}:
+                continue
+            alerts.append(
+                {
+                    **_team_for(teams, roster_id),
+                    "player_id": str(player_id),
+                    "player": _player_name(str(player_id), players),
+                    "position": player.get("position"),
+                    "nfl_team": player.get("team"),
+                    "status": status or None,
+                    "injury_status": injury,
+                    "practice_participation": practice,
+                    "injury_start_date": player.get("injury_start_date"),
+                    "depth_chart_order": player.get("depth_chart_order"),
+                }
+            )
+    return sorted(alerts, key=lambda row: (row["team"].casefold(), row["player"]))
+
+
+def _team_for(
+    teams: dict[int, dict[str, Any]], roster_id: int
+) -> dict[str, Any]:
+    return teams.get(
+        roster_id,
+        {
+            "roster_id": roster_id,
+            "team": f"Roster {roster_id}",
+            "owner": f"Roster {roster_id}",
+        },
+    )
 
 
 def _transaction_summary(transactions: list[dict[str, Any]]) -> dict[str, Any]:

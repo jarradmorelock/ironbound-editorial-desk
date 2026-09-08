@@ -45,6 +45,21 @@ settings. Dynasty Daddy supplies current-season starter ranks and dynasty
 market values. If either optional source is unavailable, collection continues
 and the dossier clearly marks the missing input.
 
+Ironbound Weekly and Unbound Weekly receive an additional flagship Sleeper
+sourcebook. For those two magazines only, each run collects all 18 schedule
+weeks and transaction rounds, every current-league draft and draft-pick record,
+the winner and consolation brackets, the future-pick ledger, next-week
+projections, and expanded player availability and depth-chart fields. The
+human-readable email attachment turns those sources into:
+
+- starter-by-starter box-score and projection evidence;
+- team and division strength-of-schedule comparisons;
+- current-season team, player, and positional record watches;
+- a decoded seven-day activity report plus the season trade file;
+- draft first-round archives and playoff bracket history;
+- next-week matchup projections; and
+- injury, practice, and roster-availability flags.
+
 - Dynasty leagues use the Ironbound/Unbound editorial model: starter strength
   and projected scoring lead, with dynasty value, playoff and title
   probabilities, roster balance, schedule context, and future-pick value kept
@@ -55,8 +70,9 @@ and the dossier clearly marks the missing input.
 
 The source primers and publications have been audited into
 `config/publications.json`; see `docs/source-audit.md` for the resulting brand
-and editorial map. Historical record books, multi-week strength-of-schedule
-analysis, Giant Killer, and persistent editorial memory are the next data
+and editorial map. Cross-season and all-time records, Giant Killer based on
+prior published expectations, trade-afterlife trees, and persistent editorial
+memory still require a finalized-publication archive and are the next data
 layer.
 
 ## Local dry run

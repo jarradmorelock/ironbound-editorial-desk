@@ -1,4 +1,5 @@
 from editorial_desk.metrics import build_weekly_dossier, optimal_lineup
+from editorial_desk.render import render_markdown
 
 
 PLAYERS = {
@@ -149,3 +150,98 @@ def test_redraft_power_ranking_uses_only_requested_three_inputs():
         "lineup efficiency",
     ]
     assert dossier["rankings"]["official_standings_status"] == "active"
+
+
+def test_flagship_supplement_exposes_magazine_level_sleeper_evidence():
+    flagship = snapshot()
+    flagship["editorial"].update(
+        {
+            "tier": "flagship",
+            "league_format": "dynasty",
+            "ranking_model": "ironbound_dynasty",
+        }
+    )
+    flagship["league"]["settings"]["playoff_week_start"] = 15
+    flagship["transactions"][0].update(
+        {
+            "created": 1789500000000,
+            "roster_ids": [2],
+            "drops": {},
+        }
+    )
+    week_two = [
+        {"matchup_id": 1, "roster_id": 1, "points": 0},
+        {"matchup_id": 1, "roster_id": 3, "points": 0},
+        {"matchup_id": 2, "roster_id": 2, "points": 0},
+        {"matchup_id": 2, "roster_id": 4, "points": 0},
+    ]
+    flagship["traded_picks"] = [
+        {
+            "season": "2027",
+            "round": 1,
+            "roster_id": 1,
+            "previous_owner_id": 1,
+            "owner_id": 2,
+        }
+    ]
+    flagship["flagship_sleeper"] = {
+        "schedule": {
+            "status": "available",
+            "weeks": {"1": flagship["matchups"], "2": week_two},
+        },
+        "transactions": {
+            "status": "available",
+            "weeks": {"1": flagship["transactions"], "2": []},
+        },
+        "drafts": {
+            "status": "available",
+            "records": [
+                {
+                    "draft": {
+                        "draft_id": "d1",
+                        "season": "2026",
+                        "type": "rookie",
+                        "status": "complete",
+                        "settings": {"rounds": 4},
+                    },
+                    "picks": [
+                        {
+                            "pick_no": 1,
+                            "round": 1,
+                            "draft_slot": 1,
+                            "roster_id": 1,
+                            "player_id": "qb1",
+                            "metadata": {"position": "QB"},
+                        }
+                    ],
+                    "traded_picks": [],
+                }
+            ],
+        },
+        "playoff_brackets": {
+            "status": "available",
+            "winners": [{"r": 1, "m": 1, "t1": 1, "t2": 2, "w": 2}],
+            "losers": [],
+        },
+        "next_week_projections": {
+            "status": "available",
+            "week": 2,
+            "players": flagship["ranking_inputs"]["sleeper_projections"]["players"],
+        },
+    }
+
+    dossier = build_weekly_dossier(flagship)
+    supplement = dossier["flagship_supplement"]
+    assert supplement["schedule"]["weeks_collected"] == 2
+    assert supplement["schedule"]["division_context"][0]["division_strength_rank"]
+    assert supplement["season_records"]["highest_team_score"]["team"] == "Two"
+    assert supplement["transaction_ledger"]["season_summary"]["waivers"] == 1
+    assert supplement["draft_archive"][0]["first_round"][0]["player"] == "Quarterback One"
+    assert supplement["traded_pick_ledger"][0]["current_team"] == "Two"
+
+    markdown = render_markdown(dossier)
+    assert "## Flagship Sleeper Sourcebook" in markdown
+    assert "### Schedule and Division Desk" in markdown
+    assert "### Season Record Book" in markdown
+    assert "### League Activity Ledger" in markdown
+    assert "### Draft Archive" in markdown

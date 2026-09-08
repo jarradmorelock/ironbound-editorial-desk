@@ -30,6 +30,17 @@ result, waiver impact, additions and drops, trades, weekly records, and the next
 slate. All-play belongs as supporting evidence for Bad Beat, Escape Artist, and
 schedule analysis rather than as a freestanding department.
 
+Every packet should preserve the NFL day attached to submitted fantasy
+starters. The Ironbound and Unbound versions prominently feature a Thursday
+Game Swing (expanded to any unusual pre-Sunday window) and a Monday Night
+Finish. The former compares fantasy output with projection and tests whether
+the early scoring edge supplied the eventual winning margin. The latter
+reconstructs the pre-Monday score, identifies a lead change or tiebreak, and
+links late fourth-quarter or overtime NFL plays to the involved fantasy
+starters. Newspaper editions receive a shorter version of the same evidence.
+Sleeper remains authoritative for fantasy points; nflverse supplies NFL dates,
+box-score statistics, and play chronology.
+
 The weekly dossier may carry a verified MVP Card Result. The separate MVP-card
 automation remains responsible for selecting a template and producing the card.
 

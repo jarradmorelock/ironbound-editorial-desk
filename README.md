@@ -10,6 +10,8 @@ is opt-in and uses repository secrets.
 ## Safety boundaries
 
 - Sleeper is accessed through its public read-only API.
+- NFL game dates, weekly box scores, and late-play context come from the public
+  read-only [nflverse data releases](https://github.com/nflverse/nflverse-data).
 - The existing transaction and Discord reporters are not imported or changed.
 - The GitHub workflow is manual-only; there is no scheduled trigger.
 - Generated dry-run output is ignored by Git and uploaded only as a temporary
@@ -34,10 +36,14 @@ The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
 bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping
 start/sit decisions, waiver-impact candidates, weekly records, and named
-division performance. Every dossier also separates official standings from a
-transparent data power ranking. The eventual publication archive will add the
-prior issue's editorial ranking and week-to-week movement without treating the
-formula as the final editorial opinion.
+division performance. Every publication also receives an NFL game-day timeline
+that identifies Thursday positive and negative projection swings, Thursday
+scoring edges that ultimately supplied the winning margin, Monday lead changes,
+the closest finishes involving Monday starters, and noteworthy late NFL plays
+linked to fantasy starters. Every dossier also separates official standings
+from a transparent data power ranking. The eventual publication archive will
+add the prior issue's editorial ranking and week-to-week movement without
+treating the formula as the final editorial opinion.
 
 Ranking inputs are fetched once per run and then trimmed to the players in each
 league. Sleeper supplies weekly projections scored against that league's own
@@ -59,6 +65,13 @@ human-readable email attachment turns those sources into:
 - draft first-round archives and playoff bracket history;
 - next-week matchup projections; and
 - injury, practice, and roster-availability flags.
+
+The flagship versions retain a larger candidate list and a calendar of all
+Wednesday, Thursday, Friday, Saturday, and Monday starters. Newspaper packets
+receive a shorter version of the same timing evidence. Sleeper remains
+authoritative for the fantasy points; nflverse supplies the NFL weekday, game,
+real-life stat line, and late-play description. A missing optional nflverse
+file does not stop the rest of the weekly collection.
 
 - Dynasty leagues use the Ironbound/Unbound editorial model: starter strength
   and projected scoring lead, with dynasty value, playoff and title

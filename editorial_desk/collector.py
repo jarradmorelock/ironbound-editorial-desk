@@ -9,6 +9,7 @@ import requests
 
 from .config import LeagueConfig, PublicationConfig
 from .metrics import build_weekly_dossier
+from .nflverse import NFLVerseClient
 from .rankings import RankingsClient
 from .render import render_markdown
 from .sleeper import SleeperClient
@@ -21,6 +22,7 @@ def collect_all(
     client: SleeperClient | None = None,
     publications: dict[str, PublicationConfig] | None = None,
     rankings_client: RankingsClient | None = None,
+    nflverse_client: NFLVerseClient | None = None,
 ) -> list[Path]:
     client = client or SleeperClient()
     rankings_client = rankings_client or RankingsClient()
@@ -33,6 +35,9 @@ def collect_all(
         season,
         week,
     )
+    nfl_context = _collect_nfl_week_context(
+        nflverse_client or NFLVerseClient(), season, week
+    )
     generated: list[Path] = []
 
     for league_config in leagues:
@@ -44,6 +49,7 @@ def collect_all(
             client,
             (publications or {}).get(league_config.publication_profile),
             ranking_sources,
+            nfl_context,
         )
         directory = output_root / season / f"week-{week:02d}" / league_config.key
         directory.mkdir(parents=True, exist_ok=True)
@@ -73,6 +79,7 @@ def collect_league(
     client: SleeperClient,
     publication: PublicationConfig | None = None,
     ranking_sources: dict[str, Any] | None = None,
+    nfl_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     league = client.league(config.sleeper_league_id)
     users = client.users(config.sleeper_league_id)
@@ -179,6 +186,7 @@ def collect_league(
             ranking_sources or {},
             rostered_ids,
         ),
+        "nfl_context": _trim_nfl_context(nfl_context or {}, players),
         "flagship_sleeper": flagship_context,
     }
 
@@ -320,6 +328,67 @@ def _optional_list(fetcher: Any, *args: Any) -> dict[str, Any]:
         return {"status": "unavailable", "records": [], "error": str(exc)}
 
 
+def _collect_nfl_week_context(
+    client: NFLVerseClient, season: str, week: int
+) -> dict[str, Any]:
+    sources = {}
+    for name, fetcher in (
+        ("schedule", client.schedule),
+        ("player_stats", client.player_stats),
+        ("noteworthy_late_plays", client.noteworthy_late_plays),
+    ):
+        try:
+            records = fetcher(season, week)
+            if not isinstance(records, list):
+                raise ValueError("NFL context response was not a list")
+            sources[name] = {"status": "available", "records": records}
+        except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+            sources[name] = {
+                "status": "unavailable",
+                "records": [],
+                "error": str(exc),
+            }
+    return {
+        "provider": "nflverse",
+        "season": season,
+        "week": week,
+        **sources,
+    }
+
+
+def _trim_nfl_context(
+    context: dict[str, Any], players: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    gsis_ids = {
+        str(player["gsis_id"])
+        for player in players.values()
+        if player.get("gsis_id")
+    }
+    result = {
+        key: value
+        for key, value in context.items()
+        if key not in {"schedule", "player_stats", "noteworthy_late_plays"}
+    }
+    result["schedule"] = dict(context.get("schedule") or {})
+    stats = dict(context.get("player_stats") or {})
+    stats["records"] = [
+        row
+        for row in stats.get("records") or []
+        if str(row.get("player_id") or "") in gsis_ids
+    ]
+    result["player_stats"] = stats
+    plays = dict(context.get("noteworthy_late_plays") or {})
+    plays["records"] = [
+        row
+        for row in plays.get("records") or []
+        if gsis_ids.intersection(
+            str(player_id) for player_id in row.get("player_ids") or []
+        )
+    ]
+    result["noteworthy_late_plays"] = plays
+    return result
+
+
 def _collect_ranking_sources(
     rankings_client: RankingsClient,
     sleeper_client: SleeperClient,
@@ -412,6 +481,7 @@ def _trim_player(
         "team",
         "status",
         "injury_status",
+        "gsis_id",
     ]
     if include_editorial_context:
         fields.extend(

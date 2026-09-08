@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 from editorial_desk.metrics import build_weekly_dossier, optimal_lineup
 from editorial_desk.render import render_markdown
 
@@ -245,3 +247,95 @@ def test_flagship_supplement_exposes_magazine_level_sleeper_evidence():
     assert "### Season Record Book" in markdown
     assert "### League Activity Ledger" in markdown
     assert "### Draft Archive" in markdown
+
+
+def test_thursday_and_monday_swings_use_nfl_game_timing_and_late_plays():
+    timed = deepcopy(snapshot())
+    timed["players"]["qb1"].update({"team": "BUF", "gsis_id": "g1"})
+    timed["players"]["qb2"].update({"team": "KC", "gsis_id": "g2"})
+    timed["ranking_inputs"]["sleeper_projections"]["players"]["qb1"] = {
+        "proj": 15
+    }
+    timed["nfl_context"] = {
+        "provider": "nflverse",
+        "schedule": {
+            "status": "available",
+            "records": [
+                {
+                    "game_id": "2026_01_MIA_BUF",
+                    "weekday": "Thursday",
+                    "gameday": "2026-09-10",
+                    "gametime": "20:20",
+                    "away_team": "MIA",
+                    "home_team": "BUF",
+                    "away_score": 20,
+                    "home_score": 27,
+                },
+                {
+                    "game_id": "2026_01_LV_KC",
+                    "weekday": "Monday",
+                    "gameday": "2026-09-14",
+                    "gametime": "20:15",
+                    "away_team": "LV",
+                    "home_team": "KC",
+                    "away_score": 24,
+                    "home_score": 30,
+                },
+            ],
+        },
+        "player_stats": {
+            "status": "available",
+            "records": [
+                {
+                    "player_id": "g1",
+                    "game_id": "2026_01_MIA_BUF",
+                    "completions": 20,
+                    "attempts": 30,
+                    "passing_yards": 250,
+                    "passing_tds": 2,
+                },
+                {
+                    "player_id": "g2",
+                    "game_id": "2026_01_LV_KC",
+                    "completions": 25,
+                    "attempts": 35,
+                    "passing_yards": 310,
+                    "passing_tds": 3,
+                },
+            ],
+        },
+        "noteworthy_late_plays": {
+            "status": "available",
+            "records": [
+                {
+                    "play_id": "99",
+                    "game_id": "2026_01_LV_KC",
+                    "quarter": 4,
+                    "clock": "00:08",
+                    "game_seconds_remaining": 8,
+                    "description": "A 70-yard touchdown ends the game.",
+                    "touchdown": True,
+                    "walkoff_candidate": True,
+                    "player_ids": ["g2"],
+                }
+            ],
+        },
+    }
+
+    dossier = build_weekly_dossier(timed)
+    timing = dossier["game_timing"]
+    assert timing["thursday"]["margin_suppliers"][0]["final_winner"] == "Three"
+    assert timing["thursday"]["positive_performances"][0]["player"] == "Quarterback One"
+    assert timing["monday"]["lead_changes"][0]["final_winner"] == "Two"
+    assert timing["monday"]["late_play_candidates"][0]["walkoff_candidate"] is True
+    assert timing["monday"]["late_play_candidates"][0][
+        "linked_fantasy_starters"
+    ][0]["player"] == "Quarterback Two"
+    assert timing["monday"]["late_play_candidates"][0][
+        "smallest_linked_final_margin"
+    ] == 5
+
+    markdown = render_markdown(dossier)
+    assert "### Thursday Game Swing" in markdown
+    assert "### Monday Night Finish" in markdown
+    assert "70-yard touchdown" in markdown

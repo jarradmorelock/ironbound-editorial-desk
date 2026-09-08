@@ -24,6 +24,17 @@ class EmptyRankingsClient:
         return []
 
 
+class EmptyNFLVerseClient:
+    def schedule(self, season, week):
+        return []
+
+    def player_stats(self, season, week):
+        return []
+
+    def noteworthy_late_plays(self, season, week):
+        return []
+
+
 class EmptySleeperClient:
     def nfl_state(self):
         return {"season": "2026"}
@@ -172,6 +183,7 @@ def test_data_only_league_generates_analysis_but_no_publication_dossier(tmp_path
         tmp_path,
         client=EmptySleeperClient(),
         rankings_client=EmptyRankingsClient(),
+        nflverse_client=EmptyNFLVerseClient(),
     )
 
     assert {path.name for path in generated} == {"snapshot.json", "analysis.json"}

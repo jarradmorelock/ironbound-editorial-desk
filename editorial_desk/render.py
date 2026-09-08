@@ -23,6 +23,14 @@ def render_markdown(dossier: dict[str, Any]) -> str:
             f"{sides[1]['team']} {sides[1]['points']:.2f}"
         )
 
+    game_timing = dossier.get("game_timing") or {}
+    if (game_timing.get("source_status") or {}).get("schedule") != "not_collected":
+        _render_game_timing(
+            lines,
+            game_timing,
+            flagship=(league.get("tier") == "flagship"),
+        )
+
     lines.extend(["", "## Lineup Efficiency", ""])
     for row in dossier.get("lineup_efficiency") or []:
         lines.append(
@@ -347,6 +355,160 @@ def _render_flagship_sourcebook(
         )
 
 
+def _render_game_timing(
+    lines: list[str], timing: dict[str, Any], flagship: bool
+) -> None:
+    statuses = timing.get("source_status") or {}
+    starter_days = timing.get("starter_game_days") or []
+    day_order = {
+        "Thursday": 0,
+        "Friday": 1,
+        "Saturday": 2,
+        "Sunday": 3,
+        "Monday": 4,
+        "Tuesday": 5,
+        "Wednesday": 6,
+    }
+    calendar: dict[str, list[dict[str, Any]]] = {}
+    for player in starter_days:
+        day = str(player.get("weekday") or "Schedule unavailable")
+        calendar.setdefault(day, []).append(player)
+
+    lines.extend(["", "## NFL Game-Day Timeline", ""])
+    lines.append(
+        "- Fantasy lineups and points: Sleeper; NFL schedule, box-score, and "
+        "late-play context: [nflverse](https://github.com/nflverse/nflverse-data)."
+    )
+    lines.append(
+        "- Source coverage: "
+        + "; ".join(
+            f"{name.replace('_', ' ')} {status}"
+            for name, status in statuses.items()
+        )
+    )
+    if calendar:
+        lines.append(
+            "- Submitted starters by NFL game day: "
+            + "; ".join(
+                f"{day} {len(players)}"
+                for day, players in sorted(
+                    calendar.items(),
+                    key=lambda item: (day_order.get(item[0], 99), item[0]),
+                )
+            )
+        )
+    if flagship:
+        for day, players in sorted(
+            (
+                (day, players)
+                for day, players in calendar.items()
+                if day not in {"Sunday", "Schedule unavailable"}
+            ),
+            key=lambda item: (day_order.get(item[0], 99), item[0]),
+        ):
+            lines.append(
+                f"  - {day}: "
+                + ", ".join(
+                    f"{row['player']} ({row['team']})" for row in players
+                )
+            )
+
+    thursday = timing.get("early_week") or timing.get("thursday") or {}
+    lines.extend(["", "### Thursday Game Swing", ""])
+    lines.append(
+        "- This desk includes any Wednesday, Friday, or Saturday game played "
+        "before the main Sunday slate and preserves each player's exact game day."
+    )
+    margin_suppliers = thursday.get("margin_suppliers") or []
+    if margin_suppliers:
+        for matchup in margin_suppliers:
+            lines.append(
+                f"- Margin supplied before Sunday: {matchup['final_winner']} defeated "
+                f"{matchup['final_loser']} by {matchup['final_margin']:.2f}; its "
+                f"early-week scoring edge was {matchup['day_edge_for_winner']:.2f}."
+            )
+            lines.append(f"  - Early-week starters: {_matchup_day_players(matchup)}")
+    elif thursday.get("matchups"):
+        lines.append(
+            "- No completed matchup had its entire final margin supplied by its "
+            "early-week scoring edge."
+        )
+    else:
+        lines.append("- No submitted fantasy starters played before Sunday.")
+
+    positive_limit = 8 if flagship else 2
+    negative_limit = 8 if flagship else 2
+    positives = (thursday.get("positive_performances") or [])[:positive_limit]
+    negatives = (thursday.get("negative_performances") or [])[:negative_limit]
+    if positives:
+        lines.append("- Positive Thursday/early-week swings:")
+        for player in positives:
+            lines.append(f"  - {_timing_performance_line(player)}")
+    if negatives:
+        lines.append("- Negative Thursday/early-week swings:")
+        for player in negatives:
+            lines.append(f"  - {_timing_performance_line(player)}")
+    if thursday.get("matchups") and not positives and not negatives:
+        lines.append("- Early-week performance comparisons are awaiting final stats.")
+
+    monday = timing.get("monday") or {}
+    lines.extend(["", "### Monday Night Finish", ""])
+    lead_changes = monday.get("lead_changes") or []
+    tie_breakers = monday.get("tie_breakers") or []
+    if lead_changes:
+        for matchup in lead_changes:
+            lines.append(
+                f"- Monday comeback: {matchup['final_winner']} trailed "
+                f"{matchup['winner_score_before_day']:.2f}-"
+                f"{matchup['loser_score_before_day']:.2f} before Monday scoring, "
+                f"then won by {matchup['final_margin']:.2f}."
+            )
+            lines.append(f"  - Monday starters: {_matchup_day_players(matchup)}")
+    if tie_breakers:
+        for matchup in tie_breakers:
+            lines.append(
+                f"- Monday tiebreak: {matchup['final_winner']} and "
+                f"{matchup['final_loser']} were level at "
+                f"{matchup['winner_score_before_day']:.2f} before Monday scoring; "
+                f"the final margin was {matchup['final_margin']:.2f}."
+            )
+            lines.append(f"  - Monday starters: {_matchup_day_players(matchup)}")
+    close_finishes = (monday.get("active_close_finishes") or [])[:3]
+    if not lead_changes and not tie_breakers and close_finishes:
+        lines.append("- Closest matchups with Monday starters active:")
+        for matchup in close_finishes:
+            lines.append(
+                f"  - {matchup['final_winner']} over {matchup['final_loser']} "
+                f"by {matchup['final_margin']:.2f}; "
+                f"{_matchup_day_players(matchup)}"
+            )
+    if not monday.get("matchups"):
+        lines.append("- No submitted fantasy starters played Monday.")
+    elif not lead_changes and not tie_breakers and not close_finishes:
+        lines.append("- Monday finish analysis is awaiting final fantasy scores.")
+
+    late_limit = 10 if flagship else 2
+    late_plays = (monday.get("late_play_candidates") or [])[:late_limit]
+    if late_plays:
+        lines.append("- Late real-life plays involving fantasy starters:")
+        for play in late_plays:
+            linked = ", ".join(
+                f"{row['player']} ({row['team']})"
+                for row in play.get("linked_fantasy_starters") or []
+            )
+            walkoff = "walk-off candidate; " if play.get("walkoff_candidate") else ""
+            margin = play.get("smallest_linked_final_margin")
+            margin_note = (
+                f"; smallest linked fantasy margin {margin:.2f}"
+                if margin is not None
+                else ""
+            )
+            lines.append(
+                f"  - {walkoff}Q{play.get('quarter')} {play.get('clock')}: "
+                f"{play.get('description')} — linked starters: {linked}{margin_note}"
+            )
+
+
 def _short(value: dict[str, Any] | None) -> str:
     if not value:
         return "No qualifying candidate"
@@ -399,3 +561,41 @@ def _week_record_line(value: dict[str, Any] | None) -> str:
         return "No qualifying record"
     subject = value.get("player") or value.get("team") or "Record"
     return f"{subject}, {value.get('points', 0):.2f} points in Week {value.get('week')}"
+
+
+def _timing_performance_line(player: dict[str, Any]) -> str:
+    projection = player.get("projected_points")
+    difference = player.get("projection_difference")
+    comparison = ""
+    if projection is not None:
+        comparison = f" vs. {projection:.2f} projected"
+    if difference is not None:
+        comparison += f" ({difference:+.2f})"
+    opponent = f" vs. {player['opponent']}" if player.get("opponent") else ""
+    stat_line = player.get("nfl_stat_line") or "NFL box score unavailable"
+    day = f"{player['weekday']} — " if player.get("weekday") else ""
+    return (
+        f"{day}{player['player']} for {player['team']}: "
+        f"{player['fantasy_points']:.2f} fantasy points{comparison}; "
+        f"{player.get('nfl_team') or 'NFL team unavailable'}{opponent} — {stat_line}"
+    )
+
+
+def _matchup_day_players(matchup: dict[str, Any]) -> str:
+    players = [
+        _timing_performance_line(player)
+        for team in matchup.get("teams") or []
+        for player in team.get("players") or []
+    ]
+    return "; ".join(players) if players else "No linked starters"
+
+
+def _timing_performance_line(player: dict[str, Any]) -> str:
+    difference = player.get("projection_difference")
+    difference_text = f"{difference:+.2f} vs. projection" if difference is not None else ""
+    nfl_line = player.get("nfl_stat_line") or "NFL box-score detail unavailable"
+    return (
+        f"{player['player']} for {player['team']}: "
+        f"{player['fantasy_points']:.2f} fantasy points "
+        f"({difference_text}); {nfl_line}"
+    )

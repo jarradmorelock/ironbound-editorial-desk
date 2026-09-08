@@ -4,6 +4,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
+from .timing import build_game_timing
+
 
 NON_STARTER_SLOTS = {"BN", "IR", "RESERVE", "TAXI"}
 FLEX_ELIGIBILITY = {
@@ -31,6 +33,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
     lineup = _lineup_efficiency(snapshot, teams)
     rankings = _rankings(snapshot, teams)
+    game_timing = build_game_timing(snapshot, teams, scoreboard)
     winners = [row["winner"] for row in scoreboard if row.get("winner")]
     losers = [row["loser"] for row in scoreboard if row.get("loser")]
 
@@ -89,6 +92,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
         "league_median": league_median,
         "lineup_efficiency": lineup,
         "rankings": rankings,
+        "game_timing": game_timing,
         "awards": {
             "mvp_card_result": weekly_mvp,
             "manager_of_the_week": manager_of_week,

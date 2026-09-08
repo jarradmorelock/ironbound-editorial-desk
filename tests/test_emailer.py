@@ -2,7 +2,12 @@ import json
 
 import pytest
 
-from editorial_desk.emailer import EmailDeliveryError, build_dossier_email
+from editorial_desk.emailer import (
+    EmailDeliveryError,
+    build_dossier_email,
+    build_supplement_email,
+    send_supplement_email,
+)
 
 
 def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
@@ -51,3 +56,49 @@ def test_build_dossier_email_requires_publication_packets(tmp_path):
             "desk@example.com",
             "reader@example.com",
         )
+
+
+def test_build_supplement_email_identifies_delta_only_delivery(tmp_path):
+    publication_root = tmp_path / "2026" / "week-01" / "unbound"
+    publication_root.mkdir(parents=True)
+    (publication_root / "supplement.md").write_text(
+        "# Newly captured material\n", encoding="utf-8"
+    )
+    (publication_root / "supplement.json").write_text(
+        json.dumps(
+            {
+                "season": "2026",
+                "league": {
+                    "league_key": "unbound",
+                    "configured_name": "Free Ironbound Sixteen",
+                    "publication": "Unbound Weekly",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    message = build_supplement_email(
+        tmp_path, 1, "desk@example.com", "reader@example.com"
+    )
+
+    assert message["Subject"] == (
+        "Ironbound Editorial Desk — 2026 Week 1 supplemental updates"
+    )
+    assert "Only the new material is attached" in message.get_body().get_content()
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "unbound-week-01-supplement.md"
+
+
+def test_supplement_delivery_sends_nothing_without_updates(tmp_path):
+    assert (
+        send_supplement_email(
+            tmp_path,
+            1,
+            "desk@example.com",
+            "unused-password",
+            "reader@example.com",
+        )
+        == 0
+    )

@@ -13,9 +13,10 @@ is opt-in and uses repository secrets.
 - NFL game dates, weekly box scores, and late-play context come from the public
   read-only [nflverse data releases](https://github.com/nflverse/nflverse-data).
 - The existing transaction and Discord reporters are not imported or changed.
-- The GitHub workflow is manual-only; there is no scheduled trigger.
-- Generated dry-run output is ignored by Git and uploaded only as a temporary
-  workflow artifact.
+- GitHub runs the complete collection Tuesday at 9:17 p.m. Eastern and a
+  delta-only safety check Wednesday at 5:17 a.m. Eastern.
+- Generated output is ignored by Git. Complete and supplemental packets are
+  uploaded only as temporary workflow artifacts.
 - Gmail credentials are read only from GitHub Actions secrets and are never
   committed to the repository.
 
@@ -103,9 +104,29 @@ All eight current league IDs are enabled for collection in the example
 configuration. Seven feed publications; Don't Tell My Wife I'm In This remains
 data-only. No credential is required to read public Sleeper league data.
 
-## GitHub dry run
+## GitHub weekly delivery
 
-Open **Actions -> Editorial desk dry run -> Run workflow**. Validation is the
+The scheduled workflow automatically identifies the most recently completed
+regular-season NFL week. It does not assume that Sleeper's current week is the
+week that just ended, and it will not send anything before every NFL game in
+the reviewed week has a final score.
+
+At 9:17 p.m. Eastern every Tuesday, GitHub collects and emails the full set of
+publication dossiers. It saves that exact collection as the comparison
+baseline. At 5:17 a.m. Eastern every Wednesday, GitHub collects again and
+compares the result with the saved Tuesday packet. The Wednesday email contains
+only newly available source data, score corrections, newly calculable features,
+and new NFL game-day evidence. If nothing new is found, no second email is sent.
+If the Tuesday baseline cannot be restored, the backup refuses to send a full
+duplicate packet.
+
+The slight offset from the top of the hour reduces the chance of a GitHub
+Actions scheduling delay. Both schedules use the `America/New_York` timezone,
+so they remain 9:17 p.m. and 5:17 a.m. across daylight-saving changes.
+
+## Manual GitHub run
+
+Open **Actions -> Editorial desk weekly delivery -> Run workflow**. Validation is the
 default. Select **collect**, enter the week, and enable **send_email** to deliver
 one email containing the seven publication Markdown dossiers. The data-only
 league remains excluded from the email.

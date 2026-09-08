@@ -1,4 +1,4 @@
-name: Editorial desk dry run
+name: Editorial desk weekly delivery
 
 on:
   workflow_dispatch:
@@ -20,12 +20,17 @@ on:
         required: true
         default: false
         type: boolean
+  schedule:
+    - cron: "17 21 * * 2"
+      timezone: "America/New_York"
+    - cron: "17 5 * * 3"
+      timezone: "America/New_York"
 
 permissions:
   contents: read
 
 jobs:
-  dry-run:
+  weekly-delivery:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -46,33 +51,115 @@ jobs:
       - name: Prepare safe example configuration
         run: cp config/leagues.example.json config/leagues.json
 
+      - name: Determine this run's job and completed week
+        id: plan
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "active=true" >> "$GITHUB_OUTPUT"
+            echo "season=manual" >> "$GITHUB_OUTPUT"
+            echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
+            if [[ "${{ inputs.mode }}" == "validate" ]]; then
+              echo "job=validate" >> "$GITHUB_OUTPUT"
+            else
+              echo "job=manual" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            if [[ "${{ github.event.schedule }}" == "17 21 * * 2" ]]; then
+              echo "job=primary" >> "$GITHUB_OUTPUT"
+            else
+              echo "job=backup" >> "$GITHUB_OUTPUT"
+            fi
+            python -m editorial_desk completed-period >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Explain a scheduled no-op
+        if: ${{ steps.plan.outputs.active != 'true' }}
+        run: echo "${{ steps.plan.outputs.reason }}; no packet will be sent."
+
       - name: Validate configuration
-        if: ${{ inputs.mode == 'validate' }}
+        if: ${{ steps.plan.outputs.job == 'validate' }}
         run: python -m editorial_desk validate-config --config config/leagues.json
 
-      - name: Collect read-only weekly dossiers
-        if: ${{ inputs.mode == 'collect' }}
+      - name: Restore Tuesday packet for Wednesday comparison
+        id: baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: output/primary
+          key: editorial-baseline-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+          fail-on-cache-miss: false
+
+      - name: Collect complete weekly dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'manual') }}
         run: >-
           python -m editorial_desk collect
           --config config/leagues.json
-          --week ${{ inputs.week }}
-          --output-dir output/dry-run
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir output/primary
 
-      - name: Upload research dossiers
-        if: ${{ inputs.mode == 'collect' }}
+      - name: Collect Wednesday comparison
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        run: >-
+          python -m editorial_desk collect
+          --config config/leagues.json
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir output/backup
+
+      - name: Build delta-only Wednesday supplements
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        run: >-
+          python -m editorial_desk supplement
+          --baseline-dir output/primary
+          --current-dir output/backup
+          --output-dir output/supplements
+          --week ${{ steps.plan.outputs.week }}
+
+      - name: Explain a missing Tuesday baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit != 'true' }}
+        run: echo "Tuesday baseline is unavailable; refusing to send a duplicate full packet."
+
+      - name: Upload complete research dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'manual') }}
         uses: actions/upload-artifact@v7
         with:
-          name: editorial-desk-week-${{ inputs.week }}
-          path: output/dry-run/
+          name: editorial-desk-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+          path: output/primary/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Email publication dossiers
-        if: ${{ inputs.mode == 'collect' && inputs.send_email }}
+      - name: Upload Wednesday supplemental research
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: editorial-desk-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}-supplements
+          path: output/supplements/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Email complete publication dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || (steps.plan.outputs.job == 'manual' && inputs.send_email)) }}
         env:
           IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
           IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
         run: >-
           python -m editorial_desk email
-          --week ${{ inputs.week }}
-          --output-dir output/dry-run
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir output/primary
+
+      - name: Save Tuesday packet as Wednesday baseline
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        uses: actions/cache/save@v4
+        with:
+          path: output/primary
+          key: editorial-baseline-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+
+      - name: Email only newly captured Wednesday material
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: >-
+          python -m editorial_desk email-supplement
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir output/supplements

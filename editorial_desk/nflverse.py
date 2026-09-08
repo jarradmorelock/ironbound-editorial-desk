@@ -35,6 +35,11 @@ class NFLVerseClient:
         self.timeout_seconds = timeout_seconds
 
     def schedule(self, season: str, week: int) -> list[dict[str, Any]]:
+        return [
+            row for row in self.season_schedule(season) if row["week"] == week
+        ]
+
+    def season_schedule(self, season: str) -> list[dict[str, Any]]:
         rows = self._csv_rows(SCHEDULE_URL, compressed=True)
         return [
             {
@@ -53,7 +58,6 @@ class NFLVerseClient:
             }
             for row in rows
             if row.get("season") == str(season)
-            and row.get("week") == str(week)
             and row.get("game_type") == "REG"
         ]
 

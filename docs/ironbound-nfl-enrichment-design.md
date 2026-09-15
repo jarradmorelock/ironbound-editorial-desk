@@ -19,14 +19,16 @@ The research dossier must expose these deterministic weekly features for commiss
 - **Divisional MVP nominations:** one player per named division, selected only from players who were actually in a submitted starting lineup. Bench and taxi players are never eligible. The highest-scoring divisional nominee is flagged `gold_foil: true`. The editorial desk does not generate card images.
 - **Top scorers by position:** magazine evidence independent from trading-card nominations.
 - **Benchwarmer of the Week:** highest-scoring player whose status for the reviewed week was BENCH.
-- **Rookie of the Week:** highest-scoring rookie on a fantasy roster, with explicit weekly roster status of `STARTED`, `BENCH`, or `TAXI`.
+- **Rookie of the Week:** highest-scoring rookie on a fantasy roster, with explicit weekly roster status of `STARTED`, `BENCH`, or `TAXI`. Taxi rookies remain eligible for this award even though taxi points are excluded from lineup efficiency.
 - **Free Agent of the Week:** highest-scoring NFL player who was unrostered in the fantasy league at the end of the reviewed week, when a complete weekly NFL player-stat source is available.
 
-## Sleeper max-points reconciliation
+## Editorial lineup MAX policy
 
-Sleeper fantasy-football Max PF includes taxi players. The desk's lineup-efficiency calculation must therefore evaluate every player in the weekly matchup player pool, including taxi players, when constructing the legal maximum lineup. This keeps the desk's weekly `MAX` and efficiency values aligned with Sleeper's Weekly Report.
+The desk's `MAX` and lineup-efficiency values answer a commissioner/editorial question: **what was the best legal active lineup the manager could actually have submitted?**
 
-Submitted lineup points still come only from submitted starters. Taxi status still matters for Rookie of the Week and other editorial labels; it simply does not exclude a player from Sleeper-style max-points calculation.
+Taxi and reserve/IR players are therefore excluded from the candidate pool. This is intentional even if Sleeper's own Max PF accounting includes taxi production. Submitted lineup points still come only from submitted starters.
+
+Taxi status remains meaningful elsewhere in the dossier. In particular, a rookie may win Rookie of the Week while on taxi, but his points do not improve a manager's editorial lineup MAX or efficiency score.
 
 ## Flagship NFL source layer
 
@@ -38,13 +40,34 @@ The shared NFL collection runs once per NFL week and is reused by both flagship 
 - nflverse play-by-play
 - nflverse game schedule
 - nflverse/PFR game-level snap counts
-- nflverse player-ID crosswalk so PFR snap-count IDs can be joined to GSIS/Sleeper-linked players
+- player identity reconciliation using GSIS IDs when available and name + NFL team + position fallback when Sleeper's current player directory lacks GSIS IDs
 
 A missing optional NFL source must not stop the Sleeper dossier. The source status and missing evidence must be explicit.
 
-### Optional future exact-route source
+### Dynasty Daddy WAR / League Format layer
 
-Exact weekly routes are not required for the first implementation. If a `PFF_API_KEY` is later supplied, a PFF Pro adapter is the preferred automation path because PFF exposes route/snap data through a documented API suitable for CI. The base workflow must not scrape Fantasy Life, FTN, or another website to obtain routes.
+Dynasty Daddy is a strong complementary source because it answers a different question from nflverse. nflverse describes **how usage and game script happened**; Dynasty Daddy WAR/WoRP describes **how valuable that production is relative to replacement in a specific league format**.
+
+Useful Dynasty Daddy evidence includes:
+
+- Wins over Replacement Player / WAR by position and player
+- positional WAR tiers and replacement cliffs
+- quality starts and spike-week classifications
+- fantasy opportunities and points per opportunity
+- historical started/rostered percentages
+- Captured WAR (`cWAR`) when available to the user's Dynasty Daddy Club account; cWAR weights production by historical start confidence so bench explosions do not receive the same roster-construction credit as confidently started production
+- league-infused values for comparing market price with format-specific utility
+- waiver/trade-market activity where available
+
+A direct 2026 probe of the hosted `/api/v1/league/format` endpoint confirmed that the endpoint exists but now requires a Dynasty Daddy API key. The desk must therefore treat automated WAR/cWAR ingestion as **credential-gated**. Do not scrape an authenticated Dynasty Daddy page or reuse browser cookies in GitHub Actions. If Dynasty Daddy provides an API key for the user's paid account, store it only as a repository secret and add a documented API adapter.
+
+Until authenticated access is configured, the current open Dynasty Daddy daily player-value feed remains usable, while WAR/cWAR is a planned optional enrichment rather than a required dependency.
+
+### Exact weekly route participation
+
+PFF is not part of the planned pipeline because its required paid tier is not economical for this project.
+
+Exact weekly routes are therefore optional, not a blocker. Dynasty Daddy's League Format tooling has historically exposed advanced opportunity fields including routes and target-route-share, making it the first source to investigate once authenticated API access is available. We must verify that those fields are current for the 2026 season before depending on them. The base workflow must not scrape Fantasy Life, FTN, Dynasty Daddy, or another authenticated website to obtain routes.
 
 ## Player usage summaries
 
@@ -74,8 +97,10 @@ Initial signal types:
 - `HIGH_VALUE_TOUCH_SHIFT`: a teammate captured materially more inside-10/inside-5 work than a relevant RB despite comparable overall opportunity.
 - `MISSED_WINDFALL`: an NFL offense created a high-touchdown/high-scoring environment while a relevant fantasy player captured little of the scoring or premium opportunity.
 - `VOLUME_WITHOUT_RESULTS`: heavy opportunity produced a low fantasy return.
-- `EFFICIENCY_SPIKE`: a large fantasy result came on unusually little opportunity.
+- `EFFICIENCY_SPIKE`: a skill-position player produced a large fantasy result on unusually little opportunity.
 - `COMEBACK_ENGINE`: a player produced a large share of his output in a fourth-quarter/OT comeback game script.
+
+Once authenticated Dynasty Daddy WAR/cWAR is available, additional useful candidate signals include market value versus replacement value, positional scarcity/league-breaker status, roster WAR concentration, and players whose cWAR materially differs from raw WAR because managers could not confidently capture their production in starting lineups.
 
 Signal thresholds should be conservative so the research file remains a useful shortlist rather than a dump of every player-week.
 

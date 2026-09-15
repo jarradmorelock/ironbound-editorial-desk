@@ -37,6 +37,7 @@ class NFLVerseClient:
     ) -> None:
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
+        self._raw_cache: dict[str, bytes] = {}
 
     def schedule(self, season: str, week: int) -> list[dict[str, Any]]:
         return [
@@ -187,6 +188,7 @@ class NFLVerseClient:
                     "pass_touchdown": _truthy(row.get("pass_touchdown")),
                     "rush_touchdown": _truthy(row.get("rush_touchdown")),
                     "touchdown": _truthy(row.get("touchdown")),
+                    "interception": _truthy(row.get("interception")),
                     "passer_player_id": row.get("passer_player_id"),
                     "receiver_player_id": row.get("receiver_player_id"),
                     "rusher_player_id": row.get("rusher_player_id"),
@@ -274,13 +276,15 @@ class NFLVerseClient:
     def _csv_rows(
         self, url: str, compressed: bool
     ) -> Iterator[dict[str, str]]:
-        response = self.session.get(
-            url,
-            headers={"Accept": "text/csv", "User-Agent": USER_AGENT},
-            timeout=self.timeout_seconds,
-        )
-        response.raise_for_status()
-        raw = io.BytesIO(response.content)
+        if url not in self._raw_cache:
+            response = self.session.get(
+                url,
+                headers={"Accept": "text/csv", "User-Agent": USER_AGENT},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+            self._raw_cache[url] = response.content
+        raw = io.BytesIO(self._raw_cache[url])
         binary = gzip.GzipFile(fileobj=raw) if compressed else raw
         with io.TextIOWrapper(binary, encoding="utf-8", newline="") as stream:
             yield from csv.DictReader(stream)

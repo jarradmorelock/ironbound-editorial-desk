@@ -191,12 +191,7 @@ def _free_agent_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     if source.get("status") != "available":
         return None
 
-    players = snapshot.get("players") or {}
-    rostered_gsis = {
-        str(player.get("gsis_id"))
-        for player in players.values()
-        if player.get("gsis_id")
-    }
+    rostered_gsis = _current_rostered_gsis(snapshot)
     scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
     candidates: list[dict[str, Any]] = []
     for stat_row in source.get("records") or []:
@@ -221,6 +216,21 @@ def _free_agent_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
             }
         )
     return max(candidates, key=lambda row: (row["points"], row["player"]), default=None)
+
+
+def _current_rostered_gsis(snapshot: dict[str, Any]) -> set[str]:
+    players = snapshot.get("players") or {}
+    current_ids: set[str] = set()
+    for roster in snapshot.get("rosters") or []:
+        for field in ("players", "taxi", "reserve"):
+            current_ids.update(
+                str(player_id) for player_id in (roster.get(field) or [])
+            )
+    return {
+        str((players.get(player_id) or {}).get("gsis_id"))
+        for player_id in current_ids
+        if (players.get(player_id) or {}).get("gsis_id")
+    }
 
 
 def _score_nflverse_row(

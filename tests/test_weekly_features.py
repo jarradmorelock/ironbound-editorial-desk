@@ -207,11 +207,11 @@ def enriched():
     return data, apply_weekly_features(data, dossier)
 
 
-def test_lineup_efficiency_includes_taxi_in_sleeper_max_points():
+def test_lineup_efficiency_excludes_taxi_from_editorial_max_points():
     _, dossier = enriched()
     row = next(r for r in dossier["lineup_efficiency"] if r["roster_id"] == 1)
-    assert row["optimal_points"] == 116
-    assert row["efficiency"] == round(101 / 116, 4)
+    assert row["optimal_points"] == 101
+    assert row["efficiency"] == 1.0
 
 
 def test_divisional_mvp_nominees_are_starters_and_gold_marks_top_nominee():

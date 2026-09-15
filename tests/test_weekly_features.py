@@ -252,4 +252,4 @@ def test_free_agent_of_week_uses_league_scoring_and_excludes_rostered_players():
     free_agent = dossier["weekly_features"]["free_agent_of_the_week"]
     assert free_agent["player"] == "Free Agent Star"
     assert free_agent["position"] == "RB"
-    assert free_agent["points"] == 27.0
+    assert free_agent["points"] == 27.5

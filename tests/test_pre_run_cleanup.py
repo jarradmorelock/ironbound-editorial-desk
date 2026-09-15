@@ -1,6 +1,7 @@
 import editorial_desk.review as review
 from editorial_desk.collector import _collect_ranking_sources
 from editorial_desk.metrics import build_weekly_dossier
+from editorial_desk.rankings import REDRAFT_DADDY_PLAYER_VALUES_URL
 from editorial_desk.weekly_features import apply_weekly_features
 
 
@@ -15,6 +16,10 @@ class TwoMarketRankingsClient:
 class EmptySleeperClient:
     def projections(self, season, week):
         return {}
+
+
+def test_redraft_daddy_uses_public_endpoint_with_sleeper_ids():
+    assert REDRAFT_DADDY_PLAYER_VALUES_URL == "https://api.dynasty-daddy.com/api/v1/values/redraft"
 
 
 def test_collects_both_dynasty_and_redraft_daddy_markets():

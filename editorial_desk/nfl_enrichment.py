@@ -23,6 +23,17 @@ def build_nfl_game_intelligence(snapshot: dict[str, Any]) -> dict[str, Any] | No
         for pid in current_sleeper_ids
         if (sleeper_players.get(pid) or {}).get("gsis_id")
     }
+    rostered_signatures: set[tuple[str, str, str]] = set()
+    for sid in current_sleeper_ids:
+        player = sleeper_players.get(sid) or {}
+        signature = _identity_signature(
+            _sleeper_player_name(player),
+            player.get("team"),
+            player.get("position"),
+        )
+        if signature:
+            rostered_signatures.add(signature)
+
     relevant_teams = {
         str((sleeper_players.get(pid) or {}).get("team"))
         for pid in current_sleeper_ids
@@ -36,9 +47,14 @@ def build_nfl_game_intelligence(snapshot: dict[str, Any]) -> dict[str, Any] | No
         pid = str(row.get("player_id") or "")
         if not pid:
             continue
-        names[pid] = str(row.get("player_display_name") or row.get("player_name") or pid)
+        name = str(row.get("player_display_name") or row.get("player_name") or pid)
+        names[pid] = name
         positions[pid] = row.get("position")
         teams[pid] = row.get("team")
+        signature = _identity_signature(name, row.get("team"), row.get("position"))
+        if signature and signature in rostered_signatures:
+            rostered_gsis.add(pid)
+
     for sid in current_sleeper_ids:
         player = sleeper_players.get(sid) or {}
         pid = str(player.get("gsis_id") or "")
@@ -217,6 +233,27 @@ def _current_roster_player_ids(snapshot: dict[str, Any]) -> set[str]:
     return ids
 
 
+def _sleeper_player_name(player: dict[str, Any]) -> str:
+    return str(
+        player.get("full_name")
+        or " ".join(
+            str(part)
+            for part in (player.get("first_name"), player.get("last_name"))
+            if part
+        ).strip()
+        or ""
+    )
+
+
+def _identity_signature(name: Any, team: Any, position: Any) -> tuple[str, str, str] | None:
+    normalized = _normalize_name(str(name or ""))
+    team_text = str(team or "").upper()
+    position_text = str(position or "").upper()
+    if not normalized or not team_text or not position_text:
+        return None
+    return normalized, team_text, position_text
+
+
 def _mark_comeback_context(row: dict[str, Any], play: dict[str, Any], quarter: int, marked: set[str]) -> None:
     if quarter >= 4 and _number(play.get("score_differential")) <= -7:
         marked.add(row["player_id"])
@@ -308,7 +345,7 @@ def _individual_signals(
             results.append({"type": "MISSED_WINDFALL", "player_id": pid, "player": row["player"], "team": team, "opportunities": opps, "player_touchdowns": row["touchdowns"], "team_offensive_touchdowns": tds, "explanation": f"{team} scored {tds} offensive touchdowns while {row['player']} handled {opps} opportunities but scored {row['touchdowns']}."})
         if opps >= 15 and total < 8:
             results.append({"type": "VOLUME_WITHOUT_RESULTS", "player_id": pid, "player": row["player"], "team": team, "opportunities": opps, "reconstructed_points": round(total, 2), "explanation": f"{row['player']} received {opps} opportunities without converting them into a strong fantasy result."})
-        if total >= 20 and 0 < opps <= 8:
+        if row.get("position") in {"RB", "WR", "TE"} and total >= 20 and 0 < opps <= 8:
             results.append({"type": "EFFICIENCY_SPIKE", "player_id": pid, "player": row["player"], "team": team, "opportunities": opps, "reconstructed_points": round(total, 2), "explanation": f"{row['player']} generated a large fantasy result on only {opps} carries plus targets."})
     return results
 

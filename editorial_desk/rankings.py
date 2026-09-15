@@ -9,7 +9,7 @@ DYNASTY_DADDY_PLAYER_VALUES_URL = (
     "https://dynasty-daddy.com/api/v1/player/all/today"
 )
 REDRAFT_DADDY_PLAYER_VALUES_URL = (
-    "https://dynasty-daddy.com/api/v1/player/all/market/15"
+    "https://api.dynasty-daddy.com/api/v1/values/redraft"
 )
 USER_AGENT = "ironbound-editorial-desk/0.1"
 

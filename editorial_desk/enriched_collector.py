@@ -23,13 +23,7 @@ def collect_all(
     rankings_client: RankingsClient | None = None,
     nflverse_client: NFLVerseClient | None = None,
 ) -> list[Path]:
-    """Run the existing collector, then enrich publication dossiers for review.
-
-    This wrapper deliberately leaves the mature Sleeper collection path intact.
-    It upgrades the publication snapshots after collection so all magazines receive
-    complete nflverse weekly player stats, while only flagship publications retain
-    the much larger play-by-play and snap-count evidence.
-    """
+    """Run the existing collector, then enrich publication dossiers for review."""
     sleeper = client or SleeperClient()
     nflverse = nflverse_client or NFLVerseClient()
     generated = collect_base(
@@ -52,14 +46,20 @@ def collect_all(
         return generated
 
     first_snapshot = json.loads(next(iter(snapshot_paths.values())).read_text(encoding="utf-8"))
-    season = str((first_snapshot.get("nfl_state") or {}).get("season") or (first_snapshot.get("league") or {}).get("season") or "unknown")
+    season = str(
+        (first_snapshot.get("nfl_state") or {}).get("season")
+        or (first_snapshot.get("league") or {}).get("season")
+        or "unknown"
+    )
     shared = _collect_deep_nfl_context(nflverse, season, week)
+    player_directory = sleeper.players()
 
     for config in publication_configs:
         snapshot_path = snapshot_paths.get(config.key)
         if snapshot_path is None:
             continue
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        _apply_player_context(snapshot, player_directory)
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
         _write_json(snapshot_path, snapshot)
 
@@ -94,6 +94,15 @@ def _collect_deep_nfl_context(
                 "error": str(exc),
             }
     return sources
+
+
+def _apply_player_context(
+    snapshot: dict[str, Any], player_directory: dict[str, Any]
+) -> None:
+    """Retain the rookie marker needed by every publication tier."""
+    for player_id, player in (snapshot.get("players") or {}).items():
+        source = player_directory.get(str(player_id)) or {}
+        player["years_exp"] = source.get("years_exp")
 
 
 def _apply_context_scope(

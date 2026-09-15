@@ -256,9 +256,10 @@ def test_non_flagship_skips_deep_nfl_enrichment():
 def test_backfield_split_surfaces_near_even_snap_share():
     intelligence = build_nfl_game_intelligence(flagship_snapshot())
     signal = next(
-        row for row in intelligence["story_signals"] if row["type"] == "BACKFIELD_SPLIT"
+        row
+        for row in intelligence["story_signals"]
+        if row["type"] == "BACKFIELD_SPLIT" and row["team"] == "SF"
     )
-    assert signal["team"] == "SF"
     assert [row["snap_share"] for row in signal["players"]] == [0.5, 0.5]
 
 

@@ -4,7 +4,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .collector import collect_all
+from .enriched_collector import collect_all
 from .config import (
     ConfigurationError,
     load_leagues,

@@ -1,0 +1,51 @@
+name: Feature live enrichment smoke
+
+on:
+  push:
+    branches:
+      - feature/ironbound-nfl-enrichment
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: cp config/leagues.example.json config/leagues.json
+      - name: Collect live Week 1 review packets
+        run: python -m editorial_desk collect --config config/leagues.json --week 1 --output-dir output/smoke
+      - name: Validate enrichment boundaries and print audit evidence
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("output/smoke/2026/week-01")
+          iron = json.loads((root / "ironbound_sixteen/dossier.json").read_text())
+          free = json.loads((root / "free_ironbound_sixteen/dossier.json").read_text())
+          ballad = json.loads((root / "ballad_of_broken_hearts/dossier.json").read_text())
+
+          for label, dossier in (("IRONBOUND", iron), ("UNBOUND", free)):
+              assert "weekly_features" in dossier
+              assert "nfl_game_intelligence" in dossier
+              print(label + "_SOURCES=" + json.dumps(dossier["nfl_game_intelligence"]["source_status"], sort_keys=True))
+              print(label + "_SIGNALS=" + json.dumps(dossier["nfl_game_intelligence"]["story_signals"][:12], sort_keys=True))
+              print(label + "_MVPS=" + json.dumps(dossier["weekly_features"]["divisional_mvp_nominees"], sort_keys=True))
+
+          assert "weekly_features" in ballad
+          assert "nfl_game_intelligence" not in ballad
+          print("BALLAD_FEATURES=" + json.dumps(ballad["weekly_features"], sort_keys=True))
+          print("UNBOUND_EFFICIENCY=" + json.dumps(free["lineup_efficiency"], sort_keys=True))
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ironbound-enrichment-live-smoke
+          path: output/smoke/
+          retention-days: 2

@@ -19,6 +19,7 @@ class SleeperClient:
     ) -> None:
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
+        self._players_cache: dict[str, Any] | None = None
 
     def get_json(self, path: str) -> Any:
         response = self.session.get(
@@ -33,7 +34,12 @@ class SleeperClient:
         return self.get_json("state/nfl")
 
     def players(self) -> dict[str, Any]:
-        return self.get_json("players/nfl")
+        if self._players_cache is None:
+            payload = self.get_json("players/nfl")
+            if not isinstance(payload, dict):
+                raise ValueError("Sleeper player directory response was not an object")
+            self._players_cache = payload
+        return self._players_cache
 
     def league(self, league_id: str) -> dict[str, Any]:
         return self.get_json(f"league/{league_id}")

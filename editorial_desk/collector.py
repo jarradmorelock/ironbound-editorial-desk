@@ -396,22 +396,27 @@ def _collect_ranking_sources(
     week: int,
 ) -> dict[str, Any]:
     sources: dict[str, Any] = {}
-    try:
-        rows = rankings_client.dynasty_daddy_player_values()
-        sources["dynasty_daddy"] = {
-            "status": "available",
-            "players": {
-                str(row["sleeper_id"]): row
-                for row in rows
-                if row.get("sleeper_id") is not None
-            },
-        }
-    except (requests.RequestException, ValueError, KeyError) as exc:
-        sources["dynasty_daddy"] = {
-            "status": "unavailable",
-            "error": str(exc),
-            "players": {},
-        }
+    for source_name, method_name in (
+        ("dynasty_daddy", "dynasty_daddy_player_values"),
+        ("redraft_daddy", "redraft_daddy_player_values"),
+    ):
+        try:
+            fetcher = getattr(rankings_client, method_name)
+            rows = fetcher()
+            sources[source_name] = {
+                "status": "available",
+                "players": {
+                    str(row["sleeper_id"]): row
+                    for row in rows
+                    if row.get("sleeper_id") is not None
+                },
+            }
+        except (requests.RequestException, ValueError, KeyError, AttributeError) as exc:
+            sources[source_name] = {
+                "status": "unavailable",
+                "error": str(exc),
+                "players": {},
+            }
 
     try:
         sources["sleeper_projections"] = {
@@ -450,13 +455,17 @@ def _trim_ranking_sources(
 
 
 def _trim_ranking_player(source_name: str, player: dict[str, Any]) -> dict[str, Any]:
-    if source_name == "dynasty_daddy":
+    if source_name in {"dynasty_daddy", "redraft_daddy"}:
         fields = (
+            "name_id",
             "full_name",
             "position",
+            "team",
             "sleeper_id",
             "trade_value",
             "sf_trade_value",
+            "position_rank",
+            "sf_position_rank",
             "overall_rank",
             "sf_overall_rank",
             "avg_adp",

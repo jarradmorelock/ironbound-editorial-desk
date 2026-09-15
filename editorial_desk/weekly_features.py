@@ -96,14 +96,8 @@ def _lineup_efficiency(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 def _replace_manager_of_week(
     dossier: dict[str, Any], lineup: list[dict[str, Any]]
 ) -> None:
-    winners = {
-        int(game["winner"]["roster_id"])
-        for game in dossier.get("scoreboard") or []
-        if game.get("winner")
-    }
-    candidates = [row for row in lineup if int(row["roster_id"]) in winners]
     winner = max(
-        candidates,
+        lineup,
         key=lambda row: (row["efficiency"], row["actual_points"]),
         default=None,
     )

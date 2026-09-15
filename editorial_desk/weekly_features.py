@@ -31,7 +31,7 @@ NFLVERSE_SCORING_FIELDS = {
 def apply_weekly_features(
     snapshot: dict[str, Any], dossier: dict[str, Any]
 ) -> dict[str, Any]:
-    """Attach deterministic magazine features and reconcile Sleeper-style Max PF."""
+    """Attach deterministic magazine features and editorial lineup efficiency."""
     lineup = _lineup_efficiency(snapshot)
     dossier["lineup_efficiency"] = lineup
     _replace_manager_of_week(dossier, lineup)
@@ -60,13 +60,16 @@ def _lineup_efficiency(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         starters = [str(player_id) for player_id in matchup.get("starters") or []]
         actual = sum(_number(points.get(player_id)) for player_id in starters)
 
-        # Sleeper football Max PF explicitly includes taxi players. Reserve/IR
-        # players are not treated as lineup candidates here.
+        # Editorial MAX answers "what was the best legal active lineup?" Taxi and
+        # reserve/IR players are intentionally excluded even when a platform's
+        # own Max PF accounting chooses to include taxi production.
         reserve = {str(player_id) for player_id in roster.get("reserve") or []}
+        taxi = {str(player_id) for player_id in roster.get("taxi") or []}
+        inactive = reserve | taxi
         eligible_ids = [
             str(player_id)
             for player_id in matchup.get("players") or []
-            if str(player_id) not in reserve
+            if str(player_id) not in inactive
         ]
         optimal, assignment = optimal_lineup(eligible_ids, points, slots, players)
         rows.append(

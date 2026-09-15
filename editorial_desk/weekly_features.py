@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Any
 
@@ -177,11 +178,14 @@ def _benchwarmer_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
 
 def _rookie_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     players = snapshot.get("players") or {}
-    candidates = [
-        row
-        for row in _rostered_player_weeks(snapshot)
-        if _integer((players.get(row["player_id"]) or {}).get("years_exp")) == 0
-    ]
+    candidates = []
+    for row in _rostered_player_weeks(snapshot):
+        player = players.get(row["player_id"]) or {}
+        years_exp = player.get("years_exp")
+        if years_exp is None or _position(player) == "DEF":
+            continue
+        if _integer(years_exp) == 0:
+            candidates.append(row)
     winner = max(candidates, key=lambda row: (row["points"], row["player"]), default=None)
     return winner if winner and winner["points"] > 0 else None
 
@@ -191,12 +195,21 @@ def _free_agent_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     if source.get("status") != "available":
         return None
 
-    rostered_gsis = _current_rostered_gsis(snapshot)
+    rostered_gsis, rostered_signatures = _current_rostered_identities(snapshot)
     scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
     candidates: list[dict[str, Any]] = []
     for stat_row in source.get("records") or []:
         player_id = str(stat_row.get("player_id") or "")
-        if not player_id or player_id in rostered_gsis:
+        signature = _identity_signature(
+            stat_row.get("player_display_name") or stat_row.get("player_name"),
+            stat_row.get("team"),
+            stat_row.get("position"),
+        )
+        if (
+            not player_id
+            or player_id in rostered_gsis
+            or (signature and signature in rostered_signatures)
+        ):
             continue
         points = _score_nflverse_row(stat_row, scoring)
         if points <= 0:
@@ -218,19 +231,25 @@ def _free_agent_of_week(snapshot: dict[str, Any]) -> dict[str, Any] | None:
     return max(candidates, key=lambda row: (row["points"], row["player"]), default=None)
 
 
-def _current_rostered_gsis(snapshot: dict[str, Any]) -> set[str]:
+def _current_rostered_identities(snapshot: dict[str, Any]) -> tuple[set[str], set[tuple[str, str, str]]]:
     players = snapshot.get("players") or {}
     current_ids: set[str] = set()
     for roster in snapshot.get("rosters") or []:
         for field in ("players", "taxi", "reserve"):
-            current_ids.update(
-                str(player_id) for player_id in (roster.get(field) or [])
-            )
-    return {
-        str((players.get(player_id) or {}).get("gsis_id"))
-        for player_id in current_ids
-        if (players.get(player_id) or {}).get("gsis_id")
-    }
+            current_ids.update(str(player_id) for player_id in (roster.get(field) or []))
+
+    gsis: set[str] = set()
+    signatures: set[tuple[str, str, str]] = set()
+    for player_id in current_ids:
+        player = players.get(player_id) or {}
+        if player.get("gsis_id"):
+            gsis.add(str(player["gsis_id"]))
+        signature = _identity_signature(
+            _player_name(player_id, players), player.get("team"), _position(player)
+        )
+        if signature:
+            signatures.add(signature)
+    return gsis, signatures
 
 
 def _score_nflverse_row(
@@ -324,6 +343,20 @@ def _position(player: dict[str, Any]) -> str | None:
         return str(position)
     fantasy_positions = player.get("fantasy_positions") or []
     return str(fantasy_positions[0]) if fantasy_positions else None
+
+
+def _identity_signature(name: Any, team: Any, position: Any) -> tuple[str, str, str] | None:
+    normalized = _normalize_name(str(name or ""))
+    team_text = str(team or "").upper()
+    position_text = str(position or "").upper()
+    if not normalized or not team_text or not position_text:
+        return None
+    return normalized, team_text, position_text
+
+
+def _normalize_name(value: str) -> str:
+    value = re.sub(r"\b(jr|sr|ii|iii|iv)\b", "", value.casefold())
+    return re.sub(r"[^a-z0-9]", "", value)
 
 
 def _number(value: Any) -> float:

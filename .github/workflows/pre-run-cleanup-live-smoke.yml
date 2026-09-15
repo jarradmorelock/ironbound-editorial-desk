@@ -19,6 +19,22 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+      - name: Probe Dynasty Daddy redraft feeds
+        shell: python
+        run: |
+          import requests
+          for url in (
+              "https://dynasty-daddy.com/api/v1/player/all/market/15",
+              "https://api.dynasty-daddy.com/api/v1/values/redraft",
+          ):
+              response = requests.get(url, timeout=30)
+              print("URL", url, "STATUS", response.status_code)
+              if response.ok:
+                  payload = response.json()
+                  print("COUNT", len(payload) if isinstance(payload, list) else "not-list")
+                  if isinstance(payload, list) and payload:
+                      print("KEYS", sorted(payload[0].keys()))
+                      print("SAMPLE", {k: payload[0].get(k) for k in ("name_id", "sleeper_id", "position", "team", "trade_value", "position_rank", "overall_rank")})
       - run: cp config/leagues.example.json config/leagues.json
       - name: Collect live Week 1 dossiers
         run: python -m editorial_desk collect --config config/leagues.json --week 1 --output-dir output/smoke

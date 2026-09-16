@@ -6,6 +6,11 @@ import os
 from pathlib import Path
 
 from .chronicle_backfill import run_backfill, run_materialize
+from .chronicle_backup import (
+    ChronicleBackupError,
+    create_chronicle_backup,
+    monthly_archive_due,
+)
 from .chronicle_collect import collect_pulse
 from .chronicle_store import ChronicleStore
 from .config import (
@@ -48,6 +53,7 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--week", type=int, required=True)
     collect.add_argument("--output-dir", type=Path, default=Path("output/dry-run"))
     collect.add_argument("--chronicle-root", type=Path)
+    collect.add_argument("--chronicle-revision")
     collect.add_argument("--external-inputs-dir", type=Path)
 
     chronicle = subcommands.add_parser("chronicle-collect")
@@ -70,10 +76,20 @@ def parser() -> argparse.ArgumentParser:
     prune.add_argument("--chronicle-root", type=Path, required=True)
     prune.add_argument("--retention-days", type=int, default=30)
 
+    monthly_due = subcommands.add_parser("chronicle-monthly-backup-due")
+    monthly_due.add_argument("--chronicle-root", type=Path, required=True)
+
+    backup = subcommands.add_parser("chronicle-backup")
+    backup.add_argument("--chronicle-root", type=Path, required=True)
+    backup.add_argument("--output", type=Path, required=True)
+    backup.add_argument("--chronicle-revision", required=True)
+
     email = subcommands.add_parser("email")
     email.add_argument("--week", type=int, required=True)
     email.add_argument("--output-dir", type=Path, required=True)
     email.add_argument("--chronicle-archive", type=Path)
+    email.add_argument("--monthly-receipt-root", type=Path)
+    email.add_argument("--chronicle-revision")
 
     subcommands.add_parser("completed-period")
 
@@ -82,6 +98,8 @@ def parser() -> argparse.ArgumentParser:
     supplement.add_argument("--current-dir", type=Path, required=True)
     supplement.add_argument("--output-dir", type=Path, required=True)
     supplement.add_argument("--week", type=int, required=True)
+    supplement.add_argument("--chronicle-root", type=Path)
+    supplement.add_argument("--baseline-time")
 
     supplement_email = subcommands.add_parser("email-supplement")
     supplement_email.add_argument("--week", type=int, required=True)
@@ -115,6 +133,27 @@ def main(argv: list[str] | None = None) -> int:
         print(f"reason={period['reason']}")
         return 0
 
+    if args.command == "chronicle-monthly-backup-due":
+        due = monthly_archive_due(
+            args.chronicle_root,
+            datetime.now(timezone.utc),
+        )
+        print(f"due={str(due).lower()}")
+        return 0
+
+    if args.command == "chronicle-backup":
+        try:
+            archive = create_chronicle_backup(
+                args.chronicle_root,
+                args.output,
+                chronicle_revision=args.chronicle_revision,
+            )
+        except (ChronicleBackupError, OSError, ValueError) as exc:
+            print(f"Chronicle backup error: {exc}")
+            return 1
+        print(f"archive={archive}")
+        return 0
+
     if args.command == "chronicle-prune-diagnostics":
         try:
             result = prune_diagnostics(
@@ -139,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
             args.current_dir,
             args.output_dir,
             args.week,
+            chronicle_root=args.chronicle_root,
+            baseline_time=args.baseline_time,
         )
         print(f"Supplement comparison complete: {len(generated) // 2} updates")
         return 0
@@ -167,6 +208,8 @@ def main(argv: list[str] | None = None) -> int:
                     app_password,
                     recipient,
                     chronicle_archive=args.chronicle_archive,
+                    monthly_receipt_root=args.monthly_receipt_root,
+                    chronicle_revision=args.chronicle_revision,
                 )
             else:
                 attachment_count = send_supplement_email(
@@ -275,6 +318,7 @@ def main(argv: list[str] | None = None) -> int:
         publications=publications or {},
         chronicle_root=args.chronicle_root,
         external_inputs_dir=args.external_inputs_dir,
+        chronicle_revision=args.chronicle_revision,
     )
     print(f"Dry run complete: {len(generated)} files generated")
     return 0

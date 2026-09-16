@@ -114,6 +114,17 @@ def _snapshot():
     }
 
 
+def test_hollywood_board_exposes_locked_factual_slots():
+    snapshot = _snapshot()
+    dossier = build_editorial_review(snapshot)
+    packet = build_publication_packet(snapshot, dossier, PUBLICATIONS["hollywood_beat"], "weekly")
+    board = next(row for row in packet["departments"] if row["feature"] == "hollywood_board")
+
+    assert board["status"] == "ready"
+    assert set(board["data"]) >= {"top_billing", "scene_stealer", "plot_twist", "bad_beat"}
+    assert board["data"]["scene_stealer"]["status"] == "STARTED"
+
+
 def test_all_five_weekly_newspaper_packets_render_locked_departments_without_label_leakage():
     snapshot = _snapshot()
     dossier = build_editorial_review(snapshot)

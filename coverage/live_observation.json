@@ -1,0 +1,73 @@
+{
+  "global": {
+    "player_health": {
+      "first_success": "2026-09-16T19:23:01.821868+00:00"
+    }
+  },
+  "leagues": {
+    "ballad_of_broken_hearts": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "best_characters_dynasty": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "dont_tell_my_wife": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "free_ironbound_sixteen": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "ironbound_sixteen": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "nine_five": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "rocky_top_rumble": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    },
+    "sec_dynasty": {
+      "lineups": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      },
+      "reserve": {
+        "first_success": "2026-09-16T19:23:01.821868+00:00"
+      }
+    }
+  }
+}

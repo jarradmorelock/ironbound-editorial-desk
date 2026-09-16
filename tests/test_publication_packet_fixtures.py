@@ -151,6 +151,17 @@ def test_hollywood_weekly_briefs_preserve_factual_candidates():
     assert briefs["data"]["chronicle_events"][0]["event_id"] == "evt-1"
 
 
+def test_saturday_position_board_preserves_offense_and_idp_leaders():
+    snapshot = _snapshot()
+    dossier = build_editorial_review(snapshot)
+    packet = build_publication_packet(snapshot, dossier, PUBLICATIONS["saturday_standard"], "weekly")
+    board = next(row for row in packet["departments"] if row["feature"] == "idp_position_metrics")
+
+    assert board["status"] == "ready"
+    assert "QB" in board["data"]
+    assert "LB" in board["data"]
+
+
 def test_all_five_weekly_newspaper_packets_render_locked_departments_without_label_leakage():
     snapshot = _snapshot()
     dossier = build_editorial_review(snapshot)

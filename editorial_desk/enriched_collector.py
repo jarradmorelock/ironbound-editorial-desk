@@ -61,6 +61,7 @@ def collect_all(
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
         _apply_player_context(snapshot, player_directory)
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
+        _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
         _write_json(snapshot_path, snapshot)
 
         dossier = build_editorial_review(snapshot)
@@ -94,6 +95,62 @@ def _collect_deep_nfl_context(
                 "error": str(exc),
             }
     return sources
+
+
+def _collect_draft_context(client: SleeperClient, league_id: str) -> dict[str, Any]:
+    """Collect draft records without invoking the full flagship history pass."""
+    try:
+        drafts = client.drafts(league_id)
+        if not isinstance(drafts, list):
+            raise ValueError("Sleeper drafts response was not a list")
+        records: list[dict[str, Any]] = []
+        errors: dict[str, str] = {}
+        for draft in drafts:
+            draft_id = str(draft.get("draft_id") or "")
+            if not draft_id:
+                continue
+            try:
+                picks = client.draft_picks(draft_id)
+                if not isinstance(picks, list):
+                    raise ValueError("Sleeper draft-picks response was not a list")
+            except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+                picks = []
+                errors[f"{draft_id}:picks"] = str(exc)
+            try:
+                traded = client.draft_traded_picks(draft_id)
+                if not isinstance(traded, list):
+                    raise ValueError("Sleeper draft traded-picks response was not a list")
+            except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+                traded = []
+                errors[f"{draft_id}:traded_picks"] = str(exc)
+            records.append(
+                {
+                    "draft": draft,
+                    "picks": picks,
+                    "traded_picks": traded,
+                }
+            )
+        result: dict[str, Any] = {"status": "available", "records": records}
+        if errors:
+            result["errors"] = errors
+        return result
+    except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        return {
+            "status": "unavailable",
+            "records": [],
+            "error": str(exc),
+        }
+
+
+def _ensure_draft_context(
+    snapshot: dict[str, Any], client: SleeperClient, league_id: str
+) -> None:
+    """Attach one normalized draft source for both flagships and newspapers."""
+    existing = ((snapshot.get("flagship_sleeper") or {}).get("drafts") or {})
+    if existing.get("status") == "available":
+        snapshot["draft_context"] = dict(existing)
+        return
+    snapshot["draft_context"] = _collect_draft_context(client, league_id)
 
 
 def _apply_player_context(

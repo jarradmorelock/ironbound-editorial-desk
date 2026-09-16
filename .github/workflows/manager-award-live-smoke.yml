@@ -1,0 +1,55 @@
+name: Manager award live smoke
+
+on:
+  push:
+    branches:
+      - feature/manager-award-and-efficiency-top3
+
+permissions:
+  contents: read
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: cp config/leagues.example.json config/leagues.json
+      - name: Collect live Week 1 dossiers
+        run: python -m editorial_desk collect --config config/leagues.json --week 1 --output-dir output/smoke
+      - name: Validate manager awards and efficiency leaderboards
+        shell: python
+        run: |
+          import json
+          from pathlib import Path
+
+          root = Path("output/smoke/2026/week-01")
+          for dossier_path in sorted(root.glob("*/dossier.json")):
+              dossier = json.loads(dossier_path.read_text())
+              top_three = (dossier.get("weekly_features") or {}).get("lineup_efficiency_top_three") or []
+              assert len(top_three) <= 3
+              assert top_three == sorted(top_three, key=lambda row: (-row["efficiency"], -row["actual_points"]))
+
+              manager = (dossier.get("awards") or {}).get("manager_of_the_week")
+              winner_ids = {
+                  int(game["winner"]["roster_id"])
+                  for game in dossier.get("scoreboard") or []
+                  if game.get("winner")
+              }
+              if winner_ids:
+                  assert manager is not None
+                  assert int(manager["roster_id"]) in winner_ids
+                  assert manager["head_to_head_result"] == "win"
+                  assert manager["efficiency_rank_among_winners"] >= 1
+                  assert manager["score_rank_among_winners"] >= 1
+              print(dossier_path.parent.name, "manager=", manager and manager.get("team"), "top3=", [row.get("team") for row in top_three])
+      - uses: actions/upload-artifact@v7
+        with:
+          name: manager-award-live-smoke
+          path: output/smoke/
+          retention-days: 2

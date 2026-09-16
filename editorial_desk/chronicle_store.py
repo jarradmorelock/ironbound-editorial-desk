@@ -118,9 +118,34 @@ class ChronicleStore:
         return IdentityRegistry.from_dict(self._read_json(path))
 
     def write_identity_registry(self, registry) -> Path:
-        path = self.root / "registry" / "identity.json"
-        self._atomic_write_json(path, registry.to_dict())
-        return path
+        root = self.root / "registry"
+        canonical = registry.to_dict()
+        identity_path = root / "identity.json"
+        self._atomic_write_json(identity_path, canonical)
+
+        # identity.json is canonical. The split files are deterministic projections
+        # for commissioner review and manual troubleshooting.
+        self._atomic_write_json(
+            root / "franchises.json",
+            {
+                "dynasty_mappings": canonical.get("dynasty_mappings") or [],
+                "aliases": canonical.get("aliases") or {},
+                "manager_tenures": canonical.get("manager_tenures") or {},
+                "overrides": canonical.get("overrides") or [],
+            },
+        )
+        self._atomic_write_json(
+            root / "managers.json",
+            {
+                "redraft_mappings": canonical.get("redraft_mappings") or [],
+                "manager_aliases": canonical.get("manager_aliases") or {},
+            },
+        )
+        self._atomic_write_json(
+            root / "ambiguities.json",
+            {"ambiguities": canonical.get("ambiguities") or []},
+        )
+        return identity_path
 
     def write_materialized_history(self, history) -> tuple[Path, ...]:
         league_key = self._safe_component(history.league_key)

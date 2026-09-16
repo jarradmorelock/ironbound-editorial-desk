@@ -7,11 +7,12 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import tempfile
+from typing import Any
 import zipfile
 
 
 BACKUP_SCHEMA_VERSION = 1
-MANIFEST_NAME = "backup-manifest.json"
+MANIFEST_NAME = "BACKUP_MANIFEST.json"
 _EXCLUDED_ROOTS = frozenset(
     {
         ".cache",
@@ -63,10 +64,20 @@ def create_chronicle_backup(
             "size": len(payload),
         }
 
+    ledger_metadata = _ledger_metadata(root)
     manifest = {
         "schema_version": BACKUP_SCHEMA_VERSION,
+        "schema_versions": {
+            "backup": BACKUP_SCHEMA_VERSION,
+            "chronicle_events": ledger_metadata["schema_versions"],
+        },
         "chronicle_revision": revision,
         "created_at": created_at or datetime.now(timezone.utc).isoformat(),
+        "leagues": ledger_metadata["leagues"],
+        "seasons": ledger_metadata["seasons"],
+        "event_counts": ledger_metadata["event_counts"],
+        # The archive is published only after validate_chronicle_backup succeeds.
+        "validation_status": "validated",
         "files": manifest_files,
         "excluded_roots": sorted(_EXCLUDED_ROOTS),
     }
@@ -139,6 +150,24 @@ def validate_chronicle_backup(
                     "Unsupported backup schema version: "
                     f"{manifest.get('schema_version')!r}"
                 )
+            if manifest.get("validation_status") != "validated":
+                errors.append("Backup manifest is not marked validated")
+            schema_versions = manifest.get("schema_versions")
+            if not isinstance(schema_versions, dict):
+                errors.append("Backup manifest schema_versions entry must be an object")
+            elif schema_versions.get("backup") != BACKUP_SCHEMA_VERSION:
+                errors.append("Backup manifest schema_versions.backup is invalid")
+
+            for field in ("leagues", "seasons"):
+                value = manifest.get(field)
+                if not isinstance(value, list) or any(
+                    not isinstance(item, str) for item in value
+                ):
+                    errors.append(f"Backup manifest {field} entry must be a string list")
+            event_counts = manifest.get("event_counts")
+            if not isinstance(event_counts, dict):
+                errors.append("Backup manifest event_counts entry must be an object")
+
             revision_value = manifest.get("chronicle_revision")
             revision = str(revision_value) if revision_value is not None else None
             if not revision:
@@ -243,6 +272,80 @@ def _permanent_files(root: Path, output_path: Path) -> list[tuple[str, Path]]:
         if not _safe_archive_name(name):
             raise ChronicleBackupError(f"Unsafe Chronicle path: {name}")
         rows.append((name, path))
+    return rows
+
+
+def _ledger_metadata(root: Path) -> dict[str, Any]:
+    leagues_root = root / "leagues"
+    leagues = sorted(
+        path.name for path in leagues_root.iterdir() if path.is_dir()
+    ) if leagues_root.exists() else []
+
+    seasons: set[str] = set()
+    schema_versions: set[int] = set()
+    league_counts: dict[str, int] = {}
+    total = 0
+
+    for league_key in leagues:
+        count = 0
+        events_root = leagues_root / league_key / "events"
+        if events_root.exists():
+            for path in sorted(events_root.glob("*.jsonl")):
+                seasons.add(path.stem)
+                rows = _read_event_rows(path)
+                count += len(rows)
+                for row in rows:
+                    version = row.get("schema_version")
+                    if isinstance(version, int):
+                        schema_versions.add(version)
+        league_counts[league_key] = count
+        total += count
+
+    cross_count = 0
+    cross_root = root / "cross_league" / "nfl_player_events"
+    if cross_root.exists():
+        for path in sorted(cross_root.glob("*.jsonl")):
+            seasons.add(path.stem)
+            rows = _read_event_rows(path)
+            cross_count += len(rows)
+            for row in rows:
+                version = row.get("schema_version")
+                if isinstance(version, int):
+                    schema_versions.add(version)
+    total += cross_count
+
+    return {
+        "leagues": leagues,
+        "seasons": sorted(seasons),
+        "schema_versions": sorted(schema_versions),
+        "event_counts": {
+            "cross_league": cross_count,
+            "leagues": league_counts,
+            "total": total,
+        },
+    }
+
+
+def _read_event_rows(path: Path) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise ChronicleBackupError(f"Cannot read Chronicle ledger {path}: {exc}") from exc
+    for number, line in enumerate(lines, start=1):
+        if not line.strip():
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ChronicleBackupError(
+                f"Invalid Chronicle event JSON in {path} line {number}: {exc.msg}"
+            ) from exc
+        if not isinstance(value, dict):
+            raise ChronicleBackupError(
+                f"Chronicle event in {path} line {number} is not an object"
+            )
+        rows.append(value)
     return rows
 
 

@@ -31,7 +31,6 @@ def _health_state(player: dict[str, Any]) -> dict[str, Any]:
 
 def _league_state(
     league: dict[str, Any],
-    users: list[dict[str, Any]],
     rosters: list[dict[str, Any]],
     matchups: list[dict[str, Any]],
     observed_at: str,
@@ -42,7 +41,6 @@ def _league_state(
             "league_id": league.get("league_id"),
             "season": league.get("season"),
         },
-        "users": users,
         "rosters": {
             str(row.get("roster_id")): {
                 "owner_id": row.get("owner_id"),
@@ -104,6 +102,8 @@ def _normalize_transactions(
                     evidence=common_evidence,
                 )
             )
+            continue
+        if tx_type not in {"waiver", "free_agent"}:
             continue
         add_type = "WAIVER_ADD" if tx_type == "waiver" else "FREE_AGENT_ADD"
         for player_id, roster_id in sorted((row.get("adds") or {}).items()):
@@ -394,15 +394,14 @@ def collect_pulse(
     for league_config in leagues:
         key = str(league_config.key)
         league_id = str(league_config.sleeper_league_id)
+        previous = store.read_current_state(f"league-{key}")
         try:
             league = client.league(league_id)
-            users = client.users(league_id)
             rosters = client.rosters(league_id)
             matchups = client.matchups(league_id, week)
             transactions = client.transactions(league_id, week)
-            previous = store.read_current_state(f"league-{key}")
             current = _league_state(
-                league, users, rosters, matchups, observed_at
+                league, rosters, matchups, observed_at
             )
             for roster in rosters:
                 tracked_ids.update(str(v) for v in roster.get("players") or [])
@@ -446,6 +445,12 @@ def collect_pulse(
             manifest["event_counts"]["skipped"] += result.skipped
             manifest["leagues"][key] = {"status": "fresh", "error": None}
         except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+            for roster in (previous.get("rosters") or {}).values():
+                tracked_ids.update(str(v) for v in roster.get("players") or [])
+                tracked_ids.update(str(v) for v in roster.get("reserve") or [])
+                tracked_ids.update(str(v) for v in roster.get("taxi") or [])
+            for starters in (previous.get("lineups") or {}).values():
+                tracked_ids.update(str(v) for v in starters or [])
             manifest["leagues"][key] = {
                 "status": "unavailable",
                 "error": str(exc),

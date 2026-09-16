@@ -89,6 +89,45 @@ prior published expectations, trade-afterlife trees, and persistent editorial
 memory still require a finalized-publication archive and are the next data
 layer.
 
+## Chronicle data branch and live pulse collection
+
+Editorial Desk v2 stores durable generated history on the dedicated
+`chronicle-data` branch. Application code continues to run from `main`; the
+data branch contains only Chronicle state such as event ledgers, registries,
+coverage metadata, manifests, and short-lived diagnostic comparison state.
+Normal automation never force-pushes `chronicle-data`.
+
+The lightweight Chronicle collector is intentionally separate from the full
+editorial collector. It does not fetch Dynasty Daddy, nflverse play-by-play,
+full-season flagship schedules, drafts, brackets, or other expensive magazine
+enrichment. A pulse fetches the Sleeper player directory once globally, then
+only the current league/roster/matchup/transaction state needed to observe
+transactions, lineup changes, reserve changes, and relevant player-status
+transitions. A player-status transition is stored once in the cross-league NFL
+player stream even when that player appears in multiple fantasy leagues.
+League-specific reactions remain league events.
+
+During the season, `.github/workflows/editorial-desk-chronicle.yml` runs one
+baseline collection at 6:17 a.m. Eastern every day and three additional pulses
+at 12:17 p.m., 5:17 p.m., and 9:17 p.m. Eastern from Wednesday through Sunday.
+All Chronicle writers share a serialized concurrency group. The workflow
+checks out application code and `chronicle-data` separately, runs the test suite
+before mutation, commits only when data changed, and refuses force pushes.
+
+Manual collection is available with:
+
+```bash
+python -m editorial_desk chronicle-collect \
+  --config config/leagues.json \
+  --week 2 \
+  --chronicle-root ../chronicle-data
+```
+
+`--finalize-matchups` is intentionally opt-in. Ordinary intraweek pulses never
+write an in-progress score as `MATCHUP_FINAL`; the Tuesday completed-period
+workflow will become the normal finalization path in the later integration
+phase.
+
 ## Local dry run
 
 Create a real configuration from the example, then run:

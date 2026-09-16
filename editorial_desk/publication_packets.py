@@ -31,7 +31,9 @@ from .feature_producers import (
 from .health import build_roster_health
 from .publication_contracts import evaluate_dependencies
 
-IDP_POSITIONS = {"DL", "DE", "DT", "NT", "LB", "DB", "CB", "S"}
+POSITION_BOARD_POSITIONS = {
+    "QB", "RB", "WR", "TE", "LB", "DL", "DE", "DT", "NT", "DB", "CB", "S"
+}
 
 
 def build_publication_packet(
@@ -120,7 +122,7 @@ def _resolve_feature(
         leaders = {
             position: row
             for position, row in position_leaders(snapshot).items()
-            if str(position).upper() in IDP_POSITIONS
+            if str(position).upper() in POSITION_BOARD_POSITIONS
         }
         return _mapping_result(feature, leaders)
     if feature == "bench_leaders":

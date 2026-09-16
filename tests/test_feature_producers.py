@@ -113,10 +113,12 @@ def test_saturday_divisional_mvps_and_gold_foil_use_started_players():
     assert next(row for row in mvps if row["gold_foil"])["player"] == "Q One"
 
 
-def test_position_leaders_include_idp_positions():
+def test_position_leaders_include_idp_and_preserve_lineup_status():
     leaders = position_leaders(_snapshot())
-    assert leaders["QB"]["player"] == "Q One"
+    assert leaders["QB"]["player"] == "Q Two Bench"
+    assert leaders["QB"]["status"] == "BENCH"
     assert leaders["LB"]["player"] in {"LB Three", "LB Four"}
+    assert leaders["LB"]["status"] == "STARTED"
 
 
 def test_bench_leader_and_bench_blast_are_not_started_players():

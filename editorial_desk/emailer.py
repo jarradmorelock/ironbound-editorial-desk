@@ -32,7 +32,7 @@ def build_dossier_email(
             f"No publication dossiers found for week {week} under {output_root}"
         )
 
-    packets: list[tuple[Path, dict[str, Any]]] = []
+    packets: list[tuple[list[tuple[Path, str]], dict[str, Any]]] = []
     seasons: set[str] = set()
     for markdown_path in dossier_paths:
         dossier_path = markdown_path.with_suffix(".json")
@@ -42,7 +42,13 @@ def build_dossier_email(
             raise EmailDeliveryError(
                 f"Cannot read the matching dossier data for {markdown_path}"
             ) from exc
-        packets.append((markdown_path, dossier))
+        publication_packet = markdown_path.parent / "publication_packet.md"
+        primary_path = publication_packet if publication_packet.is_file() else markdown_path
+        delivery_paths: list[tuple[Path, str]] = [(primary_path, "")]
+        story_desk = markdown_path.parent / "story_desk.md"
+        if story_desk.is_file():
+            delivery_paths.append((story_desk, "-story-desk"))
+        packets.append((delivery_paths, dossier))
         seasons.add(str(dossier.get("season") or "unknown"))
 
     if len(seasons) != 1:
@@ -85,15 +91,17 @@ def build_dossier_email(
         + archive_note
     )
 
-    for markdown_path, dossier in packets:
+    for delivery_paths, dossier in packets:
         league = dossier.get("league") or {}
-        league_key = str(league.get("league_key") or markdown_path.parent.name)
-        filename = f"{league_key}-week-{week:02d}.md"
-        message.add_attachment(
-            markdown_path.read_text(encoding="utf-8"),
-            subtype="markdown",
-            filename=filename,
-        )
+        fallback_directory = delivery_paths[0][0].parent.name
+        league_key = str(league.get("league_key") or fallback_directory)
+        for markdown_path, suffix in delivery_paths:
+            filename = f"{league_key}-week-{week:02d}{suffix}.md"
+            message.add_attachment(
+                markdown_path.read_text(encoding="utf-8"),
+                subtype="markdown",
+                filename=filename,
+            )
     for path in attachments:
         if path.suffix.lower() == ".zip":
             maintype, subtype = "application", "zip"

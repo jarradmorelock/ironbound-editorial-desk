@@ -65,8 +65,13 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
 
     result_flips = _result_flips(snapshot, scoreboard, teams)
     waiver_stars = _waiver_star_candidates(snapshot, scoreboard, teams)
-    division_summary = _division_summary(
-        snapshot, matchup_rows, scoreboard, league_median, teams
+    editorial = snapshot.get("editorial") or {}
+    profile = editorial.get("publication_profile") or {}
+    weekly_features = set(profile.get("weekly_features") or [])
+    division_summary = (
+        _division_summary(snapshot, matchup_rows, scoreboard, league_median, teams)
+        if editorial.get("tier") == "flagship" or "division_metrics" in weekly_features
+        else []
     )
     bench_mvp = _bench_mvp(snapshot, teams)
     weekly_mvp = _weekly_mvp(snapshot, teams)

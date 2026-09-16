@@ -35,14 +35,22 @@ def apply_weekly_features(
     lineup = _lineup_efficiency(snapshot)
     dossier["lineup_efficiency"] = lineup
     _replace_manager_of_week(snapshot, dossier, lineup)
-    dossier["weekly_features"] = {
+    features = {
         "lineup_efficiency_top_three": lineup[:3],
-        "divisional_mvp_nominees": _divisional_mvp_nominees(snapshot),
         "top_scorers_by_position": _top_scorers_by_position(snapshot),
         "benchwarmer_of_the_week": _benchwarmer_of_week(snapshot),
         "rookie_of_the_week": _rookie_of_week(snapshot),
         "free_agent_of_the_week": _free_agent_of_week(snapshot),
     }
+    editorial = snapshot.get("editorial") or {}
+    profile = editorial.get("publication_profile") or {}
+    weekly_contract_features = set(profile.get("weekly_features") or [])
+    if (
+        editorial.get("tier") == "flagship"
+        or "divisional_started_mvps" in weekly_contract_features
+    ):
+        features["divisional_mvp_nominees"] = _divisional_mvp_nominees(snapshot)
+    dossier["weekly_features"] = features
     return dossier
 
 

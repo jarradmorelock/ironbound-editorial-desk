@@ -147,6 +147,68 @@ class ChronicleQueries:
             and (since is None or self._after(row.get("observed_at"), since))
         ]
 
+    def identity_for_roster(
+        self, league_key: str, season: str, roster_id: int
+    ) -> str | None:
+        registry = self._read_json(self.root / "registry" / "identity.json")
+        wanted_league = str(league_key)
+        wanted_season = str(season)
+        wanted_roster = int(roster_id)
+        for collection, identity_field in (
+            ("dynasty_mappings", "franchise_key"),
+            ("redraft_mappings", "manager_key"),
+        ):
+            for row in registry.get(collection) or []:
+                if (
+                    str(row.get("league_key") or "") == wanted_league
+                    and str(row.get("season") or "") == wanted_season
+                    and int(row.get("roster_id") or 0) == wanted_roster
+                ):
+                    value = str(row.get(identity_field) or "").strip()
+                    return value or None
+        return None
+
+    def identity_context(self, identity_key: str) -> dict[str, Any]:
+        registry = self._read_json(self.root / "registry" / "identity.json")
+        wanted = str(identity_key)
+        aliases = (
+            (registry.get("aliases") or {}).get(wanted)
+            or (registry.get("manager_aliases") or {}).get(wanted)
+            or []
+        )
+        tenures = (registry.get("manager_tenures") or {}).get(wanted) or []
+        return {
+            "aliases": [dict(row) for row in aliases],
+            "manager_tenures": [dict(row) for row in tenures],
+        }
+
+    def league_matchups(self, league_key: str) -> list[dict[str, Any]]:
+        document = self._read_json(
+            self._league_root(league_key) / "history" / "matchups.json"
+        )
+        return [dict(row) for row in document.get("matchups") or []]
+
+    def league_events(
+        self, league_key: str, event_types: Iterable[str] | None = None
+    ) -> list[dict[str, Any]]:
+        wanted_types = (
+            {str(value) for value in event_types} if event_types is not None else None
+        )
+        rows = self._read_jsonl_tree(self._league_root(league_key) / "events")
+        if wanted_types is None:
+            return rows
+        return [
+            row
+            for row in rows
+            if str(row.get("event_type") or "") in wanted_types
+        ]
+
+    def tracked_league_keys(self) -> tuple[str, ...]:
+        root = self.root / "leagues"
+        if not root.exists():
+            return ()
+        return tuple(sorted(path.name for path in root.iterdir() if path.is_dir()))
+
     def _coverage(self, league_key: str) -> dict[str, Any]:
         document = self._read_json(
             self._league_root(league_key) / "history" / "records.json"

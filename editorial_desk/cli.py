@@ -21,6 +21,7 @@ from .emailer import (
 )
 from .enriched_collector import collect_all
 from .period import PeriodDetectionError, detect_completed_period
+from .retention import prune_diagnostics
 from .sleeper import SleeperClient
 from .supplement import generate_supplements
 
@@ -65,6 +66,10 @@ def parser() -> argparse.ArgumentParser:
     identity_report = subcommands.add_parser("chronicle-identity-report")
     identity_report.add_argument("--chronicle-root", type=Path, required=True)
 
+    prune = subcommands.add_parser("chronicle-prune-diagnostics")
+    prune.add_argument("--chronicle-root", type=Path, required=True)
+    prune.add_argument("--retention-days", type=int, default=30)
+
     email = subcommands.add_parser("email")
     email.add_argument("--week", type=int, required=True)
     email.add_argument("--output-dir", type=Path, required=True)
@@ -108,6 +113,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"season={period['season']}")
         print(f"week={period['week']}")
         print(f"reason={period['reason']}")
+        return 0
+
+    if args.command == "chronicle-prune-diagnostics":
+        try:
+            result = prune_diagnostics(
+                args.chronicle_root,
+                datetime.now(timezone.utc),
+                retention_days=args.retention_days,
+            )
+        except ValueError as exc:
+            print(f"Retention error: {exc}")
+            return 2
+        print(
+            "Chronicle diagnostics pruned: "
+            f"{len(result.removed)} removed, "
+            f"{len(result.kept)} kept, "
+            f"{len(result.skipped_unparseable)} skipped as unparseable"
+        )
         return 0
 
     if args.command == "supplement":

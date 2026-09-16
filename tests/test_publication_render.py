@@ -1,5 +1,7 @@
 import json
 
+from editorial_desk.config import FeatureContractConfig, PublicationConfig
+from editorial_desk.enriched_collector import _write_newspaper_packet
 from editorial_desk.publication_render import render_publication_packet, write_publication_packet
 
 
@@ -56,3 +58,35 @@ def test_writer_emits_json_and_markdown_without_mutating_packet(tmp_path):
     assert json.loads((tmp_path / "publication_packet.json").read_text()) == packet
     assert "## Ward Report" in (tmp_path / "publication_packet.md").read_text()
     assert packet == before
+
+
+def test_newspaper_integration_builds_and_writes_weekly_packet(tmp_path):
+    publication = PublicationConfig(
+        key="paper",
+        name="Paper",
+        tier="newspaper",
+        source_files=(),
+        recurring_sections=(),
+        brand_departments=(),
+        editorial_priorities=(),
+        feature_contracts={
+            "weekly": (
+                FeatureContractConfig("weekly_results", "Scoreboard", True),
+            )
+        },
+    )
+    snapshot = {"week": 1}
+    dossier = {"scoreboard": [{"winner": {"team": "A"}, "loser": {"team": "B"}}]}
+
+    paths = _write_newspaper_packet(
+        tmp_path,
+        snapshot,
+        dossier,
+        publication,
+        phase="weekly",
+    )
+
+    assert {path.name for path in paths} == {"publication_packet.json", "publication_packet.md"}
+    packet = json.loads((tmp_path / "publication_packet.json").read_text())
+    assert packet["publication"] == "Paper"
+    assert packet["departments"][0]["display_name"] == "Scoreboard"

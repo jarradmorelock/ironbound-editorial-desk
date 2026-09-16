@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 
@@ -18,6 +19,9 @@ from .emailer import (
 )
 from .period import PeriodDetectionError, detect_completed_period
 from .supplement import generate_supplements
+from .chronicle_collect import collect_pulse
+from .chronicle_store import ChronicleStore
+from .sleeper import SleeperClient
 
 
 def parser() -> argparse.ArgumentParser:
@@ -41,6 +45,12 @@ def parser() -> argparse.ArgumentParser:
     )
     collect.add_argument("--week", type=int, required=True)
     collect.add_argument("--output-dir", type=Path, default=Path("output/dry-run"))
+
+    chronicle = subcommands.add_parser("chronicle-collect")
+    chronicle.add_argument("--config", type=Path, required=True)
+    chronicle.add_argument("--week", type=int, required=True)
+    chronicle.add_argument("--chronicle-root", type=Path, required=True)
+    chronicle.add_argument("--finalize-matchups", action="store_true")
 
     email = subcommands.add_parser("email")
     email.add_argument("--week", type=int, required=True)
@@ -125,8 +135,12 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         leagues = load_leagues(args.config)
-        publications = load_publications(args.publications)
-        validate_publication_mappings(leagues, publications)
+        publications = None
+        if args.command != "chronicle-collect":
+            publications = load_publications(
+                getattr(args, "publications", Path("config/publications.json"))
+            )
+            validate_publication_mappings(leagues, publications)
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}")
         return 2
@@ -143,11 +157,32 @@ def main(argv: list[str] | None = None) -> int:
     if args.week < 1 or args.week > 18:
         print("Week must be between 1 and 18")
         return 2
+
+    if args.command == "chronicle-collect":
+        manifest = collect_pulse(
+            leagues,
+            SleeperClient(),
+            ChronicleStore(args.chronicle_root),
+            args.week,
+            datetime.now(timezone.utc).isoformat(),
+            finalize_matchups=args.finalize_matchups,
+        )
+        failed = [
+            key
+            for key, row in manifest["leagues"].items()
+            if row["status"] != "fresh"
+        ]
+        print(
+            f"Chronicle collection complete: {manifest['event_counts']['added']} added, "
+            f"{manifest['event_counts']['skipped']} skipped, {len(failed)} league failure(s)"
+        )
+        return 1 if leagues and len(failed) == len(leagues) else 0
+
     generated = collect_all(
         leagues,
         args.week,
         args.output_dir,
-        publications=publications,
+        publications=publications or {},
     )
     print(f"Dry run complete: {len(generated)} files generated")
     return 0

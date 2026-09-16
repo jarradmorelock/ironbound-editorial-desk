@@ -83,6 +83,60 @@ def draft_adp_value(snapshot: dict[str, Any]) -> FeatureResult:
     return ready("draft_adp_value", rows)
 
 
+def draft_value_board(snapshot: dict[str, Any]) -> FeatureResult:
+    values = draft_adp_value(snapshot)
+    if values.status == "unavailable":
+        return unavailable("draft_value_board", values.reason or "Authoritative draft ADP unavailable")
+    if values.status == "ready_no_items":
+        return ready_no_items("draft_value_board", reason="No draft picks to compare with ADP")
+    rows = sorted(
+        (dict(row) for row in values.data),
+        key=lambda row: (-float(row.get("value_delta") or 0), float(row.get("pick_no") or 10**9)),
+    )
+    return ready("draft_value_board", rows)
+
+
+def draft_bargains(snapshot: dict[str, Any]) -> FeatureResult:
+    values = draft_adp_value(snapshot)
+    if values.status == "unavailable":
+        return unavailable("draft_bargains", values.reason or "Authoritative draft ADP unavailable")
+    if values.status == "ready_no_items":
+        return ready_no_items("draft_bargains", reason="No draft picks to compare with ADP")
+    rows = sorted(
+        (dict(row) for row in values.data if float(row.get("value_delta") or 0) > 0),
+        key=lambda row: (-float(row.get("value_delta") or 0), float(row.get("pick_no") or 10**9)),
+    )
+    if not rows:
+        return ready_no_items("draft_bargains", reason="No drafted players beat authoritative ADP")
+    return ready("draft_bargains", rows)
+
+
+def draft_reach(snapshot: dict[str, Any]) -> FeatureResult:
+    values = draft_adp_value(snapshot)
+    if values.status == "unavailable":
+        return unavailable("draft_reach", values.reason or "Authoritative draft ADP unavailable")
+    if values.status == "ready_no_items":
+        return ready_no_items("draft_reach", reason="No draft picks to compare with ADP")
+    rows = sorted(
+        (dict(row) for row in values.data if float(row.get("value_delta") or 0) < 0),
+        key=lambda row: (float(row.get("value_delta") or 0), float(row.get("pick_no") or 10**9)),
+    )
+    if not rows:
+        return ready_no_items("draft_reach", reason="No drafted players were taken ahead of authoritative ADP")
+    return ready("draft_reach", rows)
+
+
+def draft_market(snapshot: dict[str, Any]) -> FeatureResult:
+    source = (snapshot.get("ranking_inputs") or {}).get("draft_adp")
+    if not isinstance(source, dict) or source.get("status") != "available":
+        reason = (source or {}).get("reason") or (source or {}).get("error") if isinstance(source, dict) else None
+        return unavailable("draft_market", reason or "Authoritative draft ADP unavailable")
+    players = source.get("players") or {}
+    if not players:
+        return ready_no_items("draft_market", reason="Authoritative draft ADP returned no player records")
+    return ready("draft_market", dict(source))
+
+
 def keeper_value(snapshot: dict[str, Any]) -> FeatureResult:
     source = snapshot.get("keeper_costs")
     if source is None:

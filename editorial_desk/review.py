@@ -61,6 +61,59 @@ def render_editorial_review(dossier: dict[str, Any]) -> str:
         + _feature_line(features.get("free_agent_of_the_week"))
     )
 
+    lines.extend(["", "### Weekly Lineup Efficiency Top 3"])
+    efficiency_leaders = features.get("lineup_efficiency_top_three") or []
+    if not efficiency_leaders:
+        lines.append("- No lineup-efficiency results available")
+    for rank, row in enumerate(efficiency_leaders, start=1):
+        lines.append(
+            f"- #{rank} {row.get('team')}: {float(row.get('efficiency') or 0):.1%}; "
+            f"{float(row.get('actual_points') or 0):.2f} of "
+            f"{float(row.get('optimal_points') or 0):.2f} possible; "
+            f"{float(row.get('points_left_on_bench') or 0):.2f} points left"
+        )
+    lines.append(
+        "- This leaderboard is independent of Manager of the Week and may include teams that lost."
+    )
+    lines.append(
+        "- A season-to-date Top 3 can be added once multiple completed weekly packets are available."
+    )
+
+    manager = (dossier.get("awards") or {}).get("manager_of_the_week")
+    lines.extend(["", "### Manager of the Week"])
+    if not manager:
+        lines.append("- No eligible winning manager")
+    else:
+        lines.append(
+            f"- {manager.get('team')} — WIN — "
+            f"{float(manager.get('actual_points') or 0):.2f} points; "
+            f"{float(manager.get('efficiency') or 0):.1%} lineup efficiency; "
+            f"score rank #{manager.get('score_rank_among_winners', '?')} among winners; "
+            f"efficiency rank #{manager.get('efficiency_rank_among_winners', '?')} among winners"
+        )
+        evidence = (manager.get("management_tiebreak") or {}).get("evidence") or []
+        if evidence:
+            lines.append("- Tie-break management evidence:")
+            for row in evidence:
+                if row.get("type") == "projection_start_sit":
+                    lines.append(
+                        f"  - Started {row.get('started_player')} "
+                        f"(proj. {float(row.get('started_projection') or 0):.2f}, "
+                        f"scored {float(row.get('started_points') or 0):.2f}) over "
+                        f"{row.get('bench_player')} "
+                        f"(proj. {float(row.get('bench_projection') or 0):.2f}, "
+                        f"scored {float(row.get('bench_points') or 0):.2f}); "
+                        f"decision swing {float(row.get('point_swing') or 0):.2f} in a "
+                        f"{float(row.get('victory_margin') or 0):.2f}-point win"
+                    )
+                elif row.get("type") == "transaction_start":
+                    lines.append(
+                        f"  - Started {row.get('transaction_type')} addition "
+                        f"{row.get('player')}, who scored "
+                        f"{float(row.get('points') or 0):.2f} in a "
+                        f"{float(row.get('victory_margin') or 0):.2f}-point win"
+                    )
+
     market = dossier.get("market_context") or {}
     if market:
         lines.extend(["", "## Dynasty Daddy Market Context", ""])

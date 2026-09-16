@@ -118,23 +118,13 @@ def test_pulse_call_budget_and_cross_league_status_event_is_deduplicated(
     client = FakeClient()
     leagues = [League("a", "1"), League("b", "2")]
 
-    collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T17:05:00+00:00",
-    )
+    collect_pulse(leagues, client, store, 2, "2026-09-16T17:05:00+00:00")
     client.player_payload["p1"] = {
         "status": "Inactive",
         "injury_status": "Out",
     }
     result = collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T21:04:00+00:00",
+        leagues, client, store, 2, "2026-09-16T21:04:00+00:00"
     )
 
     status_events = [
@@ -198,24 +188,14 @@ def test_failed_health_refresh_does_not_create_fake_healthy_transition(
     store = ChronicleStore(tmp_path)
     client = FakeClient()
     leagues = [League("a", "1")]
-    collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T17:05:00+00:00",
-    )
+    collect_pulse(leagues, client, store, 2, "2026-09-16T17:05:00+00:00")
 
     def fail_players():
         raise requests.RequestException("players unavailable")
 
     client.players = fail_players
     result = collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T21:04:00+00:00",
+        leagues, client, store, 2, "2026-09-16T21:04:00+00:00"
     )
     assert result["source_freshness"]["player_health"] == "stale"
     assert not [
@@ -257,24 +237,12 @@ def test_live_coverage_starts_on_first_success_and_never_moves_forward(
         raise requests.RequestException("down")
 
     client.players = fail_players
-    collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T10:00:00+00:00",
-    )
+    collect_pulse(leagues, client, store, 2, "2026-09-16T10:00:00+00:00")
     coverage = store.read_coverage()
     assert "player_health" not in (coverage.get("global") or {})
 
     client.players = original_players
-    collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T12:00:00+00:00",
-    )
+    collect_pulse(leagues, client, store, 2, "2026-09-16T12:00:00+00:00")
     coverage = store.read_coverage()
     assert (
         coverage["global"]["player_health"]["first_success"]
@@ -289,13 +257,7 @@ def test_live_coverage_starts_on_first_success_and_never_moves_forward(
         == "2026-09-16T10:00:00+00:00"
     )
 
-    collect_pulse(
-        leagues,
-        client,
-        store,
-        2,
-        "2026-09-16T14:00:00+00:00",
-    )
+    collect_pulse(leagues, client, store, 2, "2026-09-16T14:00:00+00:00")
     coverage = store.read_coverage()
     assert (
         coverage["global"]["player_health"]["first_success"]
@@ -305,3 +267,107 @@ def test_live_coverage_starts_on_first_success_and_never_moves_forward(
         coverage["leagues"]["a"]["lineups"]["first_success"]
         == "2026-09-16T10:00:00+00:00"
     )
+
+
+def test_failed_league_refresh_preserves_previous_player_scope_for_global_status(
+    tmp_path: Path,
+):
+    class ScopedClient(FakeClient):
+        def rosters(self, league_id):
+            self.calls.append(("rosters", league_id))
+            if league_id in self.fail_rosters_for:
+                raise requests.RequestException("boom")
+            player = "p1" if league_id == "1" else "p2"
+            return [
+                {
+                    "roster_id": 1,
+                    "owner_id": f"u-{league_id}",
+                    "players": [player],
+                    "reserve": [],
+                    "taxi": [],
+                }
+            ]
+
+        def matchups(self, league_id, week):
+            self.calls.append(("matchups", league_id, week))
+            player = "p1" if league_id == "1" else "p2"
+            return [
+                {
+                    "roster_id": 1,
+                    "matchup_id": 1,
+                    "points": 10.0,
+                    "starters": [player],
+                    "players": [player],
+                }
+            ]
+
+        def transactions(self, league_id, week):
+            self.calls.append(("transactions", league_id, week))
+            return []
+
+    store = ChronicleStore(tmp_path)
+    client = ScopedClient()
+    leagues = [League("a", "1"), League("b", "2")]
+    collect_pulse(leagues, client, store, 2, "2026-09-16T17:05:00+00:00")
+
+    client.player_payload["p2"] = {
+        "status": "Inactive",
+        "injury_status": "Out",
+    }
+    client.fail_rosters_for.add("2")
+    collect_pulse(leagues, client, store, 2, "2026-09-16T21:04:00+00:00")
+
+    assert any(
+        row["event_type"] == "PLAYER_STATUS_CHANGE"
+        and row["entities"]["player_id"] == "p2"
+        for row in store.read_events(None, "2026")
+    )
+
+
+def test_unknown_transaction_type_is_not_mislabeled_as_free_agent_add(
+    tmp_path: Path,
+):
+    class UnknownTxClient(FakeClient):
+        def transactions(self, league_id, week):
+            self.calls.append(("transactions", league_id, week))
+            return [
+                {
+                    "transaction_id": "tx-unknown",
+                    "type": "commissioner",
+                    "status": "complete",
+                    "created": 1789500000000,
+                    "adds": {"p2": 1},
+                    "drops": {},
+                    "roster_ids": [1],
+                    "settings": {},
+                }
+            ]
+
+    store = ChronicleStore(tmp_path)
+    collect_pulse(
+        [League("a", "1")],
+        UnknownTxClient(),
+        store,
+        2,
+        "2026-09-16T17:05:00+00:00",
+    )
+    assert not [
+        row
+        for row in store.read_events("a", "2026")
+        if row["event_type"] == "FREE_AGENT_ADD"
+    ]
+
+
+def test_lightweight_pulse_does_not_fetch_users_when_identity_is_not_needed(
+    tmp_path: Path,
+):
+    store = ChronicleStore(tmp_path)
+    client = FakeClient()
+    collect_pulse(
+        [League("a", "1")],
+        client,
+        store,
+        2,
+        "2026-09-16T17:05:00+00:00",
+    )
+    assert not any(call[0] == "users" for call in client.calls)

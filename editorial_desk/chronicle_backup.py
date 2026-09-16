@@ -7,13 +7,22 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import tempfile
-from typing import Any
+from typing import Any, Callable
 from zoneinfo import ZoneInfo
 import zipfile
 
 
 BACKUP_SCHEMA_VERSION = 1
 MANIFEST_NAME = "BACKUP_MANIFEST.json"
+MAJOR_MAINTENANCE_OPERATIONS = frozenset(
+    {
+        "re-backfill",
+        "registry-restructure",
+        "bulk-correction",
+        "storage-migration",
+        "materializer-rewrite",
+    }
+)
 _EXCLUDED_ROOTS = frozenset(
     {
         ".cache",
@@ -38,6 +47,16 @@ class BackupValidationResult:
     errors: tuple[str, ...]
     chronicle_revision: str | None
     file_count: int
+
+
+@dataclass(frozen=True)
+class BackupReceipt:
+    operation: str
+    chronicle_revision: str
+    archive_sha256: str
+    sent_at: str
+    archive_path: Path
+    receipt_path: Path
 
 
 def create_chronicle_backup(
@@ -312,6 +331,72 @@ def write_monthly_backup_receipt(
     return path
 
 
+def require_prechange_backup(
+    operation: str,
+    *,
+    chronicle_root: Path,
+    backup_path: Path,
+    chronicle_revision: str,
+    send_backup: Callable[[Path], None],
+    maintenance_callback: Callable[[], Any],
+    sent_at: datetime | None = None,
+) -> BackupReceipt:
+    """Run protected maintenance only after a validated backup is emailed and receipted."""
+    operation = str(operation).strip()
+    if operation not in MAJOR_MAINTENANCE_OPERATIONS:
+        raise ValueError(
+            f"{operation!r} is not a protected Chronicle maintenance operation"
+        )
+    revision = str(chronicle_revision).strip()
+    if not revision:
+        raise ChronicleBackupError("Chronicle revision is required for maintenance")
+
+    archive = create_chronicle_backup(
+        Path(chronicle_root),
+        Path(backup_path),
+        chronicle_revision=revision,
+    )
+    validation = validate_chronicle_backup(
+        archive, expected_revision=revision
+    )
+    if not validation.valid:
+        raise ChronicleBackupError(
+            "Prechange Chronicle backup validation failed: "
+            + "; ".join(validation.errors)
+        )
+
+    # The callback is the delivery boundary: returning means the configured
+    # mail transport accepted the backup. Exceptions stop maintenance.
+    send_backup(archive)
+
+    when = sent_at or datetime.now(timezone.utc)
+    if when.tzinfo is None or when.utcoffset() is None:
+        raise ValueError("prechange backup sent_at must be timezone-aware")
+    archive_hash = hashlib.sha256(archive.read_bytes()).hexdigest()
+    receipt_path = _prechange_receipt_path(
+        Path(chronicle_root), operation, when
+    )
+    receipt_payload = {
+        "archive_filename": archive.name,
+        "archive_sha256": archive_hash,
+        "chronicle_revision": revision,
+        "operation": operation,
+        "sent_at": when.isoformat(),
+    }
+    _atomic_write_json(receipt_path, receipt_payload)
+
+    receipt = BackupReceipt(
+        operation=operation,
+        chronicle_revision=revision,
+        archive_sha256=archive_hash,
+        sent_at=when.isoformat(),
+        archive_path=archive,
+        receipt_path=receipt_path,
+    )
+    maintenance_callback()
+    return receipt
+
+
 def restore_chronicle_backup(
     archive_path: Path,
     destination: Path,
@@ -444,6 +529,12 @@ def _local_datetime(value: datetime, timezone_name: str) -> datetime:
     if value.tzinfo is None or value.utcoffset() is None:
         raise ValueError("datetime must be timezone-aware")
     return value.astimezone(ZoneInfo(timezone_name))
+
+
+def _prechange_receipt_path(root: Path, operation: str, sent_at: datetime) -> Path:
+    utc = sent_at.astimezone(timezone.utc)
+    stamp = utc.strftime("%Y%m%dT%H%M%SZ")
+    return root / "backup_receipts" / "prechange" / f"{stamp}-{operation}.json"
 
 
 def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:

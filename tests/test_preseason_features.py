@@ -1,6 +1,10 @@
 from editorial_desk.feature_producers import (
     draft_adp_value,
+    draft_bargains,
+    draft_market,
+    draft_reach,
     draft_results,
+    draft_value_board,
     dynasty_market,
     future_pick_ledger,
     keeper_value,
@@ -42,6 +46,7 @@ def _snapshot():
                     "picks": [
                         {"pick_no": 1, "round": 1, "roster_id": 1, "player_id": "wr", "metadata": {"first_name": "Wide", "last_name": "Rookie", "position": "WR", "adp": 3.5}},
                         {"pick_no": 2, "round": 1, "roster_id": 2, "player_id": "db", "metadata": {"first_name": "D", "last_name": "Back", "position": "DB", "adp": 8.0}},
+                        {"pick_no": 10, "round": 2, "roster_id": 1, "player_id": "rb", "metadata": {"position": "RB", "adp": 7.0}},
                     ],
                     "traded_picks": [],
                 }
@@ -54,7 +59,7 @@ def _snapshot():
             {"season": "2027", "round": 1, "roster_id": 2, "owner_id": 1, "previous_owner_id": 2}
         ],
         "ranking_inputs": {
-            "draft_adp": {"status": "available", "players": {"wr": {"adp": 3.5}, "db": {"adp": 8.0}}},
+            "draft_adp": {"status": "available", "players": {"wr": {"adp": 3.5}, "db": {"adp": 8.0}, "rb": {"adp": 7.0}}},
             "dynasty_daddy": {"status": "unavailable", "players": {}, "error": "not configured"},
         },
     }
@@ -63,7 +68,7 @@ def _snapshot():
 def test_sleeper_native_draft_results_are_ready_when_context_is_present():
     result = draft_results(_snapshot())
     assert result.status == "ready"
-    assert [row["player_id"] for row in result.data] == ["wr", "db"]
+    assert [row["player_id"] for row in result.data] == ["wr", "db", "rb"]
     assert result.data[0]["pick_no"] == 1
 
 
@@ -75,6 +80,41 @@ def test_draft_adp_value_uses_authoritative_adp_when_present():
     assert first["pick_no"] == 1
     assert first["adp"] == 3.5
     assert first["value_delta"] == 2.5
+
+
+def test_adp_derived_boards_share_one_authoritative_value_calculation():
+    value_board = draft_value_board(_snapshot())
+    bargains = draft_bargains(_snapshot())
+    reaches = draft_reach(_snapshot())
+    market = draft_market(_snapshot())
+
+    assert value_board.status == "ready"
+    assert [row["player_id"] for row in value_board.data] == ["db", "wr", "rb"]
+    assert [row["value_delta"] for row in value_board.data] == [6.0, 2.5, -3.0]
+
+    assert bargains.status == "ready"
+    assert [row["player_id"] for row in bargains.data] == ["db", "wr"]
+    assert all(row["value_delta"] > 0 for row in bargains.data)
+
+    assert reaches.status == "ready"
+    assert [row["player_id"] for row in reaches.data] == ["rb"]
+    assert reaches.data[0]["value_delta"] == -3.0
+
+    assert market.status == "ready"
+    assert market.data["players"]["wr"]["adp"] == 3.5
+    assert market.data["status"] == "available"
+
+
+def test_adp_derived_boards_do_not_fabricate_when_authoritative_adp_is_missing():
+    snapshot = _snapshot()
+    snapshot["ranking_inputs"].pop("draft_adp")
+    for pick in snapshot["draft_context"]["records"][0]["picks"]:
+        pick["metadata"].pop("adp", None)
+
+    for producer in (draft_value_board, draft_bargains, draft_reach, draft_market):
+        result = producer(snapshot)
+        assert result.status == "unavailable"
+        assert "ADP" in (result.reason or "")
 
 
 def test_keeper_value_preserves_cost_and_prior_round():
@@ -89,7 +129,7 @@ def test_roster_age_uses_years_experience_without_fabricating_age():
     result = roster_age(_snapshot())
     assert result.status == "ready"
     one = next(row for row in result.data if row["roster_id"] == 1)
-    assert one["average_years_experience"] == 2.0
+    assert one["average_years_experience"] == 1.75
     assert one["rookies"] == 1
     assert "average_age" not in one
 

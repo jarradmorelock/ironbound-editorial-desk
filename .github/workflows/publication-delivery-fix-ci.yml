@@ -24,3 +24,4 @@ jobs:
         run: python -m pytest -q
       - name: Compile package
         run: python -m compileall -q editorial_desk
+      # This workflow is temporary and exists only to verify the bugfix branch.

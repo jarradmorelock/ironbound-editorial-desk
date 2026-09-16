@@ -7,6 +7,7 @@ from typing import Any, Iterable
 from .chronicle_queries import ChronicleQueries
 from .external_inputs import ExternalEditorialInputs
 from .story_models import StoryCandidate, StoryEvidenceRef
+from .story_presentation import present_story_candidate
 
 
 STORY_DESK_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -82,8 +83,12 @@ def build_story_desk(
             candidates.append(candidate)
 
     unique = {candidate.candidate_id: candidate for candidate in candidates}
+    presented = [
+        present_story_candidate(candidate, publication_key)
+        for candidate in unique.values()
+    ]
     ordered = sorted(
-        unique.values(),
+        presented,
         key=lambda row: (-row.signal_score, row.candidate_type, row.candidate_id),
     )[: max(0, min(int(max_candidates), 20))]
     return {

@@ -1,5 +1,4 @@
-from editorial_desk.metrics import build_weekly_dossier
-from editorial_desk.render import render_markdown
+from editorial_desk.review import build_editorial_review, render_editorial_review
 
 
 def _snapshot(tier="newspaper"):
@@ -73,11 +72,12 @@ def _snapshot(tier="newspaper"):
             "dynasty_daddy": {"status": "available", "players": {}},
             "redraft_daddy": {"status": "available", "players": {}},
         },
+        "nfl_context": {},
     }
 
 
 def test_newspaper_health_report_includes_general_status_and_ir_only():
-    dossier = build_weekly_dossier(_snapshot("newspaper"))
+    dossier = build_editorial_review(_snapshot("newspaper"))
 
     health = dossier["roster_health"]
     assert health["status"] == "available"
@@ -99,7 +99,7 @@ def test_newspaper_health_report_includes_general_status_and_ir_only():
     assert "injury_start_date" not in questionable
     assert "depth_chart_order" not in questionable
 
-    markdown = render_markdown(dossier)
+    markdown = render_editorial_review(dossier)
     assert "## Roster Health" in markdown
     assert "Questionable Player" in markdown
     assert "Reserve Player" in markdown
@@ -118,7 +118,7 @@ def test_flagship_health_report_retains_expanded_health_context():
         "next_week_projections": {"status": "not_applicable", "players": {}},
     }
 
-    dossier = build_weekly_dossier(snapshot)
+    dossier = build_editorial_review(snapshot)
     health = dossier["roster_health"]
     questionable = next(
         row for row in health["players"] if row["player"] == "Questionable Player"
@@ -128,7 +128,7 @@ def test_flagship_health_report_retains_expanded_health_context():
     assert questionable["injury_start_date"] == "2026-09-14"
     assert questionable["depth_chart_order"] == 1
 
-    markdown = render_markdown(dossier)
+    markdown = render_editorial_review(dossier)
     assert "Limited Participation" in markdown
     assert "injury start 2026-09-14" in markdown
 
@@ -138,9 +138,9 @@ def test_healthy_roster_is_reported_as_clear_not_unavailable():
     snapshot["rosters"][0]["players"] = ["healthy"]
     snapshot["rosters"][0]["reserve"] = []
 
-    dossier = build_weekly_dossier(snapshot)
+    dossier = build_editorial_review(snapshot)
 
     assert dossier["roster_health"] == {"status": "available", "players": []}
-    markdown = render_markdown(dossier)
+    markdown = render_editorial_review(dossier)
     assert "No roster health flags returned" in markdown
     assert "injury data unavailable" not in markdown.lower()

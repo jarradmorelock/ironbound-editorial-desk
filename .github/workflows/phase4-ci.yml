@@ -37,6 +37,7 @@ jobs:
         shell: bash
         run: |
           if grep -R -n -E "Week'?s Heavy Lifting|publication standard pending" \
+            --exclude=phase4-ci.yml \
             editorial_desk config README.md .github/workflows; then
             echo "Retired editorial label found in production files."
             exit 1
@@ -47,6 +48,7 @@ jobs:
         shell: bash
         run: |
           if grep -R -n -E "git push([^\n]*)(--force|-f)([^a-zA-Z]|$)|push --force" \
+            --exclude=phase4-ci.yml \
             editorial_desk .github/workflows; then
             echo "Destructive force-push pattern found in production automation."
             exit 1

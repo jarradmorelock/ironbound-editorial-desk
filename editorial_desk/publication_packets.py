@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any
 
 from .config import PublicationConfig
 from .feature_models import FeatureResult, ready, ready_no_items, unavailable
@@ -30,6 +30,8 @@ from .feature_producers import (
 )
 from .health import build_roster_health
 from .publication_contracts import evaluate_dependencies
+
+IDP_POSITIONS = {"DL", "DE", "DT", "NT", "LB", "DB", "CB", "S"}
 
 
 def build_publication_packet(
@@ -94,7 +96,14 @@ def _resolve_feature(
     if feature in {"weekly_results", "final_scorecard"}:
         return _value_result(feature, dossier.get("scoreboard"))
     if feature in {"standings", "official_table"}:
-        return _value_result(feature, dossier.get("standings"))
+        standings = dossier.get("standings")
+        if standings is None:
+            standings = (dossier.get("rankings") or {}).get("official_standings")
+        return _value_result(feature, standings)
+    if feature == "ranking_movement":
+        return _value_result(feature, dossier.get("ranking_movement") or dossier.get("rankings"))
+    if feature == "division_metrics":
+        return _value_result(feature, dossier.get("division_metrics") or dossier.get("divisions"))
     if feature == "lineup_efficiency":
         return _value_result(feature, dossier.get("lineup_efficiency"))
     if feature == "lineup_flip_candidates":
@@ -107,6 +116,13 @@ def _resolve_feature(
         return _list_result(feature, divisional_started_mvps(snapshot))
     if feature == "player_position_leaders":
         return _mapping_result(feature, position_leaders(snapshot))
+    if feature == "idp_position_metrics":
+        leaders = {
+            position: row
+            for position, row in position_leaders(snapshot).items()
+            if str(position).upper() in IDP_POSITIONS
+        }
+        return _mapping_result(feature, leaders)
     if feature == "bench_leaders":
         return _single_result(feature, bench_leader(snapshot))
     if feature == "bench_blast":
@@ -114,7 +130,10 @@ def _resolve_feature(
     if feature == "waiver_impact":
         return _list_result(feature, waiver_impact(snapshot, dossier))
     if feature == "record_watch":
-        return ready(feature, record_watch(dossier, chronicle_history))
+        value = record_watch(dossier, chronicle_history)
+        if not value.get("records") and dossier.get("weekly_records"):
+            value = {**value, "records": list(dossier.get("weekly_records") or [])}
+        return ready(feature, value)
     if feature == "workload_stat_lines":
         return workload_stat_lines(snapshot)
     if feature == "game_window_context":
@@ -126,7 +145,16 @@ def _resolve_feature(
     if feature in {"bad_beat", "escape_artist"}:
         return _single_result(feature, (dossier.get("awards") or {}).get(feature))
     if feature in {"weekly_honors", "weekly_honors_support"}:
-        return _mapping_result(feature, dossier.get("awards") or {})
+        return _mapping_result(feature, _weekly_honors(dossier))
+    if feature == "weekly_desk_honors":
+        honors = _weekly_honors(dossier)
+        saturday = {
+            "benchwarmer": honors.get("benchwarmer"),
+            "rookie": honors.get("rookie"),
+            "free_agent": honors.get("free_agent"),
+            "bad_beat": honors.get("bad_beat"),
+        }
+        return _mapping_result(feature, {key: value for key, value in saturday.items() if value is not None})
     if feature == "rookie_of_week":
         return _single_result(feature, (dossier.get("weekly_features") or {}).get("rookie_of_the_week"))
     if feature == "free_agent_of_week":
@@ -152,17 +180,53 @@ def _resolve_feature(
         return rookie_draft(snapshot)
     if feature == "recruiting_class":
         return recruiting_class(snapshot)
-    if feature == "dynasty_market":
-        return dynasty_market(snapshot)
+    if feature in {"dynasty_market", "dynasty_market_values"}:
+        result = dynasty_market(snapshot)
+        return _rename_result(result, feature)
     if feature == "offense_defense_splits":
         return offense_defense_splits(snapshot)
     if feature == "streaming_roster_state":
         return streaming_roster_state(snapshot)
+    if feature == "next_matchups":
+        return _next_matchups_result(snapshot)
 
     direct = _direct_feature_value(feature, snapshot, dossier)
     if direct is not _MISSING:
         return _value_result(feature, direct)
     return unavailable(feature, f"No neutral producer is implemented for {feature}")
+
+
+def _weekly_honors(dossier: dict[str, Any]) -> dict[str, Any]:
+    awards = dossier.get("awards") or {}
+    weekly = dossier.get("weekly_features") or {}
+    values = {
+        "manager": awards.get("manager_of_the_week"),
+        "bad_beat": awards.get("bad_beat"),
+        "escape_artist": awards.get("escape_artist"),
+        "benchwarmer": weekly.get("benchwarmer_of_the_week") or awards.get("bench_mvp"),
+        "rookie": weekly.get("rookie_of_the_week"),
+        "free_agent": weekly.get("free_agent_of_the_week"),
+    }
+    return {key: value for key, value in values.items() if value is not None}
+
+
+def _next_matchups_result(snapshot: dict[str, Any]) -> FeatureResult:
+    source = snapshot.get("next_matchups")
+    if source is None:
+        return unavailable("next_matchups", "Next-week Sleeper matchups were not collected")
+    if isinstance(source, dict) and "status" in source:
+        if source.get("status") != "available":
+            return unavailable(
+                "next_matchups",
+                str(source.get("reason") or source.get("error") or "Next-week matchups unavailable"),
+            )
+        records = list(source.get("records") or [])
+        if not records:
+            return ready_no_items("next_matchups", reason="No next-week matchups returned")
+        return ready("next_matchups", records)
+    if isinstance(source, list):
+        return _list_result("next_matchups", source)
+    return unavailable("next_matchups", "Next-week matchup source had an unsupported shape")
 
 
 def _health_result(snapshot: dict[str, Any]) -> FeatureResult:
@@ -184,13 +248,12 @@ _MISSING = object()
 def _direct_feature_value(feature: str, snapshot: dict[str, Any], dossier: dict[str, Any]) -> Any:
     aliases = {
         "league_median": ("league_median", "median"),
-        "ranking_movement": ("ranking_movement", "power_rankings", "rankings"),
-        "division_metrics": ("division_metrics", "division_strength"),
-        "next_matchups": ("next_matchups", "next_week", "next_week_matchups"),
-        "weekly_ledger": ("weekly_ledger",),
+        "weekly_ledger": ("weekly_ledger", "weekly_records"),
         "opening_statement_inputs": ("opening_statement_inputs",),
-        "weekly_hollywood_board": ("weekly_hollywood_board",),
-        "late_show_context": ("late_show_context",),
+        "lead_inputs": ("lead_inputs",),
+        "hollywood_board": ("hollywood_board", "weekly_hollywood_board"),
+        "weekly_briefs": ("weekly_briefs", "dailies"),
+        "late_show_context": ("late_show_context", "game_timing"),
         "production_delays": ("production_delays",),
         "dailies": ("dailies",),
     }

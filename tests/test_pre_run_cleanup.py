@@ -84,7 +84,7 @@ def test_rendered_review_includes_data_and_sources_back_page_block():
     assert "https://docs.sleeper.com/" in text
 
 
-def test_manager_of_week_is_highest_efficiency_even_if_that_team_lost():
+def test_manager_of_week_requires_a_head_to_head_win():
     snapshot = {
         "collected_at": "2026-09-15T22:00:00+00:00",
         "week": 1,
@@ -115,5 +115,4 @@ def test_manager_of_week_is_highest_efficiency_even_if_that_team_lost():
 
     dossier = apply_weekly_features(snapshot, build_weekly_dossier(snapshot))
 
-    assert dossier["awards"]["manager_of_the_week"]["roster_id"] == 1
-    assert dossier["awards"]["manager_of_the_week"]["efficiency"] == 1.0
+    assert dossier["awards"]["manager_of_the_week"]["roster_id"] == 2

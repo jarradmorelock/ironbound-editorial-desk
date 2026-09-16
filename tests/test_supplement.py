@@ -125,3 +125,39 @@ def test_generate_supplement_does_not_report_a_source_regression(tmp_path):
     _write_dossier(current, after)
 
     assert generate_supplements(baseline, current, output, 1) == []
+
+
+def test_generate_supplement_reports_new_or_changed_roster_health(tmp_path):
+    baseline = tmp_path / "baseline"
+    current = tmp_path / "current"
+    output = tmp_path / "supplements"
+    before = _base_dossier()
+    after = _base_dossier()
+    before["roster_health"] = {"status": "available", "players": []}
+    after["roster_health"] = {
+        "status": "available",
+        "players": [
+            {
+                "roster_id": 1,
+                "player_id": "p1",
+                "player": "Injured Player",
+                "team": "Alpha",
+                "position": "WR",
+                "nfl_team": "BUF",
+                "status": "Active",
+                "injury_status": "Questionable",
+                "on_ir": True,
+            }
+        ],
+    }
+    _write_dossier(baseline, before)
+    _write_dossier(current, after)
+
+    generated = generate_supplements(baseline, current, output, 1)
+
+    assert len(generated) == 2
+    markdown = generated[0].read_text(encoding="utf-8")
+    assert "## Roster Health Updates" in markdown
+    assert "Injured Player" in markdown
+    assert "Questionable" in markdown
+    assert "IR/RESERVE" in markdown

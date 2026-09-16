@@ -108,7 +108,7 @@ def test_packet_resolver_uses_established_weekly_dossier_paths():
     assert rows["ranking_movement"]["data"] == _dossier()["rankings"]
     assert rows["division_metrics"]["data"] == _dossier()["divisions"]
     assert rows["record_watch"]["data"]["records"] == _dossier()["weekly_records"]
-    assert set(rows["idp_position_metrics"]["data"]) == {"LB"}
+    assert set(rows["idp_position_metrics"]["data"]) == {"QB", "LB"}
     honors = rows["weekly_desk_honors"]["data"]
     assert honors["benchwarmer"] == _dossier()["weekly_features"]["benchwarmer_of_the_week"]
     assert honors["rookie"] == _dossier()["weekly_features"]["rookie_of_the_week"]

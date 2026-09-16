@@ -35,11 +35,10 @@ class ChronicleStore:
             existing = {row["event_id"]: row for row in self._read_jsonl(path)}
             before_count = len(existing)
             for event in incoming:
-                row = event.to_dict()
                 if event.event_id in existing:
                     skipped += 1
                     continue
-                existing[event.event_id] = row
+                existing[event.event_id] = event.to_dict()
                 added += 1
             if len(existing) == before_count:
                 continue
@@ -56,16 +55,32 @@ class ChronicleStore:
             )
             self._atomic_write_text(path, payload)
             changed_paths.append(path)
-        return AppendResult(
-            added=added,
-            skipped=skipped,
-            paths=tuple(changed_paths),
-        )
+        return AppendResult(added=added, skipped=skipped, paths=tuple(changed_paths))
 
     def read_events(
         self, league_key: str | None, season: str
     ) -> list[dict[str, Any]]:
         return self._read_jsonl(self._event_path(league_key, season))
+
+    def read_all_league_events(self, league_key: str) -> list[dict[str, Any]]:
+        events_dir = (
+            self.root
+            / "leagues"
+            / self._safe_component(league_key)
+            / "events"
+        )
+        rows: list[dict[str, Any]] = []
+        if not events_dir.exists():
+            return rows
+        for path in sorted(events_dir.glob("*.jsonl"), key=lambda item: item.name):
+            rows.extend(self._read_jsonl(path))
+        return rows
+
+    def league_keys(self) -> tuple[str, ...]:
+        root = self.root / "leagues"
+        if not root.exists():
+            return ()
+        return tuple(sorted(path.name for path in root.iterdir() if path.is_dir()))
 
     def read_current_state(self, scope: str) -> dict[str, Any]:
         return self._read_json(self._current_state_path(scope))
@@ -87,6 +102,44 @@ class ChronicleStore:
         path = self.root / "coverage" / "live_observation.json"
         self._atomic_write_json(path, value)
         return path
+
+    def read_backfill_coverage(self) -> dict[str, Any]:
+        return self._read_json(self.root / "coverage" / "historical_backfill.json")
+
+    def write_backfill_coverage(self, value: dict[str, Any]) -> Path:
+        path = self.root / "coverage" / "historical_backfill.json"
+        self._atomic_write_json(path, value)
+        return path
+
+    def read_identity_registry(self):
+        from .chronicle_identity import IdentityRegistry
+
+        path = self.root / "registry" / "identity.json"
+        return IdentityRegistry.from_dict(self._read_json(path))
+
+    def write_identity_registry(self, registry) -> Path:
+        path = self.root / "registry" / "identity.json"
+        self._atomic_write_json(path, registry.to_dict())
+        return path
+
+    def write_materialized_history(self, history) -> tuple[Path, ...]:
+        league_key = self._safe_component(history.league_key)
+        root = self.root / "leagues" / league_key / "history"
+        data = history.to_dict()
+        payloads = {
+            "matchups.json": {"matchups": data["matchups"]},
+            "records.json": {"records": data["records"], "coverage": data["coverage"]},
+            "seasons.json": {"seasons": data["seasons"]},
+            "transactions.json": {"transactions": data["transactions"]},
+            "head_to_head.json": {"head_to_head": data["head_to_head"]},
+            "record_events.json": {"record_events": data["record_events"]},
+        }
+        written: list[Path] = []
+        for name, payload in payloads.items():
+            path = root / name
+            self._atomic_write_json(path, payload)
+            written.append(path)
+        return tuple(written)
 
     def _event_path(self, league_key: str | None, season: str) -> Path:
         safe_season = self._safe_component(season)
@@ -140,10 +193,7 @@ class ChronicleStore:
         return value
 
     def _atomic_write_json(self, path: Path, value: dict[str, Any]) -> None:
-        payload = (
-            json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False)
-            + "\n"
-        )
+        payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
         self._atomic_write_text(path, payload)
 
     @staticmethod

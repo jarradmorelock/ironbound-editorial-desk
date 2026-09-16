@@ -78,7 +78,7 @@ class IdentityBootstrapResult:
 class IdentityRegistry:
     def __init__(self) -> None:
         self._dynasty: dict[tuple[str, str, int], DynastySeasonMapping] = {}
-        self._redraft: dict[tuple[str, str, str], RedraftSeasonMapping] = {}
+        self._redraft: dict[tuple[str, str, int], RedraftSeasonMapping] = {}
         self._aliases: dict[str, list[AliasRecord]] = {}
         self._manager_aliases: dict[str, list[AliasRecord]] = {}
         self._tenures: dict[str, list[ManagerTenure]] = {}
@@ -106,7 +106,7 @@ class IdentityRegistry:
     ) -> DynastySeasonMapping:
         season = str(season)
         roster_id = int(roster_id)
-        owner_id = str(owner_id)
+        owner_id = str(owner_id or "")
         key = (league_key, season, roster_id)
         existing = self._dynasty.get(key)
         if existing is not None:
@@ -152,8 +152,9 @@ class IdentityRegistry:
         season = str(season)
         proposed: list[tuple[dict[str, Any], str | None]] = []
         ambiguities: list[IdentityAmbiguity] = []
+        rows = list(rosters)
 
-        for row in rosters:
+        for row in rows:
             roster_id = int(row["roster_id"])
             owner_id = str(row.get("owner_id") or "")
             key = (league_key, season, roster_id)
@@ -169,8 +170,8 @@ class IdentityRegistry:
             )
             if isinstance(resolution, IdentityAmbiguity):
                 ambiguities.append(resolution)
-                continue
-            proposed.append((row, resolution))
+            else:
+                proposed.append((row, resolution))
 
         if ambiguities:
             for ambiguity in ambiguities:
@@ -183,21 +184,17 @@ class IdentityRegistry:
         for row, candidate in proposed:
             roster_id = int(row["roster_id"])
             owner_id = str(row.get("owner_id") or "")
-            franchise_key = candidate or _stable_key(
-                "franchise", league_key, season, roster_id
-            )
             mapping = DynastySeasonMapping(
                 league_key=league_key,
                 season=season,
                 roster_id=roster_id,
                 owner_id=owner_id,
-                franchise_key=franchise_key,
+                franchise_key=candidate
+                or _stable_key("franchise", league_key, season, roster_id),
             )
             self._dynasty[(league_key, season, roster_id)] = mapping
             self._record_dynasty_metadata(
-                mapping,
-                row.get("team_name"),
-                row.get("manager_name"),
+                mapping, row.get("team_name"), row.get("manager_name")
             )
             self._ambiguities.pop((league_key, season, roster_id), None)
             mappings.append(mapping)
@@ -214,20 +211,27 @@ class IdentityRegistry:
         manager_name: str | None = None,
     ) -> RedraftSeasonMapping:
         season = str(season)
-        owner_id = str(owner_id)
-        key = (league_key, season, owner_id)
-        manager_key = _stable_key("manager", league_key, owner_id)
+        roster_id = int(roster_id)
+        owner_id = str(owner_id or "")
+        if owner_id:
+            manager_key = _stable_key("manager", league_key, owner_id)
+        else:
+            # An orphan slot is not a person. Keep it distinct instead of
+            # collapsing all ownerless rosters into one fictional manager.
+            manager_key = _stable_key("manager", league_key, "orphan", season, roster_id)
         mapping = RedraftSeasonMapping(
             league_key=league_key,
             season=season,
-            roster_id=int(roster_id),
+            roster_id=roster_id,
             owner_id=owner_id,
             manager_key=manager_key,
         )
-        self._redraft[key] = mapping
+        self._redraft[(league_key, season, roster_id)] = mapping
         alias = manager_name or team_name
         if alias:
-            self._append_alias(self._manager_aliases, manager_key, season, str(alias))
+            self._append_alias(
+                self._manager_aliases, manager_key, season, str(alias)
+            )
         return mapping
 
     def bootstrap_redraft_season(
@@ -258,31 +262,34 @@ class IdentityRegistry:
         return mapping.franchise_key
 
     def competitor_for(self, league_key: str, season: str, roster_id: int) -> str:
-        dynasty = self._dynasty.get((league_key, str(season), int(roster_id)))
+        key = (league_key, str(season), int(roster_id))
+        dynasty = self._dynasty.get(key)
         if dynasty is not None:
             return dynasty.franchise_key
-        for mapping in self._redraft.values():
-            if (
-                mapping.league_key == league_key
-                and mapping.season == str(season)
-                and mapping.roster_id == int(roster_id)
-            ):
-                return mapping.manager_key
+        redraft = self._redraft.get(key)
+        if redraft is not None:
+            return redraft.manager_key
         raise IdentityError(
             f"No competitor mapping for {league_key} {season} roster {roster_id}"
         )
 
     def manager_for(self, league_key: str, season: str, owner_id: str) -> str:
-        redraft = self._redraft.get((league_key, str(season), str(owner_id)))
-        if redraft is not None:
-            return redraft.manager_key
-        for mapping in self._dynasty.values():
-            if (
-                mapping.league_key == league_key
-                and mapping.season == str(season)
-                and mapping.owner_id == str(owner_id)
-            ):
-                return _stable_key("manager", league_key, str(owner_id))
+        owner_id = str(owner_id or "")
+        if owner_id:
+            for mapping in self._redraft.values():
+                if (
+                    mapping.league_key == league_key
+                    and mapping.season == str(season)
+                    and mapping.owner_id == owner_id
+                ):
+                    return mapping.manager_key
+            for mapping in self._dynasty.values():
+                if (
+                    mapping.league_key == league_key
+                    and mapping.season == str(season)
+                    and mapping.owner_id == owner_id
+                ):
+                    return _stable_key("manager", league_key, owner_id)
         raise IdentityError(
             f"No manager mapping for {league_key} {season} owner {owner_id}"
         )
@@ -305,9 +312,7 @@ class IdentityRegistry:
 
     def unresolved_for_league(self, league_key: str) -> tuple[IdentityAmbiguity, ...]:
         return tuple(
-            row
-            for row in self.unresolved_ambiguities()
-            if row.league_key == league_key
+            row for row in self.unresolved_ambiguities() if row.league_key == league_key
         )
 
     def unresolved_ambiguities(self) -> tuple[IdentityAmbiguity, ...]:
@@ -352,7 +357,7 @@ class IdentityRegistry:
         for row in value.get("redraft_mappings") or []:
             mapping = RedraftSeasonMapping(**row)
             registry._redraft[
-                (mapping.league_key, mapping.season, mapping.owner_id)
+                (mapping.league_key, mapping.season, mapping.roster_id)
             ] = mapping
         registry._aliases = {
             key: [AliasRecord(**row) for row in rows]
@@ -393,46 +398,52 @@ class IdentityRegistry:
         previous_season = self._latest_prior_dynasty_season(league_key, season)
         if previous_season is None:
             return None
-
         previous = [
             mapping
             for mapping in self._dynasty.values()
             if mapping.league_key == league_key and mapping.season == previous_season
         ]
         roster_match = next((m for m in previous if m.roster_id == roster_id), None)
-        owner_match = next((m for m in previous if m.owner_id == owner_id), None)
-
+        owner_match = (
+            next((m for m in previous if owner_id and m.owner_id == owner_id), None)
+            if owner_id
+            else None
+        )
         candidates = {
-            m.franchise_key for m in (roster_match, owner_match) if m is not None
+            mapping.franchise_key
+            for mapping in (roster_match, owner_match)
+            if mapping is not None
         }
         if roster_match is not None and roster_match.owner_id != owner_id:
-            reason = (
-                "Dynasty ownership changed on a known roster slot; explicit continuity "
-                "confirmation is required"
-            )
             return IdentityAmbiguity(
-                league_key,
-                season,
-                roster_id,
-                owner_id,
-                tuple(sorted(candidates or {roster_match.franchise_key})),
-                reason,
+                league_key=league_key,
+                season=season,
+                roster_id=roster_id,
+                owner_id=owner_id,
+                candidate_franchise_keys=tuple(
+                    sorted(candidates or {roster_match.franchise_key})
+                ),
+                reason=(
+                    "Dynasty ownership changed on a known roster slot; explicit "
+                    "continuity confirmation is required"
+                ),
             )
         if len(candidates) > 1:
             return IdentityAmbiguity(
-                league_key,
-                season,
-                roster_id,
-                owner_id,
-                tuple(sorted(candidates)),
-                "Roster-slot and owner continuity point to different dynasty franchises",
+                league_key=league_key,
+                season=season,
+                roster_id=roster_id,
+                owner_id=owner_id,
+                candidate_franchise_keys=tuple(sorted(candidates)),
+                reason=(
+                    "Roster-slot and owner continuity point to different dynasty "
+                    "franchises"
+                ),
             )
-        if owner_match is not None and roster_match is not None:
+        if owner_match is not None:
             return owner_match.franchise_key
         if roster_match is not None:
             return roster_match.franchise_key
-        if owner_match is not None:
-            return owner_match.franchise_key
         return None
 
     def _latest_prior_dynasty_season(
@@ -455,17 +466,18 @@ class IdentityRegistry:
     ) -> None:
         if team_name:
             self._append_alias(
-                self._aliases,
-                mapping.franchise_key,
-                mapping.season,
-                str(team_name),
+                self._aliases, mapping.franchise_key, mapping.season, str(team_name)
             )
         manager_key = _stable_key("manager", mapping.league_key, mapping.owner_id)
-        tenure = ManagerTenure(mapping.season, mapping.owner_id, manager_key)
+        tenure = ManagerTenure(
+            season=mapping.season,
+            owner_id=mapping.owner_id,
+            manager_key=manager_key,
+        )
         rows = self._tenures.setdefault(mapping.franchise_key, [])
         if tenure not in rows:
             rows.append(tenure)
-            rows.sort(key=lambda row: (row.season, row.owner_id))
+            rows.sort(key=lambda row: (row.season, row.owner_id, row.manager_key))
         if manager_name:
             self._append_alias(
                 self._manager_aliases,
@@ -476,13 +488,13 @@ class IdentityRegistry:
 
     @staticmethod
     def _append_alias(
-        target: dict[str, list[AliasRecord]],
-        key: str,
+        bucket: dict[str, list[AliasRecord]],
+        identity_key: str,
         season: str,
         name: str,
     ) -> None:
-        row = AliasRecord(str(season), name)
-        rows = target.setdefault(key, [])
-        if row not in rows:
-            rows.append(row)
-            rows.sort(key=lambda item: (item.season, item.name))
+        alias = AliasRecord(str(season), str(name))
+        rows = bucket.setdefault(identity_key, [])
+        if alias not in rows:
+            rows.append(alias)
+            rows.sort(key=lambda row: (row.season, row.name))

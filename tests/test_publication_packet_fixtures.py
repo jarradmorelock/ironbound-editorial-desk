@@ -125,6 +125,32 @@ def test_hollywood_board_exposes_locked_factual_slots():
     assert board["data"]["scene_stealer"]["status"] == "STARTED"
 
 
+def test_hollywood_weekly_briefs_preserve_factual_candidates():
+    snapshot = _snapshot()
+    dossier = build_editorial_review(snapshot)
+    chronicle_events = [
+        {
+            "event_id": "evt-1",
+            "event_type": "LEAGUE_SETTING_CHANGE",
+            "observed_at": "2026-09-16T12:05:00Z",
+            "evidence": {"setting": "waiver_rule"},
+        }
+    ]
+    packet = build_publication_packet(
+        snapshot,
+        dossier,
+        PUBLICATIONS["hollywood_beat"],
+        "weekly",
+        chronicle_events=chronicle_events,
+    )
+    briefs = next(row for row in packet["departments"] if row["feature"] == "weekly_briefs")
+
+    assert briefs["status"] == "ready"
+    assert briefs["data"]["transactions"][0]["transaction_id"] == "w1"
+    assert briefs["data"]["health"] == []
+    assert briefs["data"]["chronicle_events"][0]["event_id"] == "evt-1"
+
+
 def test_all_five_weekly_newspaper_packets_render_locked_departments_without_label_leakage():
     snapshot = _snapshot()
     dossier = build_editorial_review(snapshot)

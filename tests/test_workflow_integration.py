@@ -33,6 +33,7 @@ def test_tuesday_workflow_pins_chronicle_before_editorial_collection_and_deliver
     assert "path: chronicle-data" in text
     assert "--finalize-matchups" in text
     assert "--chronicle-root ../chronicle-data" in text
+    assert "--allow-partial" in text
     assert "--chronicle-revision \"${{ steps.chronicle_sha.outputs.sha }}\"" in text
     assert "--monthly-receipt-root ../chronicle-data" in text
     assert "--external-inputs-dir editorial-inputs" in text
@@ -108,6 +109,16 @@ def test_cli_supports_backup_due_build_receipt_email_and_ledger_supplement():
     )
     assert backup.output == Path("backup.zip")
     assert backup.chronicle_revision == "abc123"
+
+    materialize = parser().parse_args(
+        [
+            "chronicle-materialize",
+            "--chronicle-root",
+            "chronicle-data",
+            "--allow-partial",
+        ]
+    )
+    assert materialize.allow_partial is True
 
     email = parser().parse_args(
         [

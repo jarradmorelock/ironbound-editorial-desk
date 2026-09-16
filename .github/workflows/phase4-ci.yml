@@ -18,8 +18,87 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
+
       - name: Full regression suite
         run: python -m pytest -q
+
       - name: Compile package
         run: python -m compileall -q editorial_desk
-      # Temporary branch gate for Story Desk presentation wiring.
+
+      - name: Validate example league and publication configuration
+        shell: bash
+        run: |
+          cp config/leagues.example.json config/leagues.json
+          python -m editorial_desk validate-config \
+            --config config/leagues.json \
+            --publications config/publications.json
+
+      - name: Reject retired publication labels
+        shell: bash
+        run: |
+          if grep -R -n -E "Week'?s Heavy Lifting|publication standard pending" \
+            editorial_desk config README.md .github/workflows; then
+            echo "Retired editorial label found in production files."
+            exit 1
+          fi
+          echo "No retired editorial labels found."
+
+      - name: Reject force pushes in production automation
+        shell: bash
+        run: |
+          if grep -R -n -E "git push([^\n]*)(--force|-f)([^a-zA-Z]|$)|push --force" \
+            editorial_desk .github/workflows; then
+            echo "Destructive force-push pattern found in production automation."
+            exit 1
+          fi
+          echo "No force-push commands found in production automation."
+
+      - name: Read-only live Sleeper smoke
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          from editorial_desk.sleeper import SleeperClient
+
+          config = json.loads(Path("config/leagues.example.json").read_text(encoding="utf-8"))
+          ironbound = next(row for row in config["leagues"] if row["key"] == "ironbound_sixteen")
+          league_id = ironbound["sleeper_league_id"]
+
+          client = SleeperClient(timeout_seconds=30)
+          state = client.nfl_state()
+          league = client.league(league_id)
+          rosters = client.rosters(league_id)
+          week = int(state.get("week") or 1)
+          matchups = client.matchups(league_id, week)
+          transactions = client.transactions(league_id, week)
+
+          assert str(league.get("league_id")) == str(league_id)
+          assert isinstance(rosters, list) and rosters
+          assert isinstance(matchups, list)
+          assert isinstance(transactions, list)
+          print(
+              "Sleeper read-only smoke OK: "
+              f"season={state.get('season')} week={week} "
+              f"rosters={len(rosters)} matchups={len(matchups)} "
+              f"transactions={len(transactions)}"
+          )
+          PY
+
+      - name: Verify Sleeper client exposes GET-only transport
+        shell: bash
+        run: |
+          python - <<'PY'
+          import inspect
+          from editorial_desk import sleeper
+
+          source = inspect.getsource(sleeper.SleeperClient)
+          forbidden = (".post(", ".put(", ".patch(", ".delete(")
+          assert ".get(" in source
+          assert not any(token in source for token in forbidden)
+          print("SleeperClient transport is GET-only.")
+          PY
+
+      - name: Re-run integrated v2 recovery fixture
+        run: python -m pytest tests/test_editorial_v2_e2e.py -q

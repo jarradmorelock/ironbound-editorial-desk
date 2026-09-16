@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
-from .metrics import optimal_lineup, starter_slots
+from .metrics import _eligible, optimal_lineup, starter_slots
 
 
 NFLVERSE_SCORING_FIELDS = {
@@ -34,8 +34,9 @@ def apply_weekly_features(
     """Attach deterministic magazine features and editorial lineup efficiency."""
     lineup = _lineup_efficiency(snapshot)
     dossier["lineup_efficiency"] = lineup
-    _replace_manager_of_week(dossier, lineup)
+    _replace_manager_of_week(snapshot, dossier, lineup)
     dossier["weekly_features"] = {
+        "lineup_efficiency_top_three": lineup[:3],
         "divisional_mvp_nominees": _divisional_mvp_nominees(snapshot),
         "top_scorers_by_position": _top_scorers_by_position(snapshot),
         "benchwarmer_of_the_week": _benchwarmer_of_week(snapshot),
@@ -94,14 +95,225 @@ def _lineup_efficiency(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _replace_manager_of_week(
-    dossier: dict[str, Any], lineup: list[dict[str, Any]]
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    lineup: list[dict[str, Any]],
 ) -> None:
+    winner_games = {
+        int(game["winner"]["roster_id"]): game
+        for game in dossier.get("scoreboard") or []
+        if game.get("winner")
+    }
+    candidates = [
+        dict(row)
+        for row in lineup
+        if int(row.get("roster_id") or 0) in winner_games
+    ]
+    if not candidates:
+        dossier.setdefault("awards", {})["manager_of_the_week"] = None
+        return
+
+    efficiency_ranks = _dense_ranks(
+        {int(row["roster_id"]): _number(row.get("efficiency")) for row in candidates}
+    )
+    score_ranks = _dense_ranks(
+        {int(row["roster_id"]): _number(row.get("actual_points")) for row in candidates}
+    )
+    evidence_by_roster = _management_tiebreak_evidence(snapshot, winner_games)
+
+    for row in candidates:
+        roster_id = int(row["roster_id"])
+        game = winner_games[roster_id]
+        evidence = evidence_by_roster.get(roster_id, [])
+        row["head_to_head_result"] = "win"
+        row["victory_margin"] = round(_number(game.get("margin")), 2)
+        loser = game.get("loser") or {}
+        row["opponent"] = loser.get("team")
+        row["efficiency_rank_among_winners"] = efficiency_ranks[roster_id]
+        row["score_rank_among_winners"] = score_ranks[roster_id]
+        row["manager_rank_sum"] = (
+            efficiency_ranks[roster_id] + score_ranks[roster_id]
+        )
+        row["management_tiebreak"] = {
+            "count": len(evidence),
+            "impact_points": round(
+                sum(_number(item.get("impact_points")) for item in evidence), 2
+            ),
+            "evidence": evidence,
+        }
+
+    best_rank_sum = min(row["manager_rank_sum"] for row in candidates)
+    finalists = [
+        row for row in candidates if row["manager_rank_sum"] == best_rank_sum
+    ]
     winner = max(
-        lineup,
-        key=lambda row: (row["efficiency"], row["actual_points"]),
-        default=None,
+        finalists,
+        key=lambda row: (
+            (row.get("management_tiebreak") or {}).get("count", 0),
+            (row.get("management_tiebreak") or {}).get("impact_points", 0.0),
+            row.get("actual_points", 0.0),
+            row.get("efficiency", 0.0),
+        ),
+    )
+    winner["selection_basis"] = (
+        "Winner-only award balancing weekly lineup-efficiency rank and scoring "
+        "rank. Documented management decisions are used only to break an "
+        "equal base rank sum."
     )
     dossier.setdefault("awards", {})["manager_of_the_week"] = winner
+
+
+def _dense_ranks(values: dict[int, float]) -> dict[int, int]:
+    ordered = sorted(set(values.values()), reverse=True)
+    ranks = {value: index + 1 for index, value in enumerate(ordered)}
+    return {roster_id: ranks[value] for roster_id, value in values.items()}
+
+
+def _management_tiebreak_evidence(
+    snapshot: dict[str, Any], winner_games: dict[int, dict[str, Any]]
+) -> dict[int, list[dict[str, Any]]]:
+    matchups = {
+        int(row["roster_id"]): row for row in snapshot.get("matchups") or []
+    }
+    rosters = {
+        int(row["roster_id"]): row for row in snapshot.get("rosters") or []
+    }
+    players = snapshot.get("players") or {}
+    slots = starter_slots(snapshot.get("league") or {})
+    scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
+    projection_source = (
+        (snapshot.get("ranking_inputs") or {}).get("sleeper_projections") or {}
+    )
+    projections = (
+        projection_source.get("players") or {}
+        if projection_source.get("status") == "available"
+        else {}
+    )
+    evidence: dict[int, list[dict[str, Any]]] = defaultdict(list)
+
+    for roster_id, game in winner_games.items():
+        matchup = matchups.get(roster_id) or {}
+        roster = rosters.get(roster_id) or {}
+        starters = [str(player_id) for player_id in matchup.get("starters") or []]
+        starter_set = set(starters)
+        inactive = {
+            str(player_id)
+            for key in ("reserve", "taxi")
+            for player_id in roster.get(key) or []
+        }
+        bench = [
+            str(player_id)
+            for player_id in matchup.get("players") or []
+            if str(player_id) not in starter_set | inactive
+        ]
+        points = _points_map(matchup)
+        margin = _number(game.get("margin"))
+
+        if projections and scoring:
+            for index, starter_id in enumerate(starters[: len(slots)]):
+                if starter_id not in projections:
+                    continue
+                slot = slots[index]
+                starter_projection = _projected_points(
+                    projections.get(starter_id) or {}, scoring
+                )
+                starter_actual = _number(points.get(starter_id))
+                calls: list[dict[str, Any]] = []
+                for bench_id in bench:
+                    if bench_id not in projections:
+                        continue
+                    if not _eligible(bench_id, players.get(bench_id) or {}, slot):
+                        continue
+                    bench_projection = _projected_points(
+                        projections.get(bench_id) or {}, scoring
+                    )
+                    bench_actual = _number(points.get(bench_id))
+                    point_swing = starter_actual - bench_actual
+                    if (
+                        starter_projection >= bench_projection
+                        or starter_actual <= bench_actual
+                        or point_swing < margin
+                    ):
+                        continue
+                    calls.append(
+                        {
+                            "type": "projection_start_sit",
+                            "slot": slot,
+                            "started_player_id": starter_id,
+                            "started_player": _player_name(starter_id, players),
+                            "started_projection": round(starter_projection, 2),
+                            "started_points": round(starter_actual, 2),
+                            "bench_player_id": bench_id,
+                            "bench_player": _player_name(bench_id, players),
+                            "bench_projection": round(bench_projection, 2),
+                            "bench_points": round(bench_actual, 2),
+                            "projection_gap": round(
+                                bench_projection - starter_projection, 2
+                            ),
+                            "point_swing": round(point_swing, 2),
+                            "victory_margin": round(margin, 2),
+                            "impact_points": round(point_swing, 2),
+                        }
+                    )
+                if calls:
+                    evidence[roster_id].append(
+                        max(
+                            calls,
+                            key=lambda row: (
+                                row["point_swing"], row["projection_gap"]
+                            ),
+                        )
+                    )
+
+    for transaction in snapshot.get("transactions") or []:
+        if transaction.get("status") != "complete":
+            continue
+        transaction_type = str(transaction.get("type") or "")
+        if transaction_type not in {"waiver", "free_agent", "trade"}:
+            continue
+        for player_id, raw_roster_id in (transaction.get("adds") or {}).items():
+            try:
+                roster_id = int(raw_roster_id)
+            except (TypeError, ValueError):
+                continue
+            if roster_id not in winner_games:
+                continue
+            matchup = matchups.get(roster_id) or {}
+            player_id = str(player_id)
+            if player_id not in {
+                str(value) for value in matchup.get("starters") or []
+            }:
+                continue
+            points = _number(_points_map(matchup).get(player_id))
+            margin = _number(winner_games[roster_id].get("margin"))
+            if points < margin:
+                continue
+            settings = transaction.get("settings") or {}
+            evidence[roster_id].append(
+                {
+                    "type": "transaction_start",
+                    "transaction_type": transaction_type,
+                    "transaction_id": transaction.get("transaction_id"),
+                    "player_id": player_id,
+                    "player": _player_name(player_id, players),
+                    "points": round(points, 2),
+                    "victory_margin": round(margin, 2),
+                    "faab": settings.get("waiver_bid"),
+                    "impact_points": round(points, 2),
+                }
+            )
+
+    return dict(evidence)
+
+
+def _projected_points(
+    projection: dict[str, Any], scoring_settings: dict[str, Any]
+) -> float:
+    return sum(
+        _number(projection.get(stat)) * _number(multiplier)
+        for stat, multiplier in scoring_settings.items()
+        if stat in projection
+    )
 
 
 def _divisional_mvp_nominees(snapshot: dict[str, Any]) -> list[dict[str, Any]]:

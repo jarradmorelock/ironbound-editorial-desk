@@ -8,6 +8,7 @@ import os
 from pathlib import Path, PurePosixPath
 import tempfile
 from typing import Any
+from zoneinfo import ZoneInfo
 import zipfile
 
 
@@ -117,6 +118,21 @@ def create_chronicle_backup(
     return output
 
 
+def build_chronicle_backup(
+    chronicle_root: Path,
+    output_path: Path,
+    chronicle_sha: str,
+    created_at: str | None = None,
+) -> Path:
+    """Plan-facing alias using the Chronicle SHA terminology."""
+    return create_chronicle_backup(
+        chronicle_root,
+        output_path,
+        chronicle_revision=chronicle_sha,
+        created_at=created_at,
+    )
+
+
 def validate_chronicle_backup(
     archive_path: Path,
     *,
@@ -219,6 +235,81 @@ def validate_chronicle_backup(
         chronicle_revision=revision,
         file_count=file_count,
     )
+
+
+def validate_backup(
+    archive_path: Path, *, expected_revision: str | None = None
+) -> BackupValidationResult:
+    """Plan-facing alias for Chronicle backup validation."""
+    return validate_chronicle_backup(
+        archive_path, expected_revision=expected_revision
+    )
+
+
+def is_first_tuesday(
+    now: datetime,
+    timezone_name: str = "America/New_York",
+) -> bool:
+    """Return true only during the first Tuesday in the requested local timezone."""
+    local = _local_datetime(now, timezone_name)
+    return local.weekday() == 1 and 1 <= local.day <= 7
+
+
+def monthly_receipt_path(
+    chronicle_root: Path,
+    now: datetime,
+    timezone_name: str = "America/New_York",
+) -> Path:
+    local = _local_datetime(now, timezone_name)
+    return (
+        Path(chronicle_root)
+        / "backup_receipts"
+        / "monthly"
+        / f"{local:%Y-%m}.json"
+    )
+
+
+def monthly_archive_due(
+    chronicle_root: Path,
+    now: datetime,
+    timezone_name: str = "America/New_York",
+) -> bool:
+    """A monthly archive is due only on first Tuesday with no success receipt."""
+    return is_first_tuesday(now, timezone_name) and not monthly_receipt_path(
+        chronicle_root, now, timezone_name
+    ).exists()
+
+
+def write_monthly_backup_receipt(
+    chronicle_root: Path,
+    *,
+    accepted_at: datetime,
+    chronicle_revision: str,
+    archive_path: Path,
+    timezone_name: str = "America/New_York",
+) -> Path:
+    """Persist proof of an SMTP-accepted monthly recovery archive."""
+    _local_datetime(accepted_at, timezone_name)
+    archive = Path(archive_path)
+    validation = validate_chronicle_backup(
+        archive, expected_revision=chronicle_revision
+    )
+    if not validation.valid:
+        raise ChronicleBackupError(
+            "Cannot write monthly receipt for invalid backup: "
+            + "; ".join(validation.errors)
+        )
+
+    receipt = {
+        "archive_filename": archive.name,
+        "archive_sha256": hashlib.sha256(archive.read_bytes()).hexdigest(),
+        "chronicle_revision": str(chronicle_revision),
+        "month": _local_datetime(accepted_at, timezone_name).strftime("%Y-%m"),
+        "smtp_accepted_at": accepted_at.isoformat(),
+    }
+    path = monthly_receipt_path(chronicle_root, accepted_at, timezone_name)
+    _atomic_write_json(path, receipt)
+    return path
 
 
 def restore_chronicle_backup(
@@ -347,6 +438,30 @@ def _read_event_rows(path: Path) -> list[dict[str, Any]]:
             )
         rows.append(value)
     return rows
+
+
+def _local_datetime(value: datetime, timezone_name: str) -> datetime:
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("datetime must be timezone-aware")
+    return value.astimezone(ZoneInfo(timezone_name))
+
+
+def _atomic_write_json(path: Path, value: dict[str, Any]) -> None:
+    payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
 
 def _safe_archive_name(name: str) -> bool:

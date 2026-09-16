@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 from typing import Any
@@ -24,6 +24,20 @@ class LeagueConfig:
 
 
 @dataclass(frozen=True)
+class FeatureDependencyConfig:
+    source: str
+    strength: str
+
+
+@dataclass(frozen=True)
+class FeatureContractConfig:
+    feature: str
+    display_name: str
+    required_in_phase: bool
+    dependencies: tuple[FeatureDependencyConfig, ...] = ()
+
+
+@dataclass(frozen=True)
 class PublicationConfig:
     key: str
     name: str
@@ -32,6 +46,13 @@ class PublicationConfig:
     recurring_sections: tuple[str, ...]
     brand_departments: tuple[str, ...]
     editorial_priorities: tuple[str, ...]
+    story_desk: bool = False
+    feature_contracts: dict[str, tuple[FeatureContractConfig, ...]] = field(
+        default_factory=dict
+    )
+
+    def contracts_for(self, phase: str) -> tuple[FeatureContractConfig, ...]:
+        return self.feature_contracts.get(str(phase), ())
 
 
 def load_leagues(path: Path) -> list[LeagueConfig]:
@@ -93,10 +114,12 @@ def load_publications(path: Path) -> dict[str, PublicationConfig]:
         if not isinstance(raw, dict):
             raise ConfigurationError(f"publications[{index}] must be an object")
 
-        def required(field: str) -> str:
-            value = str(raw.get(field) or "").strip()
+        def required(field_name: str) -> str:
+            value = str(raw.get(field_name) or "").strip()
             if not value:
-                raise ConfigurationError(f"publications[{index}].{field} is required")
+                raise ConfigurationError(
+                    f"publications[{index}].{field_name} is required"
+                )
             return value
 
         key = required("key")
@@ -105,9 +128,15 @@ def load_publications(path: Path) -> dict[str, PublicationConfig]:
         if key in profiles:
             raise ConfigurationError(f"Duplicate publication key: {key}")
         if not key.replace("_", "").isalnum():
-            raise ConfigurationError(f"{name}: key must use letters, numbers, and underscores")
+            raise ConfigurationError(
+                f"{name}: key must use letters, numbers, and underscores"
+            )
         if tier not in {"flagship", "newspaper"}:
             raise ConfigurationError(f"{name}: tier must be flagship or newspaper")
+
+        story_desk = raw.get("story_desk", False)
+        if not isinstance(story_desk, bool):
+            raise ConfigurationError(f"{name}: story_desk must be true or false")
 
         profiles[key] = PublicationConfig(
             key=key,
@@ -117,6 +146,8 @@ def load_publications(path: Path) -> dict[str, PublicationConfig]:
             recurring_sections=_string_tuple(raw, "recurring_sections", index),
             brand_departments=_string_tuple(raw, "brand_departments", index),
             editorial_priorities=_string_tuple(raw, "editorial_priorities", index),
+            story_desk=story_desk,
+            feature_contracts=_feature_contracts(raw, index, name),
         )
     return profiles
 
@@ -143,10 +174,10 @@ def validate_publication_mappings(
 
 
 def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
-    def required(field: str) -> str:
-        value = str(raw.get(field) or "").strip()
+    def required(field_name: str) -> str:
+        value = str(raw.get(field_name) or "").strip()
         if not value:
-            raise ConfigurationError(f"leagues[{index}].{field} is required")
+            raise ConfigurationError(f"leagues[{index}].{field_name} is required")
         return value
 
     key = required("key")
@@ -199,12 +230,97 @@ def _parse_league(raw: dict[str, Any], index: int) -> LeagueConfig:
     )
 
 
-def _string_tuple(raw: dict[str, Any], field: str, index: int) -> tuple[str, ...]:
-    values = raw.get(field) or []
+def _string_tuple(raw: dict[str, Any], field_name: str, index: int) -> tuple[str, ...]:
+    values = raw.get(field_name) or []
     if not isinstance(values, list) or any(
         not isinstance(value, str) or not value.strip() for value in values
     ):
         raise ConfigurationError(
-            f"publications[{index}].{field} must be a list of non-empty strings"
+            f"publications[{index}].{field_name} must be a list of non-empty strings"
         )
     return tuple(value.strip() for value in values)
+
+
+def _feature_contracts(
+    raw: dict[str, Any], index: int, publication_name: str
+) -> dict[str, tuple[FeatureContractConfig, ...]]:
+    document = raw.get("feature_contracts") or {}
+    if not isinstance(document, dict):
+        raise ConfigurationError(
+            f"{publication_name}: feature_contracts must be an object"
+        )
+    allowed_phases = {"weekly", "preseason", "offseason"}
+    parsed: dict[str, tuple[FeatureContractConfig, ...]] = {}
+    for phase, rows in document.items():
+        if phase not in allowed_phases:
+            raise ConfigurationError(
+                f"{publication_name}: unsupported feature-contract phase {phase}"
+            )
+        if not isinstance(rows, list):
+            raise ConfigurationError(
+                f"{publication_name}: feature_contracts.{phase} must be a list"
+            )
+        contracts: list[FeatureContractConfig] = []
+        seen: set[str] = set()
+        for row_index, row in enumerate(rows):
+            if not isinstance(row, dict):
+                raise ConfigurationError(
+                    f"{publication_name}: {phase}[{row_index}] must be an object"
+                )
+            feature = str(row.get("feature") or "").strip()
+            display_name = str(row.get("display_name") or "").strip()
+            if not feature:
+                raise ConfigurationError(
+                    f"{publication_name}: {phase}[{row_index}].feature is required"
+                )
+            if not display_name:
+                raise ConfigurationError(
+                    f"{publication_name}: {phase}[{row_index}].display_name is required"
+                )
+            if feature in seen:
+                raise ConfigurationError(
+                    f"{publication_name}: Duplicate feature {feature} in phase {phase}"
+                )
+            seen.add(feature)
+            required_in_phase = row.get("required_in_phase", True)
+            if not isinstance(required_in_phase, bool):
+                raise ConfigurationError(
+                    f"{publication_name}: {phase}[{row_index}].required_in_phase "
+                    "must be true or false"
+                )
+            dependencies_raw = row.get("dependencies") or []
+            if not isinstance(dependencies_raw, list):
+                raise ConfigurationError(
+                    f"{publication_name}: {phase}[{row_index}].dependencies must be a list"
+                )
+            dependencies: list[FeatureDependencyConfig] = []
+            for dependency_index, dependency in enumerate(dependencies_raw):
+                if not isinstance(dependency, dict):
+                    raise ConfigurationError(
+                        f"{publication_name}: {phase}[{row_index}].dependencies"
+                        f"[{dependency_index}] must be an object"
+                    )
+                source = str(dependency.get("source") or "").strip()
+                strength = str(dependency.get("strength") or "").strip().lower()
+                if not source:
+                    raise ConfigurationError(
+                        f"{publication_name}: dependency source is required"
+                    )
+                if strength not in {"required", "preferred", "optional"}:
+                    raise ConfigurationError(
+                        f"{publication_name}: dependency strength must be required, "
+                        "preferred, or optional"
+                    )
+                dependencies.append(
+                    FeatureDependencyConfig(source=source, strength=strength)
+                )
+            contracts.append(
+                FeatureContractConfig(
+                    feature=feature,
+                    display_name=display_name,
+                    required_in_phase=required_in_phase,
+                    dependencies=tuple(dependencies),
+                )
+            )
+        parsed[phase] = tuple(contracts)
+    return parsed

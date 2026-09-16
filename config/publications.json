@@ -4,21 +4,14 @@
       "key": "ironbound_weekly",
       "name": "The Ironbound Weekly",
       "tier": "flagship",
+      "story_desk": true,
       "source_files": [
         "ironbound-weekly-2026.01-preseason-issue.pdf"
       ],
       "recurring_sections": [
-        "Week in review and full game capsules",
-        "Standings and power movement",
-        "Division strength, division pressure, and schedule disparity",
-        "Lineup Efficiency desk and Manager of the Week",
-        "Bad Beat, Escape Artist, and Giant Killer",
-        "Bench MVP and one result-flipping start/sit decision",
-        "Waiver Star and transaction wire",
-        "Trade Afterlife and traded-pick ledger",
-        "Weekly, season, and all-time Record Watch",
-        "Verified MVP Card Result",
-        "Next-week first look"
+        "Weekly factual backbone",
+        "External official Power Rankings",
+        "Magazine Story Desk"
       ],
       "brand_departments": [
         "The Founding XVI",
@@ -31,31 +24,25 @@
         "First Contact"
       ],
       "editorial_priorities": [
-        "Magazine-scale depth rather than surface recaps",
+        "Magazine-scale depth",
         "Divisions as a primary organizing story",
         "Lineup efficiency as a featured statistic",
-        "Cumulative publication memory and long-running franchise context"
-      ]
+        "Cumulative franchise context"
+      ],
+      "feature_contracts": {}
     },
     {
       "key": "unbound_weekly",
       "name": "Unbound Weekly",
       "tier": "flagship",
+      "story_desk": true,
       "source_files": [
         "unboundweekly-2026.01-preseason issue.pdf"
       ],
       "recurring_sections": [
-        "Week in review and full game capsules",
-        "Standings and power movement",
-        "Division strength, division pressure, and schedule disparity",
-        "Lineup Efficiency desk and Manager of the Week",
-        "Bad Beat, Escape Artist, and Giant Killer",
-        "Bench MVP and one result-flipping start/sit decision",
-        "Waiver Star and transaction wire",
-        "Trade Afterlife and traded-pick ledger",
-        "Weekly, season, and all-time Record Watch",
-        "Verified MVP Card Result",
-        "Next-week first look"
+        "Weekly factual backbone",
+        "External official Power Rankings",
+        "Magazine Story Desk"
       ],
       "brand_departments": [
         "The Unbound XVI",
@@ -68,100 +55,447 @@
         "First Contact"
       ],
       "editorial_priorities": [
-        "Full sister flagship with the same depth and length as The Ironbound Weekly",
+        "Full sister flagship depth",
         "Divisions as a primary organizing story",
         "Lineup efficiency as a featured statistic",
-        "Cumulative publication memory and long-running franchise context"
-      ]
+        "Cumulative franchise context"
+      ],
+      "feature_contracts": {}
     },
     {
       "key": "ballad_crier",
       "name": "The Ballad Crier",
       "tier": "newspaper",
+      "story_desk": false,
       "source_files": [
         "BALLAD CRIER 26.01 - preseason edition.pdf",
         "BrokenHearts_Primer.pdf"
       ],
       "recurring_sections": [
-        "Scoreboard and game capsules",
-        "Standings and power movement",
-        "Lineup Efficiency and Manager of the Week",
-        "Bad Beat and Escape Artist",
-        "Bench MVP and result-flipping decision",
-        "Waiver Star, additions, drops, and trades",
+        "Week Cardiogram",
+        "Final Monitor",
+        "Weekly Rounds",
+        "Official Standings",
+        "Rankings Wire",
+        "Rounds Report",
+        "Position Leaders",
+        "Waiver Star",
+        "Ward Report",
         "Record Watch",
-        "Next-week card"
+        "Next Card"
       ],
       "brand_departments": [
-        "Rankings Wire",
+        "Draft Desk",
         "Opening Card",
-        "Game of the Week",
-        "Crier Lean",
-        "Undercard",
-        "Ward Report"
+        "Keeper Heist",
+        "Ward Report",
+        "Full Draft Board",
+        "ADP Draft Profile",
+        "Value Board",
+        "Reach Watch",
+        "Streamers' Pact"
       ],
       "editorial_priorities": [
-        "Hospital-rounds voice that reports each team's weekly vitals",
-        "Keeper value and meaningful first-down or opportunity scoring context"
-      ]
+        "Hospital-rounds voice",
+        "Result-flipping lineup autopsies distinct from generic efficiency",
+        "Keeper-value context"
+      ],
+      "feature_contracts": {
+        "weekly": [
+          {
+            "feature": "weekly_results",
+            "display_name": "Week Cardiogram",
+            "required_in_phase": true
+          },
+          {
+            "feature": "final_scorecard",
+            "display_name": "Final Monitor",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_flip_candidates",
+            "display_name": "Weekly Rounds",
+            "required_in_phase": true
+          },
+          {
+            "feature": "standings",
+            "display_name": "Official Standings",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_movement",
+            "display_name": "Rankings Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "weekly_honors",
+            "display_name": "Rounds Report",
+            "required_in_phase": true
+          },
+          {
+            "feature": "player_position_leaders",
+            "display_name": "Position Leaders",
+            "required_in_phase": true
+          },
+          {
+            "feature": "waiver_impact",
+            "display_name": "Waiver Star",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Ward Report",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "record_watch",
+            "display_name": "Record Watch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "Next Card",
+            "required_in_phase": true
+          }
+        ],
+        "preseason": [
+          {
+            "feature": "draft_results",
+            "display_name": "Draft Desk",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "Opening Card",
+            "required_in_phase": true
+          },
+          {
+            "feature": "keeper_costs",
+            "display_name": "Keeper Heist",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Ward Report",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "draft_board",
+            "display_name": "Full Draft Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_adp_value",
+            "display_name": "ADP Draft Profile",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "draft_value_board",
+            "display_name": "Value Board",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "draft_reach",
+            "display_name": "Reach Watch",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "streaming_roster_state",
+            "display_name": "Streamers' Pact",
+            "required_in_phase": true
+          }
+        ]
+      }
     },
     {
       "key": "the_stampede",
       "name": "The Stampede",
       "tier": "newspaper",
+      "story_desk": false,
       "source_files": [
         "The Stampede 2026.01 -Preseason Edition.pdf",
         "9-5 fantasy football league - 2026 primer.pdf"
       ],
       "recurring_sections": [
-        "Scoreboard, median result, and game capsules",
-        "Standings and power movement",
-        "Lineup Efficiency and Manager of the Week",
-        "Bad Beat and Escape Artist",
-        "Bench MVP and result-flipping decision",
-        "Waiver Star, additions, drops, and trades",
-        "The Week's Heavy Lifting",
+        "Scoreboard",
+        "Standings",
+        "Rankings Wire",
+        "Lineup Efficiency",
+        "Manager of the Week",
+        "Bad Beat",
+        "Escape Artist",
+        "Bench MVP",
+        "Result-Flipping Decision",
+        "Waiver & Transaction Desk",
+        "What a Way to Make a Living",
+        "Health Board / Mystery Mine",
         "Record Watch",
-        "Next shift preview"
+        "Next Shift"
       ],
       "brand_departments": [
-        "Rankings Wire",
-        "The First Shift",
+        "First Shift",
+        "Value Board",
+        "Paper Favorite",
         "Stampede Board",
         "Market Report",
+        "I Will Always Love You",
         "Bargain Store",
+        "Coat of Many Colors",
+        "Old Flames",
         "Little Engine That Could",
-        "Health Board",
+        "Mystery Mine",
+        "Season Predictions",
         "Preseason Truth"
       ],
       "editorial_priorities": [
-        "League-median result alongside head-to-head result",
-        "Dolly Parton and workweek identity without forcing headlines in the data phase"
-      ]
+        "Workweek and Dolly Parton identity",
+        "Real NFL workload and production as a distinctive recurring feature"
+      ],
+      "feature_contracts": {
+        "weekly": [
+          {
+            "feature": "weekly_results",
+            "display_name": "Scoreboard",
+            "required_in_phase": true
+          },
+          {
+            "feature": "standings",
+            "display_name": "Standings",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_movement",
+            "display_name": "Rankings Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_efficiency",
+            "display_name": "Lineup Efficiency",
+            "required_in_phase": true
+          },
+          {
+            "feature": "manager_of_week",
+            "display_name": "Manager of the Week",
+            "required_in_phase": true
+          },
+          {
+            "feature": "bad_beat",
+            "display_name": "Bad Beat",
+            "required_in_phase": true
+          },
+          {
+            "feature": "escape_artist",
+            "display_name": "Escape Artist",
+            "required_in_phase": true
+          },
+          {
+            "feature": "bench_leaders",
+            "display_name": "Bench MVP",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_flip_candidates",
+            "display_name": "Result-Flipping Decision",
+            "required_in_phase": true
+          },
+          {
+            "feature": "waiver_impact",
+            "display_name": "Waiver & Transaction Desk",
+            "required_in_phase": true
+          },
+          {
+            "feature": "workload_stat_lines",
+            "display_name": "What a Way to Make a Living",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Health Board / Mystery Mine",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "record_watch",
+            "display_name": "Record Watch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "Next Shift",
+            "required_in_phase": true
+          }
+        ],
+        "preseason": [
+          {
+            "feature": "ranking_movement",
+            "display_name": "Rankings Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "first_shift",
+            "display_name": "First Shift",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_value_board",
+            "display_name": "Value Board",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "paper_favorite_inputs",
+            "display_name": "Paper Favorite",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_board",
+            "display_name": "Stampede Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_market",
+            "display_name": "Market Report",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "draft_reach",
+            "display_name": "I Will Always Love You",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "draft_bargains",
+            "display_name": "Bargain Store",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "draft_adp",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "positional_strength",
+            "display_name": "Coat of Many Colors",
+            "required_in_phase": true
+          },
+          {
+            "feature": "keeper_costs",
+            "display_name": "Old Flames",
+            "required_in_phase": true
+          },
+          {
+            "feature": "roster_age",
+            "display_name": "Little Engine That Could",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Mystery Mine",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "season_prediction_inputs",
+            "display_name": "Season Predictions",
+            "required_in_phase": true
+          },
+          {
+            "feature": "preseason_truth_inputs",
+            "display_name": "Preseason Truth",
+            "required_in_phase": true
+          }
+        ]
+      }
     },
     {
       "key": "volunteer_voice",
       "name": "The Volunteer Voice",
       "tier": "newspaper",
+      "story_desk": false,
       "source_files": [
         "The_Volunteer_Voice_2026_Preseason_Mockup.pdf",
         "Rocky_Top_Rumble_2026_Primer_Rev3.pdf"
       ],
       "recurring_sections": [
-        "Scoreboard, median result, and game capsules",
-        "Standings and power movement",
-        "Division pulse",
-        "Lineup Efficiency and Manager of the Week",
-        "Bad Beat and Escape Artist",
-        "Bench MVP and result-flipping decision",
-        "Waiver Star, additions, drops, and trades",
+        "Lead Story / Weekly Aftermath",
+        "Official Table",
+        "Median Result",
+        "Rankings Wire",
+        "Decision Desk / The Call That Won the Week",
+        "Mountain MVP",
+        "Manager of the Week",
+        "Benchwarmer",
+        "Rookie of the Week",
+        "Free Agent of the Week",
+        "Efficiency Board",
+        "Bad Beat",
+        "Escape Artist",
+        "Waiver Star",
+        "Bench Blast",
         "Record Watch",
-        "Playoff home-field advantage tracker",
-        "Next-week scouting report"
+        "Next-Week Scouting"
       ],
       "brand_departments": [
         "Rankings Wire",
         "First Read",
+        "The Pack Is Tighter Than It Looks",
         "Rocky Top Board",
         "Commissioner's Warning",
         "Preseason Superlatives",
@@ -170,57 +504,537 @@
       "editorial_priorities": [
         "League-median result alongside head-to-head result",
         "Tennessee family-rivalry identity",
-        "Apply the higher-seed playoff bonus: one point per seed difference, capped at five points"
-      ]
+        "Rocky Top Rumble has no divisions",
+        "Decision Desk distinct from generic efficiency"
+      ],
+      "feature_contracts": {
+        "weekly": [
+          {
+            "feature": "weekly_results",
+            "display_name": "Lead Story / Weekly Aftermath",
+            "required_in_phase": true
+          },
+          {
+            "feature": "official_table",
+            "display_name": "Official Table",
+            "required_in_phase": true
+          },
+          {
+            "feature": "league_median",
+            "display_name": "Median Result",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_movement",
+            "display_name": "Rankings Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "manager_decision_evidence",
+            "display_name": "Decision Desk / The Call That Won the Week",
+            "required_in_phase": true
+          },
+          {
+            "feature": "league_wide_started_mvp",
+            "display_name": "Mountain MVP",
+            "required_in_phase": true
+          },
+          {
+            "feature": "manager_of_week",
+            "display_name": "Manager of the Week",
+            "required_in_phase": true
+          },
+          {
+            "feature": "bench_leaders",
+            "display_name": "Benchwarmer",
+            "required_in_phase": true
+          },
+          {
+            "feature": "rookie_of_week",
+            "display_name": "Rookie of the Week",
+            "required_in_phase": true
+          },
+          {
+            "feature": "free_agent_of_week",
+            "display_name": "Free Agent of the Week",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_efficiency",
+            "display_name": "Efficiency Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "bad_beat",
+            "display_name": "Bad Beat",
+            "required_in_phase": true
+          },
+          {
+            "feature": "escape_artist",
+            "display_name": "Escape Artist",
+            "required_in_phase": true
+          },
+          {
+            "feature": "waiver_impact",
+            "display_name": "Waiver Star",
+            "required_in_phase": true
+          },
+          {
+            "feature": "bench_blast",
+            "display_name": "Bench Blast",
+            "required_in_phase": true
+          },
+          {
+            "feature": "record_watch",
+            "display_name": "Record Watch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "Next-Week Scouting",
+            "required_in_phase": true
+          }
+        ],
+        "preseason": [
+          {
+            "feature": "ranking_movement",
+            "display_name": "Rankings Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "first_read_inputs",
+            "display_name": "First Read",
+            "required_in_phase": true
+          },
+          {
+            "feature": "parity_inputs",
+            "display_name": "The Pack Is Tighter Than It Looks",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_board",
+            "display_name": "Rocky Top Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "commissioner_warning_inputs",
+            "display_name": "Commissioner's Warning",
+            "required_in_phase": true
+          },
+          {
+            "feature": "preseason_superlative_inputs",
+            "display_name": "Preseason Superlatives",
+            "required_in_phase": true
+          },
+          {
+            "feature": "team_capsules",
+            "display_name": "Scouting Report",
+            "required_in_phase": true
+          }
+        ]
+      }
     },
     {
       "key": "saturday_standard",
       "name": "The Saturday Standard",
       "tier": "newspaper",
+      "story_desk": false,
       "source_files": [
         "The_Saturday_Standard_SEC_Dynasty_2026.pdf"
       ],
       "recurring_sections": [
-        "Scoreboard and game capsules",
-        "East and West division pulse",
-        "Standings and committee poll movement",
-        "Offensive and defensive lineup efficiency",
-        "Manager of the Week, Bad Beat, and Escape Artist",
-        "Bench MVP and result-flipping decision",
-        "Transfer Portal additions, drops, and trades",
-        "Recruiting and traded-pick ledger",
-        "Record Watch",
-        "Next-week slate"
+        "Saturday Scoreboard",
+        "Opening Statement",
+        "Monday Night Theft / Late Window",
+        "Saturday Ledger",
+        "East and West Division Pulse",
+        "East and West Power Polls",
+        "Lineup Efficiency",
+        "Portal Film Room",
+        "Portal Commitments",
+        "Saturday Honors",
+        "Position Board",
+        "Saturday Desk",
+        "Dynasty Market Board",
+        "Transfer Portal Dispatch",
+        "Recruiting Desk",
+        "Recruiting / Future Pick Ledger",
+        "Next-Week Slate"
       ],
       "brand_departments": [
         "Committee Poll",
         "Depth Chart Wire",
+        "East/West Division Order",
         "First Read",
-        "West is Different",
+        "West Is Different",
         "Selection Committee",
         "Divisional Board",
         "Transfer Portal Dispatch",
+        "East/West Power Poll",
+        "PI",
+        "Recruiting Edition",
+        "Full Recruiting Board",
+        "Recruiting Class Standings",
         "Recruiting Desk"
       ],
       "editorial_priorities": [
         "East versus West divisional identity",
         "Treat IDP production as first-class analysis",
         "Dynasty recruiting, rookie-pick, and transfer context"
-      ]
+      ],
+      "feature_contracts": {
+        "weekly": [
+          {
+            "feature": "weekly_results",
+            "display_name": "Saturday Scoreboard",
+            "required_in_phase": true
+          },
+          {
+            "feature": "opening_statement_inputs",
+            "display_name": "Opening Statement",
+            "required_in_phase": true
+          },
+          {
+            "feature": "game_window_context",
+            "display_name": "Monday Night Theft / Late Window",
+            "required_in_phase": true
+          },
+          {
+            "feature": "weekly_ledger",
+            "display_name": "Saturday Ledger",
+            "required_in_phase": true
+          },
+          {
+            "feature": "division_metrics",
+            "display_name": "East and West Division Pulse",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_movement",
+            "display_name": "East and West Power Polls",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_efficiency",
+            "display_name": "Lineup Efficiency",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_flip_candidates",
+            "display_name": "Portal Film Room",
+            "required_in_phase": true
+          },
+          {
+            "feature": "waiver_impact",
+            "display_name": "Portal Commitments",
+            "required_in_phase": true
+          },
+          {
+            "feature": "divisional_started_mvps",
+            "display_name": "Saturday Honors",
+            "required_in_phase": true
+          },
+          {
+            "feature": "idp_position_metrics",
+            "display_name": "Position Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "weekly_desk_honors",
+            "display_name": "Saturday Desk",
+            "required_in_phase": true
+          },
+          {
+            "feature": "dynasty_market_values",
+            "display_name": "Dynasty Market Board",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "dynasty_market",
+                "strength": "preferred"
+              }
+            ]
+          },
+          {
+            "feature": "transactions",
+            "display_name": "Transfer Portal Dispatch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "rookie_draft",
+            "display_name": "Recruiting Desk",
+            "required_in_phase": true
+          },
+          {
+            "feature": "future_picks",
+            "display_name": "Recruiting / Future Pick Ledger",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "Next-Week Slate",
+            "required_in_phase": true
+          }
+        ],
+        "preseason": [
+          {
+            "feature": "committee_poll_inputs",
+            "display_name": "Committee Poll",
+            "required_in_phase": true
+          },
+          {
+            "feature": "offense_defense_splits",
+            "display_name": "Depth Chart Wire",
+            "required_in_phase": true
+          },
+          {
+            "feature": "division_metrics",
+            "display_name": "East/West Division Order",
+            "required_in_phase": true
+          },
+          {
+            "feature": "first_read_inputs",
+            "display_name": "First Read",
+            "required_in_phase": true
+          },
+          {
+            "feature": "west_context",
+            "display_name": "West Is Different",
+            "required_in_phase": true
+          },
+          {
+            "feature": "selection_committee_inputs",
+            "display_name": "Selection Committee",
+            "required_in_phase": true
+          },
+          {
+            "feature": "division_board",
+            "display_name": "Divisional Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "transactions",
+            "display_name": "Transfer Portal Dispatch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_movement",
+            "display_name": "East/West Power Poll",
+            "required_in_phase": true
+          },
+          {
+            "feature": "performance_index_inputs",
+            "display_name": "PI",
+            "required_in_phase": true
+          },
+          {
+            "feature": "rookie_draft",
+            "display_name": "Recruiting Edition",
+            "required_in_phase": true
+          },
+          {
+            "feature": "draft_board",
+            "display_name": "Full Recruiting Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "recruiting_class",
+            "display_name": "Recruiting Class Standings",
+            "required_in_phase": true
+          },
+          {
+            "feature": "recruiting_desk",
+            "display_name": "Recruiting Desk",
+            "required_in_phase": true
+          }
+        ]
+      }
     },
     {
       "key": "hollywood_beat",
       "name": "The Hollywood Beat",
       "tier": "newspaper",
-      "source_files": [],
-      "recurring_sections": [
-        "Verified weekly data packet pending a publication standard"
+      "story_desk": false,
+      "source_files": [
+        "the hollywood beat 2026.01 inaugural preseason.pdf"
       ],
-      "brand_departments": [],
+      "recurring_sections": [
+        "Box Office",
+        "Marquee / Official Standings",
+        "Top Billing / First Cut",
+        "Hollywood Board",
+        "Monday Night / Late Show",
+        "For Your Consideration",
+        "Cutting Room Floor",
+        "Studio Efficiency",
+        "Casting Call",
+        "Production Delays",
+        "Dailies / Backlot Reports",
+        "This Week's Bill"
+      ],
+      "brand_departments": [
+        "Opening Credits / Backlot Opens",
+        "Top Billing / First Read",
+        "Critics' Poll",
+        "Hollywood Board",
+        "Dailies",
+        "Meet the Cast",
+        "Development Slate",
+        "Casting Call",
+        "Development Rights",
+        "Cutting Room Floor",
+        "Studio Deals",
+        "Production Delays",
+        "This Week's Bill"
+      ],
       "editorial_priorities": [
-        "Use The Hollywood Beat as the confirmed publication title",
-        "Do not invent permanent departments or a visual standard before they are established"
-      ]
+        "Film/studio/box-office framing",
+        "Deterministic factual inputs beneath themed labels",
+        "No Magazine Story Desk"
+      ],
+      "feature_contracts": {
+        "weekly": [
+          {
+            "feature": "weekly_results",
+            "display_name": "Box Office",
+            "required_in_phase": true
+          },
+          {
+            "feature": "standings",
+            "display_name": "Marquee / Official Standings",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lead_inputs",
+            "display_name": "Top Billing / First Cut",
+            "required_in_phase": true
+          },
+          {
+            "feature": "hollywood_board",
+            "display_name": "Hollywood Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "game_window_context",
+            "display_name": "Monday Night / Late Show",
+            "required_in_phase": true
+          },
+          {
+            "feature": "weekly_honors",
+            "display_name": "For Your Consideration",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_flip_candidates",
+            "display_name": "Cutting Room Floor",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lineup_efficiency",
+            "display_name": "Studio Efficiency",
+            "required_in_phase": true
+          },
+          {
+            "feature": "waiver_impact",
+            "display_name": "Casting Call",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Production Delays",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "weekly_briefs",
+            "display_name": "Dailies / Backlot Reports",
+            "required_in_phase": true
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "This Week's Bill",
+            "required_in_phase": true
+          }
+        ],
+        "preseason": [
+          {
+            "feature": "opening_credits_inputs",
+            "display_name": "Opening Credits / Backlot Opens",
+            "required_in_phase": true
+          },
+          {
+            "feature": "lead_inputs",
+            "display_name": "Top Billing / First Read",
+            "required_in_phase": true
+          },
+          {
+            "feature": "ranking_inputs",
+            "display_name": "Critics' Poll",
+            "required_in_phase": true
+          },
+          {
+            "feature": "hollywood_board",
+            "display_name": "Hollywood Board",
+            "required_in_phase": true
+          },
+          {
+            "feature": "weekly_briefs",
+            "display_name": "Dailies",
+            "required_in_phase": true
+          },
+          {
+            "feature": "team_capsules",
+            "display_name": "Meet the Cast",
+            "required_in_phase": true
+          },
+          {
+            "feature": "development_slate",
+            "display_name": "Development Slate",
+            "required_in_phase": true
+          },
+          {
+            "feature": "rookie_draft",
+            "display_name": "Casting Call",
+            "required_in_phase": true
+          },
+          {
+            "feature": "future_picks",
+            "display_name": "Development Rights",
+            "required_in_phase": true
+          },
+          {
+            "feature": "future_pick_scarcity",
+            "display_name": "Cutting Room Floor",
+            "required_in_phase": true
+          },
+          {
+            "feature": "transactions",
+            "display_name": "Studio Deals",
+            "required_in_phase": true
+          },
+          {
+            "feature": "health_status",
+            "display_name": "Production Delays",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
+            "feature": "next_matchups",
+            "display_name": "This Week's Bill",
+            "required_in_phase": true
+          }
+        ]
+      }
     }
   ]
 }

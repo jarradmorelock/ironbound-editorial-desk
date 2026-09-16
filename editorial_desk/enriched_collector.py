@@ -9,6 +9,8 @@ import requests
 from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
+from .publication_packets import build_publication_packet
+from .publication_render import write_publication_packet
 from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
@@ -61,6 +63,8 @@ def collect_all(
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
         _apply_player_context(snapshot, player_directory)
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
+        _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
+        _ensure_next_matchups(snapshot, sleeper, config.sleeper_league_id, week)
         _write_json(snapshot_path, snapshot)
 
         dossier = build_editorial_review(snapshot)
@@ -70,7 +74,37 @@ def collect_all(
             render_editorial_review(dossier), encoding="utf-8"
         )
 
+        if publications:
+            profile = publications.get(config.publication_profile or "")
+            if profile is not None and profile.tier == "newspaper":
+                generated.extend(
+                    _write_newspaper_packet(
+                        directory,
+                        snapshot,
+                        dossier,
+                        profile,
+                        phase="weekly",
+                    )
+                )
+
     return generated
+
+
+def _write_newspaper_packet(
+    directory: Path,
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    publication: PublicationConfig,
+    *,
+    phase: str = "weekly",
+) -> tuple[Path, Path]:
+    packet = build_publication_packet(
+        snapshot,
+        dossier,
+        publication,
+        phase,
+    )
+    return write_publication_packet(directory, packet)
 
 
 def _collect_deep_nfl_context(
@@ -94,6 +128,94 @@ def _collect_deep_nfl_context(
                 "error": str(exc),
             }
     return sources
+
+
+def _collect_draft_context(client: SleeperClient, league_id: str) -> dict[str, Any]:
+    """Collect draft records without invoking the full flagship history pass."""
+    try:
+        drafts = client.drafts(league_id)
+        if not isinstance(drafts, list):
+            raise ValueError("Sleeper drafts response was not a list")
+        records: list[dict[str, Any]] = []
+        errors: dict[str, str] = {}
+        for draft in drafts:
+            draft_id = str(draft.get("draft_id") or "")
+            if not draft_id:
+                continue
+            try:
+                picks = client.draft_picks(draft_id)
+                if not isinstance(picks, list):
+                    raise ValueError("Sleeper draft-picks response was not a list")
+            except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+                picks = []
+                errors[f"{draft_id}:picks"] = str(exc)
+            try:
+                traded = client.draft_traded_picks(draft_id)
+                if not isinstance(traded, list):
+                    raise ValueError("Sleeper draft traded-picks response was not a list")
+            except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+                traded = []
+                errors[f"{draft_id}:traded_picks"] = str(exc)
+            records.append(
+                {
+                    "draft": draft,
+                    "picks": picks,
+                    "traded_picks": traded,
+                }
+            )
+        result: dict[str, Any] = {"status": "available", "records": records}
+        if errors:
+            result["errors"] = errors
+        return result
+    except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        return {
+            "status": "unavailable",
+            "records": [],
+            "error": str(exc),
+        }
+
+
+def _ensure_draft_context(
+    snapshot: dict[str, Any], client: SleeperClient, league_id: str
+) -> None:
+    """Attach one normalized draft source for both flagships and newspapers."""
+    existing = ((snapshot.get("flagship_sleeper") or {}).get("drafts") or {})
+    if existing.get("status") == "available":
+        snapshot["draft_context"] = dict(existing)
+        return
+    snapshot["draft_context"] = _collect_draft_context(client, league_id)
+
+
+def _collect_next_matchups(
+    client: SleeperClient, league_id: str, week: int
+) -> dict[str, Any]:
+    """Collect the following Sleeper week for Next Card/Slate departments."""
+    next_week = int(week) + 1
+    try:
+        records = client.matchups(league_id, next_week)
+        if not isinstance(records, list):
+            raise ValueError("Sleeper next-week matchups response was not a list")
+        return {
+            "status": "available",
+            "week": next_week,
+            "records": records,
+        }
+    except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        return {
+            "status": "unavailable",
+            "week": next_week,
+            "records": [],
+            "error": str(exc),
+        }
+
+
+def _ensure_next_matchups(
+    snapshot: dict[str, Any],
+    client: SleeperClient,
+    league_id: str,
+    week: int,
+) -> None:
+    snapshot["next_matchups"] = _collect_next_matchups(client, league_id, week)
 
 
 def _apply_player_context(

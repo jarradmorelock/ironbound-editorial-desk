@@ -84,10 +84,105 @@ file does not stop the rest of the weekly collection.
 
 The source primers and publications have been audited into
 `config/publications.json`; see `docs/source-audit.md` for the resulting brand
-and editorial map. Cross-season and all-time records, Giant Killer based on
-prior published expectations, trade-afterlife trees, and persistent editorial
-memory still require a finalized-publication archive and are the next data
-layer.
+and editorial map. Chronicle now supplies cross-season and all-time factual
+history. Editorial constructs that depend on prior published expectations or
+richer narrative synthesis, such as Giant Killer framing, trade-afterlife
+features, and persistent magazine Story Desk memory, remain later editorial
+layers.
+
+## Chronicle data branch and live pulse collection
+
+Editorial Desk v2 stores durable generated history on the dedicated
+`chronicle-data` branch. Application code continues to run from `main`; the
+data branch contains only Chronicle state such as event ledgers, registries,
+coverage metadata, manifests, and short-lived diagnostic comparison state.
+Normal automation never force-pushes `chronicle-data`.
+
+The lightweight Chronicle collector is intentionally separate from the full
+editorial collector. It does not fetch Dynasty Daddy, nflverse play-by-play,
+full-season flagship schedules, drafts, brackets, or other expensive magazine
+enrichment. A pulse fetches the Sleeper player directory once globally, then
+only the current league/roster/matchup/transaction state needed to observe
+transactions, lineup changes, reserve changes, and relevant player-status
+transitions. A player-status transition is stored once in the cross-league NFL
+player stream even when that player appears in multiple fantasy leagues.
+League-specific reactions remain league events.
+
+During the season, `.github/workflows/editorial-desk-chronicle.yml` runs one
+baseline collection at 6:17 a.m. Eastern every day and three additional pulses
+at 12:17 p.m., 5:17 p.m., and 9:17 p.m. Eastern from Wednesday through Sunday.
+All Chronicle writers share a serialized concurrency group. The workflow
+checks out application code and `chronicle-data` separately, runs the test suite
+before mutation, commits only when data changed, and refuses force pushes.
+
+Manual collection is available with:
+
+```bash
+python -m editorial_desk chronicle-collect \
+  --config config/leagues.json \
+  --week 2 \
+  --chronicle-root ../chronicle-data
+```
+
+`--finalize-matchups` is intentionally opt-in. Ordinary intraweek pulses never
+write an in-progress score as `MATCHUP_FINAL`; the Tuesday completed-period
+workflow will become the normal finalization path in the later integration
+phase.
+
+## Historical Chronicle bootstrap and identity repair
+
+Historical backfill walks each configured Sleeper league through its
+`previous_league_id` renewal chain and writes durable matchup, transaction,
+draft, traded-pick, and playoff evidence into the same Chronicle that live
+collection continues to update. Backfill is therefore a seed operation, not a
+static historical snapshot. New matchup events automatically change rebuilt
+all-time records, streaks, and head-to-head totals.
+
+Run a bootstrap with:
+
+```bash
+python -m editorial_desk chronicle-backfill \
+  --config config/leagues.json \
+  --chronicle-root ../chronicle-data
+```
+
+The newest/current season is handled conservatively. Backfill may preserve
+completed transactions from the active week, but it only emits
+`MATCHUP_FINAL` events through the most recently completed NFL week. Historical
+health, practice, projection, or intraweek lineup transitions are never
+invented when Sleeper does not preserve them.
+
+Dynasty history follows a stable franchise identity. A team-name change is an
+alias, not a new franchise. If ownership changes and roster-slot/owner evidence
+cannot prove continuity, the backfill records an ambiguity and returns nonzero
+instead of guessing. Redraft history follows stable Sleeper manager identity;
+ownerless/orphan slots remain separate and are not treated as one fictional
+manager.
+
+The canonical registry is `registry/identity.json`. For easier review, every
+registry write also produces deterministic projections in
+`registry/franchises.json`, `registry/managers.json`, and
+`registry/ambiguities.json`. Manual dynasty continuity corrections are entered
+as an `overrides` row in the canonical registry with `league_key`, `season`,
+`roster_id`, `franchise_key`, and a human-readable `reason`. After editing the
+registry, rerun `chronicle-backfill` so the previously ambiguous season gets a
+stable mapping, then rebuild derived history if necessary.
+
+Use these commands to inspect/rebuild without refetching source history:
+
+```bash
+python -m editorial_desk chronicle-identity-report \
+  --chronicle-root ../chronicle-data
+
+python -m editorial_desk chronicle-materialize \
+  --chronicle-root ../chronicle-data
+```
+
+Materialization reads only the Event Ledger plus the identity registry. It does
+not increment yesterday's cached all-time totals. Derived history can therefore
+be regenerated after an identity correction while leaving the original source
+events intact. Source corrections use explicit superseding events rather than
+silently deleting the old audit record.
 
 ## Local dry run
 

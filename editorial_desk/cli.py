@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import os
 from pathlib import Path
 
-from .enriched_collector import collect_all
+from .chronicle_backfill import run_backfill, run_materialize
+from .chronicle_collect import collect_pulse
+from .chronicle_store import ChronicleStore
 from .config import (
     ConfigurationError,
     load_leagues,
@@ -16,7 +19,9 @@ from .emailer import (
     send_dossier_email,
     send_supplement_email,
 )
+from .enriched_collector import collect_all
 from .period import PeriodDetectionError, detect_completed_period
+from .sleeper import SleeperClient
 from .supplement import generate_supplements
 
 
@@ -42,6 +47,22 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--week", type=int, required=True)
     collect.add_argument("--output-dir", type=Path, default=Path("output/dry-run"))
 
+    chronicle = subcommands.add_parser("chronicle-collect")
+    chronicle.add_argument("--config", type=Path, required=True)
+    chronicle.add_argument("--week", type=int, required=True)
+    chronicle.add_argument("--chronicle-root", type=Path, required=True)
+    chronicle.add_argument("--finalize-matchups", action="store_true")
+
+    backfill = subcommands.add_parser("chronicle-backfill")
+    backfill.add_argument("--config", type=Path, required=True)
+    backfill.add_argument("--chronicle-root", type=Path, required=True)
+
+    materialize = subcommands.add_parser("chronicle-materialize")
+    materialize.add_argument("--chronicle-root", type=Path, required=True)
+
+    identity_report = subcommands.add_parser("chronicle-identity-report")
+    identity_report.add_argument("--chronicle-root", type=Path, required=True)
+
     email = subcommands.add_parser("email")
     email.add_argument("--week", type=int, required=True)
     email.add_argument("--output-dir", type=Path, required=True)
@@ -58,6 +79,17 @@ def parser() -> argparse.ArgumentParser:
     supplement_email.add_argument("--week", type=int, required=True)
     supplement_email.add_argument("--output-dir", type=Path, required=True)
     return command
+
+
+def _print_ambiguities(rows) -> None:
+    for row in rows:
+        candidates = ", ".join(row.candidate_franchise_keys) or "none"
+        print(
+            "UNRESOLVED "
+            f"league={row.league_key} season={row.season} roster={row.roster_id} "
+            f"owner={row.owner_id or 'none'} candidates={candidates} "
+            f"reason={row.reason}"
+        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -123,10 +155,34 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
+    if args.command == "chronicle-materialize":
+        result = run_materialize(ChronicleStore(args.chronicle_root))
+        _print_ambiguities(result.unresolved_ambiguities)
+        print(
+            "Chronicle materialization complete: "
+            f"{result.record_events_added} record event(s) added, "
+            f"{len(result.failed_leagues)} league failure(s)"
+        )
+        return 1 if result.failed_leagues or result.unresolved_ambiguities else 0
+
+    if args.command == "chronicle-identity-report":
+        registry = ChronicleStore(args.chronicle_root).read_identity_registry()
+        rows = registry.unresolved_ambiguities()
+        if not rows:
+            print("Chronicle identity report: no unresolved ambiguities")
+            return 0
+        _print_ambiguities(rows)
+        print(f"Chronicle identity report: {len(rows)} unresolved mapping(s)")
+        return 1
+
     try:
         leagues = load_leagues(args.config)
-        publications = load_publications(args.publications)
-        validate_publication_mappings(leagues, publications)
+        publications = None
+        if args.command not in {"chronicle-collect", "chronicle-backfill"}:
+            publications = load_publications(
+                getattr(args, "publications", Path("config/publications.json"))
+            )
+            validate_publication_mappings(leagues, publications)
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}")
         return 2
@@ -140,14 +196,52 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"- {league.name}: data collection only (no publication)")
         return 0
 
+    if args.command == "chronicle-backfill":
+        result = run_backfill(
+            leagues,
+            SleeperClient(),
+            ChronicleStore(args.chronicle_root),
+        )
+        _print_ambiguities(result.unresolved_ambiguities)
+        for warning in result.warnings:
+            print(f"WARNING {warning}")
+        print(
+            "Chronicle backfill complete: "
+            f"{result.added_events} added, {result.skipped_events} skipped, "
+            f"{len(result.failed_leagues)} league failure(s), "
+            f"{len(result.unresolved_ambiguities)} unresolved mapping(s)"
+        )
+        return 1 if result.failed_leagues or result.unresolved_ambiguities else 0
+
     if args.week < 1 or args.week > 18:
         print("Week must be between 1 and 18")
         return 2
+
+    if args.command == "chronicle-collect":
+        manifest = collect_pulse(
+            leagues,
+            SleeperClient(),
+            ChronicleStore(args.chronicle_root),
+            args.week,
+            datetime.now(timezone.utc).isoformat(),
+            finalize_matchups=args.finalize_matchups,
+        )
+        failed = [
+            key
+            for key, row in manifest["leagues"].items()
+            if row["status"] != "fresh"
+        ]
+        print(
+            f"Chronicle collection complete: {manifest['event_counts']['added']} added, "
+            f"{manifest['event_counts']['skipped']} skipped, {len(failed)} league failure(s)"
+        )
+        return 1 if leagues and len(failed) == len(leagues) else 0
+
     generated = collect_all(
         leagues,
         args.week,
         args.output_dir,
-        publications=publications,
+        publications=publications or {},
     )
     print(f"Dry run complete: {len(generated)} files generated")
     return 0

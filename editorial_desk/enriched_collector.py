@@ -64,6 +64,7 @@ def collect_all(
         _apply_player_context(snapshot, player_directory)
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
         _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
+        _ensure_next_matchups(snapshot, sleeper, config.sleeper_league_id, week)
         _write_json(snapshot_path, snapshot)
 
         dossier = build_editorial_review(snapshot)
@@ -183,6 +184,38 @@ def _ensure_draft_context(
         snapshot["draft_context"] = dict(existing)
         return
     snapshot["draft_context"] = _collect_draft_context(client, league_id)
+
+
+def _collect_next_matchups(
+    client: SleeperClient, league_id: str, week: int
+) -> dict[str, Any]:
+    """Collect the following Sleeper week for Next Card/Slate departments."""
+    next_week = int(week) + 1
+    try:
+        records = client.matchups(league_id, next_week)
+        if not isinstance(records, list):
+            raise ValueError("Sleeper next-week matchups response was not a list")
+        return {
+            "status": "available",
+            "week": next_week,
+            "records": records,
+        }
+    except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        return {
+            "status": "unavailable",
+            "week": next_week,
+            "records": [],
+            "error": str(exc),
+        }
+
+
+def _ensure_next_matchups(
+    snapshot: dict[str, Any],
+    client: SleeperClient,
+    league_id: str,
+    week: int,
+) -> None:
+    snapshot["next_matchups"] = _collect_next_matchups(client, league_id, week)
 
 
 def _apply_player_context(

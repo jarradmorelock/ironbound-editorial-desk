@@ -125,6 +125,7 @@ jobs:
         run: >-
           python -m editorial_desk chronicle-materialize
           --chronicle-root ../chronicle-data
+          --allow-partial
 
       - name: Commit finalized Chronicle revision
         if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}

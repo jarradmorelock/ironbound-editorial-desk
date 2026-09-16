@@ -22,9 +22,18 @@ def _chronicle(tmp_path: Path) -> Path:
     root = tmp_path / "chronicle"
     _write(root / "registry" / "identity.json", '{"registry": 1}\n')
     _write(root / "coverage" / "historical_backfill.json", '{"complete": true}\n')
-    _write(root / "leagues" / "ironbound_sixteen" / "events" / "2026.jsonl", '{"event_id":"a"}\n')
-    _write(root / "leagues" / "ironbound_sixteen" / "history" / "records.json", '{"records": {}}\n')
-    _write(root / "cross_league" / "nfl_player_events" / "2026.jsonl", '{"event_id":"nfl-a"}\n')
+    _write(
+        root / "leagues" / "ironbound_sixteen" / "events" / "2026.jsonl",
+        '{"event_id":"a","schema_version":1}\n',
+    )
+    _write(
+        root / "leagues" / "ironbound_sixteen" / "history" / "records.json",
+        '{"records": {}}\n',
+    )
+    _write(
+        root / "cross_league" / "nfl_player_events" / "2026.jsonl",
+        '{"event_id":"nfl-a","schema_version":1}\n',
+    )
     _write(root / "manifests" / "run-1.json", '{"status":"fresh"}\n')
     _write(root / "diagnostics" / "current_state" / "pulse.json", '{"temporary": true}\n')
     _write(root / "cache" / "source.json", '{"temporary": true}\n')
@@ -54,7 +63,7 @@ def test_backup_contains_permanent_chronicle_and_revision_manifest(tmp_path):
 
     with zipfile.ZipFile(archive) as zf:
         names = set(zf.namelist())
-        manifest = json.loads(zf.read("backup-manifest.json"))
+        manifest = json.loads(zf.read("BACKUP_MANIFEST.json"))
 
     expected = _permanent_files(root)
     assert set(expected) <= names
@@ -63,6 +72,18 @@ def test_backup_contains_permanent_chronicle_and_revision_manifest(tmp_path):
     assert "tmp/scratch.txt" not in names
     assert manifest["chronicle_revision"] == "chronicle-sha-123"
     assert manifest["created_at"] == "2026-09-16T18:00:00+00:00"
+    assert manifest["schema_versions"] == {
+        "backup": 1,
+        "chronicle_events": [1],
+    }
+    assert manifest["leagues"] == ["ironbound_sixteen"]
+    assert manifest["seasons"] == ["2026"]
+    assert manifest["event_counts"] == {
+        "cross_league": 1,
+        "leagues": {"ironbound_sixteen": 1},
+        "total": 2,
+    }
+    assert manifest["validation_status"] == "validated"
     assert set(manifest["files"]) == set(expected)
     for name, payload in expected.items():
         assert manifest["files"][name]["sha256"] == hashlib.sha256(payload).hexdigest()
@@ -128,7 +149,21 @@ def test_restore_validated_backup_reproduces_permanent_tree(tmp_path):
 def test_restore_refuses_invalid_archive_before_writing(tmp_path):
     archive = tmp_path / "bad.zip"
     with zipfile.ZipFile(archive, "w") as zf:
-        zf.writestr("backup-manifest.json", json.dumps({"chronicle_revision": "x", "files": {}}))
+        zf.writestr(
+            "BACKUP_MANIFEST.json",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "chronicle_revision": "x",
+                    "files": {},
+                    "schema_versions": {"backup": 1, "chronicle_events": []},
+                    "leagues": [],
+                    "seasons": [],
+                    "event_counts": {"cross_league": 0, "leagues": {}, "total": 0},
+                    "validation_status": "validated",
+                }
+            ),
+        )
         zf.writestr("unexpected.json", "{}")
 
     destination = tmp_path / "restore"

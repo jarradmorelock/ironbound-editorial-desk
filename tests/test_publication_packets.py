@@ -79,9 +79,10 @@ def test_healthy_rosters_with_zero_flags_are_ready_no_items():
     department = packet["departments"][0]
     assert department["status"] == "ready_no_items"
     assert department["data"] == []
+    assert packet["status"] == "ready"
 
 
-def test_missing_health_source_makes_required_department_unavailable():
+def test_missing_health_source_makes_required_department_and_packet_unavailable():
     publication = _publication(
         "ballad",
         "Ballad",
@@ -98,10 +99,10 @@ def test_missing_health_source_makes_required_department_unavailable():
     department = packet["departments"][0]
     assert department["status"] == "unavailable"
     assert "Sleeper" in department["reason"]
+    assert packet["status"] == "unavailable"
 
 
 def test_shared_lineup_flip_payload_is_unchanged_across_themed_department_names():
-    contracts = [FeatureContractConfig("lineup_flip_candidates", "PLACEHOLDER", True)]
     names = {
         "ballad": "Weekly Rounds",
         "saturday": "Portal Film Room",
@@ -122,7 +123,7 @@ def test_shared_lineup_flip_payload_is_unchanged_across_themed_department_names(
     assert payloads[0] == payloads[1] == payloads[2]
 
 
-def test_missing_preferred_dependency_marks_ready_feature_degraded_not_unavailable():
+def test_missing_preferred_dependency_marks_ready_feature_and_packet_degraded():
     publication = _publication(
         "paper",
         "Paper",
@@ -140,6 +141,29 @@ def test_missing_preferred_dependency_marks_ready_feature_degraded_not_unavailab
     assert department["status"] == "ready"
     assert department["degraded"] is True
     assert "optional_model" in department["dependency_warnings"][0]
+    assert packet["status"] == "degraded"
+
+
+def test_unavailable_feature_with_missing_preferred_dependency_degrades_instead_of_blocking_issue():
+    publication = _publication(
+        "paper",
+        "Paper",
+        [
+            FeatureContractConfig(
+                feature="draft_adp_value",
+                display_name="ADP Draft Profile",
+                required_in_phase=True,
+                dependencies=(FeatureDependencyConfig("draft_adp", "preferred"),),
+            )
+        ],
+    )
+    snapshot = _snapshot()
+    snapshot["draft_context"] = {"status": "available", "records": []}
+    packet = build_publication_packet(snapshot, _dossier(), publication, "weekly")
+    department = packet["departments"][0]
+    assert department["status"] in {"ready_no_items", "unavailable"}
+    assert department["degraded"] is True
+    assert packet["status"] == "degraded"
 
 
 def test_missing_optional_dependency_does_not_penalize_readiness():
@@ -159,6 +183,7 @@ def test_missing_optional_dependency_does_not_penalize_readiness():
     department = packet["departments"][0]
     assert department["status"] == "ready"
     assert department["degraded"] is False
+    assert packet["status"] == "ready"
 
 
 def test_phase_filtering_does_not_pull_preseason_departments_into_weekly_packet():

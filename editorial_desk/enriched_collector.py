@@ -9,6 +9,8 @@ import requests
 from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
+from .publication_packets import build_publication_packet
+from .publication_render import write_publication_packet
 from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
@@ -71,7 +73,37 @@ def collect_all(
             render_editorial_review(dossier), encoding="utf-8"
         )
 
+        if publications:
+            profile = publications.get(config.publication_profile or "")
+            if profile is not None and profile.tier == "newspaper":
+                generated.extend(
+                    _write_newspaper_packet(
+                        directory,
+                        snapshot,
+                        dossier,
+                        profile,
+                        phase="weekly",
+                    )
+                )
+
     return generated
+
+
+def _write_newspaper_packet(
+    directory: Path,
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    publication: PublicationConfig,
+    *,
+    phase: str = "weekly",
+) -> tuple[Path, Path]:
+    packet = build_publication_packet(
+        snapshot,
+        dossier,
+        publication,
+        phase,
+    )
+    return write_publication_packet(directory, packet)
 
 
 def _collect_deep_nfl_context(

@@ -231,47 +231,43 @@ def _collect_next_matchups(
 
 
 def _ensure_next_matchups(
-    snapshot: dict[str, Any], client: SleeperClient, league_id: str, week: int
+    snapshot: dict[str, Any],
+    client: SleeperClient,
+    league_id: str,
+    week: int,
 ) -> None:
     snapshot["next_matchups"] = _collect_next_matchups(client, league_id, week)
 
 
 def _apply_player_context(
-    snapshot: dict[str, Any], player_directory: dict[str, dict[str, Any]]
+    snapshot: dict[str, Any], player_directory: dict[str, Any]
 ) -> None:
-    snapshot["player_directory"] = {
-        str(player_id): row
-        for player_id, row in player_directory.items()
-        if str(player_id) in _snapshot_player_ids(snapshot)
-    }
-
-
-def _snapshot_player_ids(snapshot: dict[str, Any]) -> set[str]:
-    ids: set[str] = set()
-    for roster in snapshot.get("rosters") or []:
-        for key in ("players", "starters", "reserve", "taxi"):
-            ids.update(str(value) for value in roster.get(key) or [])
-    return ids
+    """Retain the rookie marker needed by every publication tier."""
+    for player_id, player in (snapshot.get("players") or {}).items():
+        source = player_directory.get(str(player_id)) or {}
+        player["years_exp"] = source.get("years_exp")
 
 
 def _apply_context_scope(
-    snapshot: dict[str, Any], shared: dict[str, Any], *, include_deep: bool
+    snapshot: dict[str, Any],
+    shared: dict[str, Any],
+    *,
+    include_deep: bool,
 ) -> None:
+    context = snapshot.setdefault("nfl_context", {})
+    # Complete weekly player stats are intentionally retained for every
+    # publication so Free Agent of the Week can consider genuinely unrostered
+    # players rather than only players already present in the league snapshot.
+    context["player_stats"] = dict(shared.get("player_stats") or {})
     if include_deep:
-        snapshot["deep_nfl_context"] = shared
+        context["snap_counts"] = dict(shared.get("snap_counts") or {})
+        context["play_by_play"] = dict(shared.get("play_by_play") or {})
     else:
-        snapshot["deep_nfl_context"] = {
-            name: {
-                "status": row.get("status"),
-                "records": row.get("records") or [],
-                **({"error": row.get("error")} if row.get("error") else {}),
-            }
-            for name, row in shared.items()
-            if name in {"player_stats", "snap_counts"}
-        }
+        context["snap_counts"] = {"status": "not_collected", "records": []}
+        context["play_by_play"] = {"status": "not_collected", "records": []}
 
 
-def _write_json(path: Path, value: dict[str, Any]) -> None:
+def _write_json(path: Path, value: Any) -> None:
     path.write_text(
         json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
         encoding="utf-8",

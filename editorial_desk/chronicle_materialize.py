@@ -130,6 +130,16 @@ def materialize_league(
         event_type = str(_field(event, "event_type") or "")
         if event_type in transaction_types:
             transaction_rows.append(_event_summary(event))
+
+        if event_type == "PLAYOFF_BRACKET_RESULT":
+            _apply_explicit_winners_bracket_placement(
+                event,
+                league_key=league_key,
+                registry=registry,
+                season_totals=season_totals,
+            )
+            continue
+
         if event_type != "MATCHUP_FINAL":
             continue
 
@@ -245,7 +255,13 @@ def materialize_league(
         for key, value in sorted(record_totals.items())
     }
     covered_seasons = sorted(
-        {row["season"] for row in matchup_rows}, key=_season_sort
+        {
+            str(row.get("season"))
+            for row in seasons.values()
+            if row.get("season") is not None
+        }
+        | {row["season"] for row in matchup_rows},
+        key=_season_sort,
     )
     return MaterializedLeagueHistory(
         league_key=league_key,
@@ -259,6 +275,50 @@ def materialize_league(
         coverage_complete=not warnings,
         coverage_warnings=warnings,
     )
+
+
+def _apply_explicit_winners_bracket_placement(
+    event: ChronicleEvent | dict[str, Any],
+    *,
+    league_key: str,
+    registry: IdentityRegistry,
+    season_totals: dict[str, dict[str, Any]],
+) -> None:
+    entities = dict(_field(event, "entities") or {})
+    if str(entities.get("bracket") or "").casefold() != "winners":
+        return
+    evidence = dict(_field(event, "evidence") or {})
+    placement = evidence.get("p")
+    winner_roster = evidence.get("w")
+    loser_roster = evidence.get("l")
+    if placement is None or winner_roster is None or loser_roster is None:
+        return
+    try:
+        placement = int(placement)
+        winner_roster = int(winner_roster)
+        loser_roster = int(loser_roster)
+    except (TypeError, ValueError):
+        return
+    if placement < 1:
+        return
+
+    season = str(_field(event, "season") or "unknown")
+    winner_identity = registry.competitor_for(
+        league_key, season, winner_roster
+    )
+    loser_identity = registry.competitor_for(
+        league_key, season, loser_roster
+    )
+    for identity, finish in (
+        (winner_identity, placement),
+        (loser_identity, placement + 1),
+    ):
+        season_key = f"{season}:{identity}"
+        season_total = season_totals.setdefault(season_key, _empty_record())
+        season_total["season"] = season
+        season_total["identity"] = identity
+        season_total["finish"] = finish
+        season_total["champion"] = finish == 1
 
 
 def _empty_record() -> dict[str, Any]:

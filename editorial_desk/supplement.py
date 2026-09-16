@@ -4,12 +4,16 @@ import json
 from pathlib import Path
 from typing import Any, Callable
 
+from .chronicle_queries import ChronicleQueries
+
 
 def generate_supplements(
     baseline_root: Path,
     current_root: Path,
     output_root: Path,
     week: int,
+    chronicle_root: Path | None = None,
+    baseline_time: str | None = None,
 ) -> list[Path]:
     generated = []
     pattern = f"*/week-{week:02d}/*/dossier.json"
@@ -21,6 +25,21 @@ def generate_supplements(
         baseline = _read_json(baseline_path)
         current = _read_json(current_path)
         lines = _supplement_lines(baseline, current)
+        if chronicle_root is not None:
+            since = baseline_time or baseline.get("information_current_through")
+            if since:
+                league_key = relative.parent.name
+                events = ChronicleQueries(Path(chronicle_root)).recent_events(
+                    league_key, str(since)
+                )
+                season = str(current.get("season") or "")
+                events = [
+                    event
+                    for event in events
+                    if (event.get("week") is None or int(event.get("week")) == int(week))
+                    and (not season or str(event.get("season") or "") == season)
+                ]
+                lines.extend(_ledger_event_lines(events))
         if not lines:
             continue
         directory = output_root / relative.parent
@@ -431,6 +450,79 @@ def _format_number(value: Any) -> str:
         return f"{float(value):.2f}"
     except (TypeError, ValueError):
         return "not available"
+
+
+def _ledger_event_lines(events: list[dict[str, Any]]) -> list[str]:
+    if not events:
+        return []
+    lines = ["## Event Ledger Updates", ""]
+    for event in sorted(
+        events,
+        key=lambda row: (str(row.get("observed_at") or ""), str(row.get("event_id") or "")),
+    ):
+        event_type = str(event.get("event_type") or "EVENT").replace("_", " ")
+        details = [_event_time_text(event)]
+        entities = _event_entities_text(event.get("entities") or {})
+        if entities:
+            details.append(entities)
+        transition = _event_transition_text(event.get("before"), event.get("after"))
+        if transition:
+            details.append(transition)
+        source_ref = str(event.get("source_ref") or "").strip()
+        source = str(event.get("source") or "").strip()
+        if source_ref or source:
+            source_text = source_ref or source
+            if source_ref and source:
+                source_text += f" ({source})"
+            details.append(f"source {source_text}")
+        event_id = str(event.get("event_id") or "").strip()
+        if event_id:
+            details.append(f"event {event_id}")
+        lines.append(f"- {event_type} — " + "; ".join(part for part in details if part))
+    lines.append("")
+    return lines
+
+
+def _event_time_text(event: dict[str, Any]) -> str:
+    before = event.get("observed_before")
+    after = event.get("observed_after")
+    occurred = event.get("occurred_at")
+    if before and after:
+        return f"observed between {before} and {after}"
+    if occurred:
+        return f"occurred at {occurred}"
+    observed = event.get("observed_at")
+    return f"observed at {observed}" if observed else "observation time unavailable"
+
+
+def _event_entities_text(entities: dict[str, Any]) -> str:
+    pairs = []
+    for key in sorted(entities):
+        value = entities.get(key)
+        if value in (None, "", [], {}):
+            continue
+        if isinstance(value, (dict, list, tuple)):
+            rendered = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        else:
+            rendered = str(value)
+        pairs.append(f"{key}={rendered}")
+    return ", ".join(pairs)
+
+
+def _event_transition_text(before: Any, after: Any) -> str:
+    if not isinstance(before, dict) and not isinstance(after, dict):
+        return ""
+    before = before if isinstance(before, dict) else {}
+    after = after if isinstance(after, dict) else {}
+    keys = sorted(set(before) | set(after))
+    changes = []
+    for key in keys:
+        old = before.get(key)
+        new = after.get(key)
+        if old == new:
+            continue
+        changes.append(f"{key}={old} → {key}={new}")
+    return ", ".join(changes)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

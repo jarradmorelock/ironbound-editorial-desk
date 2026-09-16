@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .health import build_roster_health, render_roster_health
 from .metrics import build_weekly_dossier
 from .nfl_enrichment import build_nfl_game_intelligence
 from .render import render_markdown
@@ -11,6 +12,7 @@ from .weekly_features import apply_weekly_features
 def build_editorial_review(snapshot: dict[str, Any]) -> dict[str, Any]:
     dossier = build_weekly_dossier(snapshot)
     dossier = apply_weekly_features(snapshot, dossier)
+    dossier["roster_health"] = build_roster_health(snapshot)
     dossier["market_context"] = _build_market_context(snapshot)
     dossier["source_manifest"] = _build_source_manifest()
     intelligence = build_nfl_game_intelligence(snapshot)
@@ -113,6 +115,24 @@ def render_editorial_review(dossier: dict[str, Any]) -> str:
                         f"{float(row.get('points') or 0):.2f} in a "
                         f"{float(row.get('victory_margin') or 0):.2f}-point win"
                     )
+
+    health = dossier.get("roster_health") or {
+        "status": "unavailable",
+        "players": [],
+        "error": "roster health block was not built",
+    }
+    lines.extend(
+        [
+            "",
+            *render_roster_health(
+                health,
+                expanded=(
+                    str((dossier.get("league") or {}).get("tier") or "").casefold()
+                    == "flagship"
+                ),
+            ),
+        ]
+    )
 
     market = dossier.get("market_context") or {}
     if market:
@@ -251,7 +271,7 @@ def _build_source_manifest() -> list[dict[str, str]]:
             "name": "Sleeper",
             "citation": "Sleeper. (n.d.). Sleeper API documentation.",
             "url": "https://docs.sleeper.com/",
-            "role": "League settings, rosters, scores, transactions, standings, and projections.",
+            "role": "League settings, rosters, player health/status metadata, scores, transactions, standings, and projections.",
         },
         {
             "name": "Dynasty Daddy",

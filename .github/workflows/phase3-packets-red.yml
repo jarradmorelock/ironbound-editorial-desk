@@ -18,4 +18,4 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r requirements.txt
-      - run: python -m pytest tests/test_publication_packets.py tests/test_publication_render.py -q
+      - run: python -m pytest tests/test_publication_packets.py tests/test_publication_render.py tests/test_packet_source_mapping.py -q

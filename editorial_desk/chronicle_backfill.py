@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Iterable
 
 import requests
 
@@ -108,9 +108,8 @@ def _historical_matchup_events(
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
         matchup_id = row.get("matchup_id")
-        if matchup_id is None:
-            continue
-        grouped.setdefault(str(matchup_id), []).append(row)
+        if matchup_id is not None:
+            grouped.setdefault(str(matchup_id), []).append(row)
     playoff_start = int(
         ((season_ref.league.get("settings") or {}).get("playoff_week_start") or 99)
     )
@@ -211,11 +210,11 @@ def _historical_transaction_events(
             continue
         if tx_type not in {"waiver", "free_agent"}:
             continue
-        event_type = "WAIVER_ADD" if tx_type == "waiver" else "FREE_AGENT_ADD"
+        add_type = "WAIVER_ADD" if tx_type == "waiver" else "FREE_AGENT_ADD"
         for player_id, roster_id in sorted((row.get("adds") or {}).items()):
             events.append(
                 make_event(
-                    event_type=event_type,
+                    event_type=add_type,
                     source="sleeper_transactions",
                     source_ref=f"transaction:{tx_id}:add:{player_id}",
                     league_key=league_key,
@@ -258,14 +257,28 @@ def _historical_transaction_events(
 def _pick_identity(row: dict[str, Any]) -> str:
     return ":".join(
         str(row.get(key) if row.get(key) is not None else "")
-        for key in (
-            "season",
-            "round",
-            "roster_id",
-            "owner_id",
-            "previous_owner_id",
-        )
+        for key in ("season", "round", "roster_id", "owner_id", "previous_owner_id")
     )
+
+
+def _identity_rows(
+    users: list[dict[str, Any]], rosters: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    users_by_id = {str(user.get("user_id")): user for user in users}
+    rows: list[dict[str, Any]] = []
+    for roster in rosters:
+        owner_id = str(roster.get("owner_id") or "")
+        user = users_by_id.get(owner_id) or {}
+        metadata = user.get("metadata") or {}
+        rows.append(
+            {
+                "roster_id": int(roster["roster_id"]),
+                "owner_id": owner_id,
+                "team_name": metadata.get("team_name") or user.get("display_name"),
+                "manager_name": user.get("display_name"),
+            }
+        )
+    return rows
 
 
 def backfill_season(
@@ -273,6 +286,8 @@ def backfill_season(
     season_ref: SeasonRef,
     league_config: Any,
     registry: IdentityRegistry,
+    *,
+    max_final_week: int | None = None,
 ) -> BackfillSeasonResult:
     league_key = str(league_config.key)
     warnings: list[str] = []
@@ -282,26 +297,12 @@ def backfill_season(
     rosters = client.rosters(season_ref.league_id)
     if not isinstance(users, list) or not isinstance(rosters, list):
         raise BackfillError("Sleeper users/rosters response was invalid")
-    users_by_id = {str(user.get("user_id")): user for user in users}
-    identity_rows = []
-    for roster in rosters:
-        owner_id = str(roster.get("owner_id") or "")
-        user = users_by_id.get(owner_id) or {}
-        metadata = user.get("metadata") or {}
-        identity_rows.append(
-            {
-                "roster_id": int(roster["roster_id"]),
-                "owner_id": owner_id,
-                "team_name": metadata.get("team_name") or user.get("display_name"),
-                "manager_name": user.get("display_name"),
-            }
-        )
-
+    rows = _identity_rows(users, rosters)
     if str(league_config.league_format).casefold() == "dynasty":
         identity_result = registry.bootstrap_dynasty_season(
             league_key=league_key,
             season=season_ref.season,
-            rosters=identity_rows,
+            rosters=rows,
         )
         identity_updates: tuple[Any, ...] = identity_result.mappings
         ambiguities: tuple[Any, ...] = identity_result.ambiguities
@@ -309,20 +310,20 @@ def backfill_season(
         identity_updates = registry.bootstrap_redraft_season(
             league_key=league_key,
             season=season_ref.season,
-            rosters=identity_rows,
+            rosters=rows,
         )
         ambiguities = ()
 
     for week in range(1, 19):
-        matchup_rows, matchup_error = _safe_optional(
-            client.matchups, season_ref.league_id, week
-        )
-        if matchup_error:
-            warnings.append(f"week {week} matchups: {matchup_error}")
-        events.extend(
-            _historical_matchup_events(season_ref, league_key, week, matchup_rows)
-        )
-
+        if max_final_week is None or week <= max_final_week:
+            matchup_rows, matchup_error = _safe_optional(
+                client.matchups, season_ref.league_id, week
+            )
+            if matchup_error:
+                warnings.append(f"week {week} matchups: {matchup_error}")
+            events.extend(
+                _historical_matchup_events(season_ref, league_key, week, matchup_rows)
+            )
         transaction_rows, transaction_error = _safe_optional(
             client.transactions, season_ref.league_id, week
         )
@@ -414,19 +415,18 @@ def backfill_season(
         ("winners", client.winners_bracket),
         ("losers", client.losers_bracket),
     ):
-        rows, error = _safe_optional(fetcher, season_ref.league_id)
+        bracket_rows, error = _safe_optional(fetcher, season_ref.league_id)
         if error:
             warnings.append(f"{bracket_name} bracket: {error}")
-        for row in rows:
-            source_ref = (
-                f"league:{season_ref.league_id}:bracket:{bracket_name}:"
-                f"round:{row.get('r')}:match:{row.get('m')}"
-            )
+        for row in bracket_rows:
             events.append(
                 make_event(
                     event_type="PLAYOFF_BRACKET_RESULT",
                     source="sleeper_bracket",
-                    source_ref=source_ref,
+                    source_ref=(
+                        f"league:{season_ref.league_id}:bracket:{bracket_name}:"
+                        f"round:{row.get('r')}:match:{row.get('m')}"
+                    ),
                     league_key=league_key,
                     season=season_ref.season,
                     week=None,
@@ -450,6 +450,20 @@ def backfill_season(
     )
 
 
+def _current_season_limit(
+    client: Any, newest_season: str
+) -> tuple[str | None, int | None, str | None]:
+    try:
+        state = client.nfl_state()
+        current_season = str(state.get("season") or "")
+        current_week = int(state.get("week") or 0)
+        return current_season, max(current_week - 1, 0), None
+    except (requests.RequestException, ValueError, TypeError, KeyError, OSError) as exc:
+        # If current NFL state cannot be established, preserve exact transactions but
+        # do not manufacture finals for the newest season.
+        return str(newest_season), 0, str(exc)
+
+
 def run_materialize(store: Any) -> MaterializeRunResult:
     from .chronicle_materialize import materialize_league
 
@@ -458,9 +472,7 @@ def run_materialize(store: Any) -> MaterializeRunResult:
     failed: list[str] = []
     unresolved: list[Any] = []
     record_added = 0
-    league_keys = tuple(
-        sorted(set(store.league_keys()) | set(registry.league_keys()))
-    )
+    league_keys = tuple(sorted(set(store.league_keys()) | set(registry.league_keys())))
     for league_key in league_keys:
         ambiguities = registry.unresolved_for_league(league_key)
         if ambiguities:
@@ -488,7 +500,7 @@ def run_materialize(store: Any) -> MaterializeRunResult:
 
 
 def run_backfill(
-    leagues: Any,
+    leagues: Iterable[Any],
     client: Any,
     store: Any,
 ) -> BackfillRunResult:
@@ -500,13 +512,45 @@ def run_backfill(
     warnings: list[str] = []
     unresolved: list[Any] = []
 
-    for config in leagues:
-        league_key = str(config.key)
+    configs = list(leagues)
+    discovered: dict[str, list[SeasonRef]] = {}
+    for config in configs:
+        key = str(config.key)
         try:
-            seasons = discover_seasons(client, str(config.sleeper_league_id))
+            discovered[key] = discover_seasons(client, str(config.sleeper_league_id))
+        except (BackfillError, requests.RequestException, ValueError, KeyError, OSError) as exc:
+            discovered[key] = []
+            failed.append(key)
+            warnings.append(f"{key}: {exc}")
+
+    newest = max(
+        (season.season for seasons in discovered.values() for season in seasons),
+        default="",
+    )
+    current_season, completed_week, state_warning = _current_season_limit(client, newest)
+    if state_warning:
+        warnings.append(f"nfl state unavailable: {state_warning}")
+
+    for config in configs:
+        league_key = str(config.key)
+        seasons = discovered.get(league_key) or []
+        if not seasons:
+            continue
+        try:
             league_warnings: list[str] = []
             for season_ref in seasons:
-                result = backfill_season(client, season_ref, config, registry)
+                max_final_week = (
+                    completed_week
+                    if current_season and season_ref.season == current_season
+                    else None
+                )
+                result = backfill_season(
+                    client,
+                    season_ref,
+                    config,
+                    registry,
+                    max_final_week=max_final_week,
+                )
                 append_result = store.append_events(result.events)
                 added += append_result.added
                 skipped += append_result.skipped
@@ -528,9 +572,8 @@ def run_backfill(
 
             from .chronicle_materialize import materialize_league
 
-            events = store.read_all_league_events(league_key)
             history = materialize_league(
-                events,
+                store.read_all_league_events(league_key),
                 registry,
                 coverage_warnings=league_warnings,
             )
@@ -553,8 +596,6 @@ def run_backfill(
         added_events=added,
         skipped_events=skipped,
         failed_leagues=tuple(sorted(set(failed))),
-        unresolved_ambiguities=tuple(
-            unresolved or registry.unresolved_ambiguities()
-        ),
+        unresolved_ambiguities=tuple(unresolved or registry.unresolved_ambiguities()),
         warnings=tuple(warnings),
     )

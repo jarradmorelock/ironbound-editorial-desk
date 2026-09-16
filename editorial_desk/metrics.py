@@ -70,7 +70,9 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     weekly_features = set(profile.get("weekly_features") or [])
     division_summary = (
         _division_summary(snapshot, matchup_rows, scoreboard, league_median, teams)
-        if editorial.get("tier") == "flagship" or "division_metrics" in weekly_features
+        if not profile
+        or editorial.get("tier") == "flagship"
+        or "division_metrics" in weekly_features
         else []
     )
     bench_mvp = _bench_mvp(snapshot, teams)

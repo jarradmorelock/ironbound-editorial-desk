@@ -46,7 +46,8 @@ def apply_weekly_features(
     profile = editorial.get("publication_profile") or {}
     weekly_contract_features = set(profile.get("weekly_features") or [])
     if (
-        editorial.get("tier") == "flagship"
+        not profile
+        or editorial.get("tier") == "flagship"
         or "divisional_started_mvps" in weekly_contract_features
     ):
         features["divisional_mvp_nominees"] = _divisional_mvp_nominees(snapshot)

@@ -2,99 +2,112 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add multi-season Sleeper renewal-chain backfill, stable dynasty franchise/redraft manager identity, alias preservation, live-observation coverage markers, and continuously rebuildable all-time Chronicle indexes.
+**Goal:** Add multi-season Sleeper renewal-chain backfill, explicit identity bootstrap/ambiguity handling, alias and manager-tenure history, live-observation coverage boundaries, correction-aware materialization, and continuously updated all-time Chronicle indexes.
 
-**Architecture:** Historical ingestion uses the same Event Ledger model as live collection. A registry layer maps yearly Sleeper roster/owner IDs to stable identities; backfill produces historical source events, and materializers derive head-to-head, records, streaks, seasons, and transaction views from combined backfilled + live events.
+**Architecture:** Historical ingestion uses the same Event Ledger model as live collection. A registry maps each season's Sleeper roster/owner records to stable internal identities. Auto-mapping uses conservative evidence and refuses ambiguous franchise continuity rather than guessing. Backfill writes source events; materializers derive head-to-head, records, streaks, seasons, and transactions from combined historical + live ledger records.
 
-**Tech Stack:** Python 3.12, standard library dataclasses/json/pathlib, existing `SleeperClient`, pytest.
+**Tech Stack:** Python 3.12, dataclasses/json/pathlib, existing `SleeperClient`, pytest.
 
 **Spec:** `docs/superpowers/specs/2026-09-16-editorial-desk-v2-final-design.md`
 
 ## Global Constraints
 
 - Backfill seeds the same living Chronicle future seasons continue to update.
-- Dynasty history follows franchise identity; manager tenure is separate.
-- Redraft history follows stable manager identity within the league.
-- Historical aliases are preserved with time bounds.
-- Ephemeral historical status changes are never fabricated.
-- Derived all-time numbers are materialized from evidence, never stored as stale constants.
+- Dynasty history follows franchise identity; manager tenure is a separate query layer.
+- Redraft history follows stable manager identity within that league.
+- Team/manager display-name aliases are preserved by season.
+- Ambiguous dynasty continuity is surfaced for manual override, never guessed.
+- Ephemeral historical health/practice/lineup transitions are never fabricated.
+- Derived totals are rebuilt from evidence, never incremented from stale materialized totals.
+- Correction events supersede source facts without deleting original audit records.
 
 ---
 
 ## File map
 
 **Create**
-- `editorial_desk/chronicle_identity.py` — stable identity registry and alias/tenure mapping.
-- `editorial_desk/chronicle_backfill.py` — renewal-chain traversal and historical event normalization.
-- `editorial_desk/chronicle_materialize.py` — derived matchup/record/season/transaction indexes.
+- `editorial_desk/chronicle_identity.py`
+- `editorial_desk/chronicle_backfill.py`
+- `editorial_desk/chronicle_materialize.py`
 - `tests/test_chronicle_identity.py`
 - `tests/test_chronicle_backfill.py`
 - `tests/test_chronicle_materialize.py`
-- `tests/fixtures/chronicle_history/` — synthetic multi-season Sleeper fixtures.
+- `tests/test_chronicle_history_e2e.py`
+- `tests/fixtures/chronicle_history/`
 
 **Modify**
-- `editorial_desk/sleeper.py` — expose safe helpers needed by backfill without changing read-only behavior.
-- `editorial_desk/chronicle_store.py` — registry/history read/write helpers.
-- `editorial_desk/cli.py` — add `chronicle-backfill` and `chronicle-materialize` commands.
+- `editorial_desk/sleeper.py`
+- `editorial_desk/chronicle_store.py`
+- `editorial_desk/chronicle_collect.py`
+- `editorial_desk/cli.py`
 - `README.md`
 
 ---
 
-### Task 1: Add stable identity registry primitives
+### Task 1: Define stable identity registry and conservative auto-mapping
 
 **Files:**
 - Create: `editorial_desk/chronicle_identity.py`
 - Test: `tests/test_chronicle_identity.py`
 
 **Interfaces:**
-- Produces `IdentityRegistry`, `resolve_dynasty_franchise(...)`, `resolve_redraft_manager(...)`, alias/tenure records.
+- `IdentityRegistry.empty() -> IdentityRegistry`
+- `bootstrap_dynasty_season(...) -> IdentityBootstrapResult`
+- `bootstrap_redraft_season(...) -> IdentityBootstrapResult`
+- `apply_override(override: IdentityOverride) -> None`
+- `franchise_for(league_key, season, roster_id) -> str`
+- `manager_for(league_key, season, owner_id) -> str`
+- `aliases(identity_key) -> list[AliasRecord]`
+- `manager_tenures(franchise_key) -> list[ManagerTenure]`
 
-- [ ] **Step 1: Write failing dynasty rename/ownership tests**
+**Auto-mapping policy:**
+- Redraft: stable Sleeper `owner_id` is the primary manager key.
+- Dynasty: continuity candidates may use prior-season roster slot, stable owner continuity, renewal-chain season adjacency, and explicit registry history.
+- If multiple candidates are plausible or owner change + roster-slot evidence conflicts, mark `ambiguous` and require manual override.
+- Display/team names are never identity keys.
+
+- [ ] **Step 1: Write failing dynasty rename/owner-change test**
 
 ```python
-def test_dynasty_history_follows_franchise_across_name_and_owner_change():
+def test_dynasty_history_follows_franchise_when_override_confirms_owner_change():
     registry = IdentityRegistry.empty()
     first = registry.register_dynasty_season(
         league_key="demo", season="2025", roster_id=3, owner_id="u1", team_name="Old Name"
     )
+    registry.apply_override(IdentityOverride(
+        league_key="demo", season="2026", roster_id=3,
+        franchise_key=first.franchise_key, reason="confirmed ownership transfer"
+    ))
     second = registry.register_dynasty_season(
-        league_key="demo", season="2026", roster_id=3, owner_id="u2", team_name="New Name",
-        previous_season_key=first.franchise_key,
+        league_key="demo", season="2026", roster_id=3, owner_id="u2", team_name="New Name"
     )
     assert first.franchise_key == second.franchise_key
-    assert registry.aliases(first.franchise_key) == [
-        ("2025", "Old Name"), ("2026", "New Name")
-    ]
-    assert registry.manager_tenures(first.franchise_key)[0].owner_id == "u1"
-    assert registry.manager_tenures(first.franchise_key)[1].owner_id == "u2"
+    assert [a.name for a in registry.aliases(first.franchise_key)] == ["Old Name", "New Name"]
 ```
 
-- [ ] **Step 2: Write failing redraft identity test**
+- [ ] **Step 2: Write failing ambiguity test**
 
-Assert same stable owner ID under two annual team names resolves to one manager key while unrelated managers remain distinct.
+Construct a new season where prior roster slot suggests Franchise A but stable owner moved to a slot mapped to Franchise B. Assert bootstrap returns an ambiguity record and creates no guessed mapping.
 
-- [ ] **Step 3: Run and verify failure**
+- [ ] **Step 3: Write redraft continuity test**
 
-Run: `python -m pytest tests/test_chronicle_identity.py -q`
+Same owner ID in 2025/2026 with different team names resolves to one manager key; a different owner does not.
 
-- [ ] **Step 4: Implement registry dataclasses and JSON serialization**
+- [ ] **Step 4: Implement registry dataclasses + JSON serialization**
 
-Keep franchise registry and manager registry separate. Allow manual override records to supersede auto-mapping without modifying underlying source events.
+Store franchise registry and manager registry separately. Persist aliases, season mappings, manager tenures, overrides, and unresolved ambiguities.
 
-- [ ] **Step 5: Run tests**
-
-Run: `python -m pytest tests/test_chronicle_identity.py -q`
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Run tests and commit**
 
 ```bash
+python -m pytest tests/test_chronicle_identity.py -q
 git add editorial_desk/chronicle_identity.py tests/test_chronicle_identity.py
-git commit -m "feat: add Chronicle identity registry"
+git commit -m "feat: add conservative Chronicle identity registry"
 ```
 
 ---
 
-### Task 2: Traverse Sleeper renewal chains
+### Task 2: Discover Sleeper renewal-chain seasons safely
 
 **Files:**
 - Modify: `editorial_desk/sleeper.py`
@@ -102,143 +115,154 @@ git commit -m "feat: add Chronicle identity registry"
 - Test: `tests/test_chronicle_backfill.py`
 
 **Interfaces:**
-- Produces `discover_seasons(client, current_league_id) -> list[SeasonRef]` ordered oldest -> newest.
+- `discover_seasons(client, current_league_id) -> list[SeasonRef]` oldest -> newest.
 
-- [ ] **Step 1: Write fixture test for `previous_league_id` traversal**
+- [ ] **Step 1: Write 2024 -> 2025 -> 2026 fixture traversal test**
 
-Fixture chain: 2024 -> 2025 -> 2026. Assert discovery returns all three once and stops on null/missing previous ID.
+Assert every league ID appears once and null/missing `previous_league_id` terminates traversal.
 
 - [ ] **Step 2: Add cycle-protection test**
 
-A malformed chain that points backward in a loop must raise `BackfillError` rather than loop forever.
+Malformed renewal loop raises `BackfillError` with the repeated league ID.
 
-- [ ] **Step 3: Implement renewal traversal using existing `league()` endpoint**
+- [ ] **Step 3: Implement traversal using existing read-only `league()`**
 
-No new write APIs. Preserve season metadata from each returned league object.
+Preserve Sleeper league ID, season, name, previous ID, and settings/metadata needed by identity bootstrap.
 
 - [ ] **Step 4: Run tests and commit**
 
-Run: `python -m pytest tests/test_chronicle_backfill.py -q`
-
 ```bash
+python -m pytest tests/test_chronicle_backfill.py -q
 git add editorial_desk/sleeper.py editorial_desk/chronicle_backfill.py tests/test_chronicle_backfill.py
 git commit -m "feat: discover historical Sleeper seasons"
 ```
 
 ---
 
-### Task 3: Normalize historical matchups, drafts, transactions, and picks
+### Task 3: Backfill historical source evidence
 
 **Files:**
 - Modify: `editorial_desk/chronicle_backfill.py`
-- Create fixtures under `tests/fixtures/chronicle_history/`
 - Test: `tests/test_chronicle_backfill.py`
+- Create/expand: `tests/fixtures/chronicle_history/`
 
 **Interfaces:**
-- Produces `backfill_season(...) -> BackfillSeasonResult(events, identity_updates, warnings)`.
+- `backfill_season(client, season_ref, league_config, registry) -> BackfillSeasonResult`
+- Result: `events`, `identity_updates`, `ambiguities`, `warnings`.
 
-- [ ] **Step 1: Add fixtures for a regular season + playoffs + trade + rookie draft + traded pick**
+- [ ] **Step 1: Build fixture season with regular season, playoffs, trade, waiver, rookie draft, and traded future pick**
 
-Fixtures must include stable transaction IDs and explicit playoff bracket records.
+Use stable Sleeper-style IDs and explicit bracket rows.
 
-- [ ] **Step 2: Write failing normalization tests**
+- [ ] **Step 2: Write historical normalization tests**
 
-Assert:
+Assert matchup/transaction/draft/pick events exist, provenance is `source_exact` or `reconstructed_from_sleeper`, and no historical `PLAYER_STATUS_CHANGE` is fabricated.
 
-```python
-assert any(e.event_type == "MATCHUP_FINAL" for e in result.events)
-assert any(e.event_type == "TRADE" for e in result.events)
-assert all(e.provenance in {"source_exact", "reconstructed_from_sleeper"} for e in result.events)
-assert not any(e.event_type == "PLAYER_STATUS_CHANGE" for e in result.events)
+- [ ] **Step 3: Implement fetch loop**
+
+Fetch:
+
+```text
+league/users/rosters
+matchups weeks 1-18
+transactions weeks 1-18
+drafts + draft picks + draft traded picks
+league traded picks
+winners/losers brackets
 ```
 
-- [ ] **Step 3: Implement historical fetch loop**
+Missing optional historical endpoints become warnings and coverage limitations.
 
-Fetch users/rosters, Weeks 1-18 matchups and transactions, drafts/picks/traded picks, winner/loser brackets when available. Missing optional historical endpoints become warnings, not fabricated events.
+- [ ] **Step 4: Preserve exact transaction times where source supplies them**
 
-- [ ] **Step 4: Run tests and commit**
+Do not convert exact Sleeper timestamps into reconstructed observation times.
 
-Run: `python -m pytest tests/test_chronicle_backfill.py -q`
+- [ ] **Step 5: Run tests and commit**
 
 ```bash
+python -m pytest tests/test_chronicle_backfill.py -q
 git add editorial_desk/chronicle_backfill.py tests/test_chronicle_backfill.py tests/fixtures/chronicle_history
 git commit -m "feat: backfill historical Sleeper evidence"
 ```
 
 ---
 
-### Task 4: Materialize living historical indexes
+### Task 4: Materialize correction-aware living historical indexes
 
 **Files:**
 - Create: `editorial_desk/chronicle_materialize.py`
 - Test: `tests/test_chronicle_materialize.py`
 
 **Interfaces:**
-- Produces `materialize_league(events, registry) -> MaterializedLeagueHistory` and writers for `matchups.json`, `records.json`, `seasons.json`, `transactions.json`, `franchises.json`/`managers.json`.
+- `effective_events(events) -> list[dict[str, Any]]`
+- `materialize_league(events, registry) -> MaterializedLeagueHistory`
+- Writes `matchups.json`, `records.json`, `seasons.json`, `transactions.json`, identity summary JSON.
 
-- [ ] **Step 1: Write failing all-time update test**
+- [ ] **Step 1: Write 13-1-1 -> 14-1-1 test**
 
 ```python
-def test_new_live_result_updates_backfilled_all_time_record():
+def test_new_live_result_updates_backfilled_series():
     history = materialize_league(backfilled_events + [new_live_win], registry)
     series = history.head_to_head[("franchise_a", "franchise_b")]
     assert (series.wins_a, series.wins_b, series.ties) == (14, 1, 1)
 ```
 
-- [ ] **Step 2: Add streak reset and playoff-separation tests**
+- [ ] **Step 2: Add streak reset and playoff separation tests**
 
-Regular-season and playoff meetings both count toward all-time series but retain separate competition labels. Current streak extends/resets from chronological results.
+All-time series includes both competition types while rows retain `regular_season` vs `playoffs`; current streak follows chronological effective results.
 
-- [ ] **Step 3: Implement materializers from event evidence only**
+- [ ] **Step 3: Add correction-event test**
 
-Never read a previous materialized total as source truth. Rebuild from full relevant ledger slice + registry.
+Original erroneous matchup event remains in ledger; a correction record with `correction_of=<event_id>` causes `effective_events()` and materialized history to use corrected fact exactly once.
 
-- [ ] **Step 4: Add incomplete-coverage metadata**
+- [ ] **Step 4: Implement materializer from ledger + registry only**
 
-Materialized history must include `coverage_start_season`, `coverage_complete`, and warning text when a renewal chain or endpoint is incomplete.
+Never use previous materialized totals as inputs.
 
-- [ ] **Step 5: Run tests and commit**
+- [ ] **Step 5: Add coverage metadata**
 
-Run: `python -m pytest tests/test_chronicle_materialize.py -q`
+Include `coverage_start_season`, `coverage_complete`, `coverage_warnings`, and live-observation-start references where relevant.
+
+- [ ] **Step 6: Run tests and commit**
 
 ```bash
+python -m pytest tests/test_chronicle_materialize.py -q
 git add editorial_desk/chronicle_materialize.py tests/test_chronicle_materialize.py
 git commit -m "feat: materialize living Chronicle history"
 ```
 
 ---
 
-### Task 5: Record live-observation coverage boundaries
+### Task 5: Persist identity registry and ambiguity reports
 
 **Files:**
 - Modify: `editorial_desk/chronicle_store.py`
-- Modify: `editorial_desk/chronicle_collect.py`
+- Modify: `editorial_desk/chronicle_identity.py`
+- Test: `tests/test_chronicle_identity.py`
 - Test: `tests/test_chronicle_store.py`
-- Test: `tests/test_chronicle_collect.py`
 
 **Interfaces:**
-- `coverage/live_observation.json` stores first successful observation timestamp for health, practice, lineup, and projection-change sources per league/global source as appropriate.
+- Registry files: `registry/franchises.json`, `registry/managers.json`, `registry/ambiguities.json`.
 
-- [ ] **Step 1: Write failing first-observation test**
+- [ ] **Step 1: Write round-trip registry test**
 
-Assert first successful health collection creates marker; later runs do not move the start date forward.
+Serialize/load mappings, aliases, tenures, override, and unresolved ambiguity without information loss.
 
-- [ ] **Step 2: Implement monotonic coverage start markers**
+- [ ] **Step 2: Implement store helpers**
 
-A source failure before first success creates no false coverage start. Once set, marker is immutable except explicit maintenance migration.
+Use same atomic JSON write primitive as other Chronicle state.
 
 - [ ] **Step 3: Run tests and commit**
 
-Run: `python -m pytest tests/test_chronicle_store.py tests/test_chronicle_collect.py -q`
-
 ```bash
-git add editorial_desk/chronicle_store.py editorial_desk/chronicle_collect.py tests/test_chronicle_store.py tests/test_chronicle_collect.py
-git commit -m "feat: track Chronicle live observation coverage"
+python -m pytest tests/test_chronicle_identity.py tests/test_chronicle_store.py -q
+git add editorial_desk/chronicle_store.py editorial_desk/chronicle_identity.py tests/test_chronicle_identity.py tests/test_chronicle_store.py
+git commit -m "feat: persist Chronicle identity registry"
 ```
 
 ---
 
-### Task 6: Add backfill/materialization CLI commands
+### Task 6: Add backfill/materialization/override CLI
 
 **Files:**
 - Modify: `editorial_desk/cli.py`
@@ -250,85 +274,80 @@ git commit -m "feat: track Chronicle live observation coverage"
 ```text
 python -m editorial_desk chronicle-backfill --config ... --chronicle-root ...
 python -m editorial_desk chronicle-materialize --chronicle-root ...
+python -m editorial_desk chronicle-identity-report --chronicle-root ...
 ```
 
-- [ ] **Step 1: Add failing parser/orchestration tests**
+Manual registry overrides are edited in the documented registry override structure and then `chronicle-materialize` rebuilds derived indexes. Later Phase 4 places destructive/re-backfill modes behind backup gating.
 
-Assert `chronicle-backfill` iterates all configured leagues, including publication-disabled ones, and invokes backfill oldest-to-newest.
+- [ ] **Step 1: Write parser/orchestration tests**
 
-- [ ] **Step 2: Implement command**
+Assert all configured leagues, including publication-disabled ones, are traversed oldest -> newest.
 
-Before writing events, backfill must load registry; after appending events/identity updates, invoke materialization. Re-running command must produce zero added events and identical derived JSON.
+- [ ] **Step 2: Add ambiguity fail-safe test**
 
-- [ ] **Step 3: Run tests**
+Backfill may append unambiguous source events but must exit nonzero before publishing identity-dependent derived totals for a league with unresolved dynasty identity ambiguity.
 
-Run: `python -m pytest tests/test_chronicle_backfill_cli.py tests/test_chronicle_backfill.py tests/test_chronicle_materialize.py -q`
+- [ ] **Step 3: Implement commands**
 
-- [ ] **Step 4: Document manual bootstrap and correction workflow**
+`chronicle-identity-report` prints unresolved ambiguity keys and exact season/roster/owner evidence needed for manual resolution.
 
-Document registry override file locations and rebuild command.
+- [ ] **Step 4: Test rerun idempotency**
 
-- [ ] **Step 5: Commit**
+Second backfill after no source change adds zero events and produces byte-identical derived JSON.
+
+- [ ] **Step 5: Run tests and commit**
 
 ```bash
+python -m pytest tests/test_chronicle_backfill_cli.py tests/test_chronicle_backfill.py tests/test_chronicle_materialize.py -q
 git add editorial_desk/cli.py tests/test_chronicle_backfill_cli.py README.md
-git commit -m "feat: add Chronicle backfill and rebuild commands"
+git commit -m "feat: add Chronicle historical bootstrap commands"
 ```
 
 ---
 
-### Task 7: Multi-season end-to-end history fixture
+### Task 7: Build multi-season end-to-end history fixture
 
 **Files:**
 - Create: `tests/test_chronicle_history_e2e.py`
 - Expand: `tests/fixtures/chronicle_history/`
 
-- [ ] **Step 1: Build synthetic history fixture**
+- [ ] **Step 1: Fixture scenario**
 
-Include:
+Include dynasty rename, ownership transfer, one ambiguous transition resolved by override, redraft returning manager/new team name, trade, waiver, playoff meeting, future-pick trade, renewal, and one new live matchup.
 
-- dynasty franchise rename
-- dynasty manager change
-- redraft manager/team-name continuity
-- trade
-- waiver claim
-- playoff meeting
-- future-pick trade
-- annual renewal
-- one new live matchup result
+- [ ] **Step 2: Assertions**
 
-- [ ] **Step 2: Write end-to-end assertions**
+Verify stable identities, historical aliases, manager tenure, all-time record update, streak, playoff labeling, transaction season, future-pick history, no fabricated historical health, and incomplete coverage labeling where a fixture endpoint is intentionally absent.
 
-Assert stable identities, alias lists, manager tenure, all-time H2H update, playoff separation, transaction season retention, and no fabricated historical health events.
-
-- [ ] **Step 3: Run test**
-
-Run: `python -m pytest tests/test_chronicle_history_e2e.py -q`
-
-- [ ] **Step 4: Commit**
+- [ ] **Step 3: Run and commit**
 
 ```bash
+python -m pytest tests/test_chronicle_history_e2e.py -q
 git add tests/test_chronicle_history_e2e.py tests/fixtures/chronicle_history
 git commit -m "test: verify multi-season Chronicle continuity"
 ```
 
 ---
 
-### Task 8: Phase 2 regression gate
+### Task 8: Phase 2 verification gate
 
 - [ ] **Step 1: Run complete suite**
 
 Run: `python -m pytest -q`
 
-- [ ] **Step 2: Run backfill twice against fixtures and diff output**
+- [ ] **Step 2: Run fixture backfill twice and compare tree hashes**
 
-Expected: second run adds zero events and produces byte-identical derived history.
+Expected second run: zero added events and byte-identical registry/history output.
 
-- [ ] **Step 3: Verify history indexes never depend on stale prior totals**
+- [ ] **Step 3: Verify materializer inputs**
 
-Code review: materializer inputs are ledger + registry only.
+Code review confirms materializers depend only on effective ledger events + registry, never prior materialized counters.
 
-- [ ] **Step 4: Commit any regression fixes only if needed**
+- [ ] **Step 4: Verify unresolved identity ambiguity cannot silently publish all-time claims**
+
+Run ambiguity fixture and expect explicit nonzero/report behavior.
+
+- [ ] **Step 5: Commit verification fixes only if needed**
 
 ```bash
 git add -A

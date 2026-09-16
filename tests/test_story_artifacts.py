@@ -88,6 +88,32 @@ def test_story_desk_enabled_publication_writes_json_and_markdown(tmp_path):
     assert "Evidence" in markdown
 
 
+def test_story_desk_headlines_include_text_only_image_suggestions(tmp_path):
+    output = tmp_path / "issue"
+    output.mkdir()
+
+    write_story_desk_artifacts(
+        output,
+        _snapshot(),
+        {},
+        _publication(),
+        chronicle_root=_chronicle(tmp_path),
+    )
+
+    packet = json.loads((output / "story_desk.json").read_text())
+    candidate = packet["candidates"][0]
+    packages = candidate["headline_packages"]
+
+    assert packages
+    assert packages[0]["headline"]
+    assert packages[0]["image_suggestion"]
+    assert "Suggested visual" in (output / "story_desk.md").read_text()
+    assert not any(
+        key in packages[0]
+        for key in ("image_url", "image_path", "image_file", "image_asset")
+    )
+
+
 def test_newspaper_publication_does_not_write_story_desk_artifacts(tmp_path):
     output = tmp_path / "issue"
     output.mkdir()

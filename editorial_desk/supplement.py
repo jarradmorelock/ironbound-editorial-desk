@@ -72,6 +72,7 @@ def _supplement_lines(
     _add_new_awards(sections, baseline, current)
     _add_ranking_updates(sections, baseline, current)
     _add_transaction_updates(sections, baseline, current)
+    _add_health_updates(sections, baseline, current)
     _add_timing_updates(sections, baseline, current)
     return [line for section in sections for line in section]
 
@@ -114,6 +115,44 @@ def _add_source_updates(
         )
     if changes:
         sections.append(["## Newly Available Sources", "", *changes, ""])
+
+
+def _add_health_updates(
+    sections: list[list[str]],
+    baseline: dict[str, Any],
+    current: dict[str, Any],
+) -> None:
+    before = baseline.get("roster_health") or {}
+    after = current.get("roster_health") or {}
+    if after.get("status") != "available":
+        return
+
+    old_rows = {
+        (int(row.get("roster_id") or 0), str(row.get("player_id") or "")): row
+        for row in before.get("players") or []
+    }
+    changes: list[str] = []
+    for row in after.get("players") or []:
+        identity = (int(row.get("roster_id") or 0), str(row.get("player_id") or ""))
+        old = old_rows.get(identity)
+        if old == row:
+            continue
+        details = []
+        if row.get("status"):
+            details.append(str(row["status"]))
+        if row.get("injury_status"):
+            details.append(str(row["injury_status"]))
+        if row.get("on_ir"):
+            details.append("IR/RESERVE")
+        if row.get("practice_participation"):
+            details.append(str(row["practice_participation"]))
+        changes.append(
+            f"- {row.get('team')}: {row.get('player')} — "
+            f"{', '.join(details) if details else 'health status changed'}"
+        )
+
+    if changes:
+        sections.append(["## Roster Health Updates", "", *changes, ""])
 
 
 def _add_ranking_updates(

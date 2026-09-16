@@ -32,6 +32,12 @@ def dependency_available(
             return True, None
         return False, str(health.get("error") or "Sleeper health source unavailable")
 
+    # Publication contracts use the semantic name `dynasty_market`; the
+    # authoritative collected source is Dynasty Daddy under ranking_inputs.
+    if source == "dynasty_market":
+        value = (snapshot.get("ranking_inputs") or {}).get("dynasty_daddy")
+        return _status_available(value, "dynasty_daddy")
+
     for container_name in ("ranking_inputs", "nfl_context"):
         container = snapshot.get(container_name) or {}
         if source in container:

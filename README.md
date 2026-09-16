@@ -128,6 +128,61 @@ write an in-progress score as `MATCHUP_FINAL`; the Tuesday completed-period
 workflow will become the normal finalization path in the later integration
 phase.
 
+## Historical Chronicle bootstrap and identity repair
+
+Historical backfill walks each configured Sleeper league through its
+`previous_league_id` renewal chain and writes durable matchup, transaction,
+draft, traded-pick, and playoff evidence into the same Chronicle that live
+collection continues to update. Backfill is therefore a seed operation, not a
+static historical snapshot. New matchup events automatically change rebuilt
+all-time records, streaks, and head-to-head totals.
+
+Run a bootstrap with:
+
+```bash
+python -m editorial_desk chronicle-backfill \
+  --config config/leagues.json \
+  --chronicle-root ../chronicle-data
+```
+
+The newest/current season is handled conservatively. Backfill may preserve
+completed transactions from the active week, but it only emits
+`MATCHUP_FINAL` events through the most recently completed NFL week. Historical
+health, practice, projection, or intraweek lineup transitions are never
+invented when Sleeper does not preserve them.
+
+Dynasty history follows a stable franchise identity. A team-name change is an
+alias, not a new franchise. If ownership changes and roster-slot/owner evidence
+cannot prove continuity, the backfill records an ambiguity and returns nonzero
+instead of guessing. Redraft history follows stable Sleeper manager identity;
+ownerless/orphan slots remain separate and are not treated as one fictional
+manager.
+
+The canonical registry is `registry/identity.json`. For easier review, every
+registry write also produces deterministic projections in
+`registry/franchises.json`, `registry/managers.json`, and
+`registry/ambiguities.json`. Manual dynasty continuity corrections are entered
+as an `overrides` row in the canonical registry with `league_key`, `season`,
+`roster_id`, `franchise_key`, and a human-readable `reason`. After editing the
+registry, rerun `chronicle-backfill` so the previously ambiguous season gets a
+stable mapping, then rebuild derived history if necessary.
+
+Use these commands to inspect/rebuild without refetching source history:
+
+```bash
+python -m editorial_desk chronicle-identity-report \
+  --chronicle-root ../chronicle-data
+
+python -m editorial_desk chronicle-materialize \
+  --chronicle-root ../chronicle-data
+```
+
+Materialization reads only the Event Ledger plus the identity registry. It does
+not increment yesterday's cached all-time totals. Derived history can therefore
+be regenerated after an identity correction while leaving the original source
+events intact. Source corrections use explicit superseding events rather than
+silently deleting the old audit record.
+
 ## Local dry run
 
 Create a real configuration from the example, then run:

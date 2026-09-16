@@ -126,21 +126,6 @@ replace(
 
 replace(
     "editorial_desk/emailer.py",
-    '''        "The weekly editorial research packets are attached.\n\n"
-        + "\n".join(packet_lines)
-        + "\n\nThese are research dossiers, not final publication copy. "
-        "The data-only league is intentionally excluded.\n"
-''',
-    '''        "The weekly editorial packets are attached.\n\n"
-        + "\n".join(packet_lines)
-        + "\n\nNewspaper attachments use their publication-specific named departments. "
-        "Flagship magazines include the research dossier and Story Desk planning packet. "
-        "The data-only league is intentionally excluded.\n"
-''',
-)
-
-replace(
-    "editorial_desk/emailer.py",
     '''    for markdown_path, dossier in packets:
         league = dossier.get("league") or {}
         league_key = str(league.get("league_key") or markdown_path.parent.name)

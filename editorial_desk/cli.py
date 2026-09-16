@@ -46,6 +46,8 @@ def parser() -> argparse.ArgumentParser:
     )
     collect.add_argument("--week", type=int, required=True)
     collect.add_argument("--output-dir", type=Path, default=Path("output/dry-run"))
+    collect.add_argument("--chronicle-root", type=Path)
+    collect.add_argument("--external-inputs-dir", type=Path)
 
     chronicle = subcommands.add_parser("chronicle-collect")
     chronicle.add_argument("--config", type=Path, required=True)
@@ -242,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
         args.week,
         args.output_dir,
         publications=publications or {},
+        chronicle_root=args.chronicle_root,
+        external_inputs_dir=args.external_inputs_dir,
     )
     print(f"Dry run complete: {len(generated)} files generated")
     return 0

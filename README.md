@@ -15,8 +15,9 @@ is opt-in and uses repository secrets.
 - The existing transaction and Discord reporters are not imported or changed.
 - GitHub runs the complete collection Tuesday at 9:17 p.m. Eastern and a
   delta-only safety check Wednesday at 5:17 a.m. Eastern.
-- Generated output is ignored by Git. Complete and supplemental packets are
-  uploaded only as temporary workflow artifacts.
+- Generated editorial output is ignored by Git. Complete and supplemental
+  packets are uploaded only as temporary workflow artifacts.
+- Durable Chronicle history lives on the dedicated `chronicle-data` branch.
 - Gmail credentials are read only from GitHub Actions secrets and are never
   committed to the repository.
 
@@ -37,20 +38,19 @@ The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
 bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping
 start/sit decisions, waiver-impact candidates, weekly records, and named
-division performance. Every publication also receives an NFL game-day timeline
-that identifies Thursday positive and negative projection swings, Thursday
-scoring edges that ultimately supplied the winning margin, Monday lead changes,
-the closest finishes involving Monday starters, and noteworthy late NFL plays
-linked to fantasy starters. Every dossier also separates official standings
-from a transparent data power ranking. The eventual publication archive will
-add the prior issue's editorial ranking and week-to-week movement without
-treating the formula as the final editorial opinion.
+division performance where the league actually has divisions. Every publication
+also receives an NFL game-day timeline that identifies Thursday positive and
+negative projection swings, Thursday scoring edges that ultimately supplied the
+winning margin, Monday lead changes, the closest finishes involving Monday
+starters, and noteworthy late NFL plays linked to fantasy starters. Every
+dossier also separates official standings from a transparent data power
+ranking.
 
 Ranking inputs are fetched once per run and then trimmed to the players in each
 league. Sleeper supplies weekly projections scored against that league's own
-settings. Dynasty Daddy supplies current-season starter ranks and dynasty
-market values. If either optional source is unavailable, collection continues
-and the dossier clearly marks the missing input.
+settings. Dynasty Daddy supplies current-season starter ranks and dynasty market
+values. If either optional source is unavailable, collection continues and the
+dossier clearly marks the missing input.
 
 Ironbound Weekly and Unbound Weekly receive an additional flagship Sleeper
 sourcebook. For those two magazines only, each run collects all 18 schedule
@@ -70,9 +70,9 @@ human-readable email attachment turns those sources into:
 The flagship versions retain a larger candidate list and a calendar of all
 Wednesday, Thursday, Friday, Saturday, and Monday starters. Newspaper packets
 receive a shorter version of the same timing evidence. Sleeper remains
-authoritative for the fantasy points; nflverse supplies the NFL weekday, game,
-real-life stat line, and late-play description. A missing optional nflverse
-file does not stop the rest of the weekly collection.
+authoritative for fantasy points; nflverse supplies NFL weekday, game,
+real-life stat line, and late-play description. A missing optional nflverse file
+does not stop the rest of the weekly collection.
 
 - Dynasty leagues use the Ironbound/Unbound editorial model: starter strength
   and projected scoring lead, with dynasty value, playoff and title
@@ -84,19 +84,16 @@ file does not stop the rest of the weekly collection.
 
 The source primers and publications have been audited into
 `config/publications.json`; see `docs/source-audit.md` for the resulting brand
-and editorial map. Chronicle now supplies cross-season and all-time factual
-history. Editorial constructs that depend on prior published expectations or
-richer narrative synthesis, such as Giant Killer framing, trade-afterlife
-features, and persistent magazine Story Desk memory, remain later editorial
-layers.
+and editorial map. Chronicle supplies cross-season and all-time factual history.
 
 ## Chronicle data branch and live pulse collection
 
 Editorial Desk v2 stores durable generated history on the dedicated
 `chronicle-data` branch. Application code continues to run from `main`; the
 data branch contains only Chronicle state such as event ledgers, registries,
-coverage metadata, manifests, and short-lived diagnostic comparison state.
-Normal automation never force-pushes `chronicle-data`.
+coverage metadata, manifests, materialized history, backup receipts, and
+short-lived diagnostic comparison state. Normal automation never force-pushes
+`chronicle-data`.
 
 The lightweight Chronicle collector is intentionally separate from the full
 editorial collector. It does not fetch Dynasty Daddy, nflverse play-by-play,
@@ -111,9 +108,10 @@ League-specific reactions remain league events.
 During the season, `.github/workflows/editorial-desk-chronicle.yml` runs one
 baseline collection at 6:17 a.m. Eastern every day and three additional pulses
 at 12:17 p.m., 5:17 p.m., and 9:17 p.m. Eastern from Wednesday through Sunday.
-All Chronicle writers share a serialized concurrency group. The workflow
-checks out application code and `chronicle-data` separately, runs the test suite
-before mutation, commits only when data changed, and refuses force pushes.
+All Chronicle writers share the `editorial-chronicle-writer` serialized
+concurrency group. The workflow checks out application code and
+`chronicle-data` separately, runs the test suite before mutation, commits only
+when data changed, and refuses force pushes.
 
 Manual collection is available with:
 
@@ -125,9 +123,8 @@ python -m editorial_desk chronicle-collect \
 ```
 
 `--finalize-matchups` is intentionally opt-in. Ordinary intraweek pulses never
-write an in-progress score as `MATCHUP_FINAL`; the Tuesday completed-period
-workflow will become the normal finalization path in the later integration
-phase.
+write an in-progress score as `MATCHUP_FINAL`; the scheduled Tuesday workflow
+performs the normal completed-week finalization before editorial generation.
 
 ## Historical Chronicle bootstrap and identity repair
 
@@ -184,6 +181,73 @@ be regenerated after an identity correction while leaving the original source
 events intact. Source corrections use explicit superseding events rather than
 silently deleting the old audit record.
 
+## Magazine Story Desk
+
+Ironbound Weekly and Unbound Weekly have an explicit Story Desk capability.
+Newspapers do not. The Story Desk reads normalized weekly evidence plus the
+pinned Chronicle revision and produces private `story_desk.json` and
+`story_desk.md` planning artifacts. Candidates preserve evidence references,
+historical coverage, objective signal components, cautions, headline concepts,
+depth suggestions, and graphic ideas. A temporal sequence may be reported when
+supported; unsupported motive or causation is not asserted.
+
+Official Ironbound/Unbound Power Rankings remain owned by the separate rankings
+workflow. Editorial Desk does not fetch, recreate, or substitute for those
+rankings. Optional official ranking or WAR context may be supplied manually as
+publication-named JSON files in a directory passed with
+`--external-inputs-dir`, for example:
+
+```bash
+python -m editorial_desk collect \
+  --config config/leagues.json \
+  --week 7 \
+  --chronicle-root ../chronicle-data \
+  --chronicle-revision "$CHRONICLE_SHA" \
+  --external-inputs-dir editorial-inputs
+```
+
+If no external input file is supplied, Story Desk still operates from Chronicle
+and weekly evidence, but ranking-specific claims are unavailable. Story Desk
+also does not collect images. Headline packages may include a text-only
+suggested visual based on the supported story content, such as a rivalry image,
+game-action photo concept, trade-chain graphic, workload chart, or record-card
+overlay. No image URL, path, asset, or downloaded file is produced.
+
+## Chronicle recovery, receipts, and retention
+
+A Chronicle recovery ZIP contains permanent registries, ledgers, materialized
+history, coverage, manifests, and backup receipts, while diagnostic/cache/temp
+material is excluded. `BACKUP_MANIFEST.json` records the exact Chronicle
+revision, schema versions, leagues, seasons, event counts, file sizes, and
+SHA-256 checksums. The archive is validated before it is published or restored.
+
+On the first Tuesday of each month in `America/New_York`, the normal Tuesday
+email also carries one validated Chronicle ZIP unless a successful receipt for
+that month already exists. After SMTP accepts the message, a permanent monthly
+receipt records the Chronicle revision, archive checksum, and acceptance time.
+If SMTP fails before acceptance, no receipt is written and the archive remains
+eligible for retry. There is one unavoidable transport edge case: SMTP can
+accept a message and the later receipt write can fail, which can cause a retry
+to send a duplicate archive. The archive filename and checksum make that case
+identifiable; the system does not claim stronger exactly-once semantics than
+SMTP plus Git can provide.
+
+Major Chronicle-affecting maintenance uses a pre-change backup gate. Protected
+operations cannot reach their maintenance callback until a fresh backup is
+created, validated against the exact revision, accepted by the delivery
+callback, and receipted. Ordinary append collection is not treated as
+destructive maintenance.
+
+Diagnostic retention is separate from permanent history. The command below
+removes only timestamped diagnostic files older than the selected window and
+never prunes ledger/history/registry/coverage/manifests or backup receipts:
+
+```bash
+python -m editorial_desk chronicle-prune-diagnostics \
+  --chronicle-root ../chronicle-data \
+  --retention-days 30
+```
+
 ## Local dry run
 
 Create a real configuration from the example, then run:
@@ -206,14 +270,21 @@ regular-season NFL week. It does not assume that Sleeper's current week is the
 week that just ended, and it will not send anything before every NFL game in
 the reviewed week has a final score.
 
-At 9:17 p.m. Eastern every Tuesday, GitHub collects and emails the full set of
-publication dossiers. It saves that exact collection as the comparison
-baseline. At 5:17 a.m. Eastern every Wednesday, GitHub collects again and
-compares the result with the saved Tuesday packet. The Wednesday email contains
-only newly available source data, score corrections, newly calculable features,
-and new NFL game-day evidence. If nothing new is found, no second email is sent.
-If the Tuesday baseline cannot be restored, the backup refuses to send a full
-duplicate packet.
+At 9:17 p.m. Eastern every Tuesday, the workflow serializes with the Chronicle
+pulse collector, finalizes the completed fantasy week into Chronicle,
+materializes derived history, commits any change, and captures that exact
+Chronicle SHA. Full newspaper packets and Ironbound/Unbound Story Desk artifacts
+are then built against that pinned revision. The editorial build does not mutate
+Chronicle underneath itself.
+
+After successful Tuesday delivery, the exact packet plus
+`chronicle-baseline.json` is saved as the Wednesday comparison baseline. At
+5:17 a.m. Eastern Wednesday, the workflow first records a lightweight Chronicle
+pulse, then compares the fresh dossier with Tuesday and queries Event Ledger
+entries observed after Tuesday's baseline time. The Wednesday email contains
+only new evidence. If nothing new is found, no second email is sent. If the
+Tuesday baseline cannot be restored, Wednesday still keeps Chronicle current
+but refuses to send a duplicate full packet.
 
 The slight offset from the top of the hour reduces the chance of a GitHub
 Actions scheduling delay. Both schedules use the `America/New_York` timezone,
@@ -221,10 +292,12 @@ so they remain 9:17 p.m. and 5:17 a.m. across daylight-saving changes.
 
 ## Manual GitHub run
 
-Open **Actions -> Editorial desk weekly delivery -> Run workflow**. Validation is the
-default. Select **collect**, enter the week, and enable **send_email** to deliver
-one email containing the seven publication Markdown dossiers. The data-only
-league remains excluded from the email.
+Open **Actions -> Editorial desk weekly delivery -> Run workflow**. Validation is
+the default. Select **collect**, enter the week, and enable **send_email** to
+deliver one email containing the seven publication Markdown dossiers. The
+data-only league remains excluded from the email. Manual collection reads the
+current Chronicle revision but does not perform the scheduled Tuesday
+finalization transaction.
 
 ## Email secrets
 

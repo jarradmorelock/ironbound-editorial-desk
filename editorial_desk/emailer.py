@@ -1,10 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from email.message import EmailMessage
 import json
 from pathlib import Path
 import smtplib
 from typing import Any
+
+from .chronicle_backup import (
+    ChronicleBackupError,
+    validate_chronicle_backup,
+    write_monthly_backup_receipt,
+)
 
 
 class EmailDeliveryError(RuntimeError):
@@ -16,6 +23,8 @@ def build_dossier_email(
     week: int,
     sender: str,
     recipient: str,
+    extra_attachments: tuple[Path, ...] = (),
+    chronicle_archive: Path | None = None,
 ) -> EmailMessage:
     dossier_paths = sorted(output_root.glob(f"*/week-{week:02d}/*/dossier.md"))
     if not dossier_paths:
@@ -40,6 +49,16 @@ def build_dossier_email(
         raise EmailDeliveryError("Weekly email contains more than one season")
     season = seasons.pop()
 
+    attachments = _attachment_paths(extra_attachments, chronicle_archive)
+    archive_paths = tuple(path for path in attachments if path.suffix.lower() == ".zip")
+    for archive_path in archive_paths:
+        validation = validate_chronicle_backup(archive_path)
+        if not validation.valid:
+            raise EmailDeliveryError(
+                "Chronicle archive failed validation: "
+                + "; ".join(validation.errors)
+            )
+
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
@@ -53,11 +72,17 @@ def build_dossier_email(
         packet_lines.append(
             f"- {league.get('publication')}: {league.get('configured_name')}"
         )
+    archive_note = (
+        "\nA validated Chronicle archive is attached as this month's recovery copy.\n"
+        if archive_paths
+        else ""
+    )
     message.set_content(
         "The weekly editorial research packets are attached.\n\n"
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
+        + archive_note
     )
 
     for markdown_path, dossier in packets:
@@ -69,6 +94,17 @@ def build_dossier_email(
             subtype="markdown",
             filename=filename,
         )
+    for path in attachments:
+        if path.suffix.lower() == ".zip":
+            maintype, subtype = "application", "zip"
+        else:
+            maintype, subtype = "application", "octet-stream"
+        message.add_attachment(
+            path.read_bytes(),
+            maintype=maintype,
+            subtype=subtype,
+            filename=path.name,
+        )
     return message
 
 
@@ -78,10 +114,65 @@ def send_dossier_email(
     sender: str,
     app_password: str,
     recipient: str | None = None,
+    extra_attachments: tuple[Path, ...] = (),
+    chronicle_archive: Path | None = None,
+    monthly_receipt_root: Path | None = None,
+    chronicle_revision: str | None = None,
+    accepted_at: datetime | None = None,
 ) -> int:
     recipient = recipient or sender
-    message = build_dossier_email(output_root, week, sender, recipient)
+    attachments = _attachment_paths(extra_attachments, chronicle_archive)
+    receipt_requested = monthly_receipt_root is not None or chronicle_revision is not None
+    receipt_archive: Path | None = None
+    if receipt_requested:
+        if monthly_receipt_root is None or not str(chronicle_revision or "").strip():
+            raise EmailDeliveryError(
+                "Monthly Chronicle receipt requires receipt root and Chronicle revision"
+            )
+        zip_paths = tuple(path for path in attachments if path.suffix.lower() == ".zip")
+        if len(zip_paths) != 1:
+            raise EmailDeliveryError(
+                "Monthly Chronicle receipt requires exactly one ZIP attachment"
+            )
+        receipt_archive = zip_paths[0]
+        validation = validate_chronicle_backup(
+            receipt_archive, expected_revision=str(chronicle_revision)
+        )
+        if not validation.valid:
+            raise EmailDeliveryError(
+                "Chronicle archive failed validation: "
+                + "; ".join(validation.errors)
+            )
+        if accepted_at is not None and (
+            accepted_at.tzinfo is None or accepted_at.utcoffset() is None
+        ):
+            raise EmailDeliveryError("SMTP acceptance time must be timezone-aware")
+
+    message = build_dossier_email(
+        output_root,
+        week,
+        sender,
+        recipient,
+        extra_attachments=attachments,
+    )
     _deliver(message, sender, app_password)
+
+    if receipt_requested and receipt_archive is not None:
+        receipt_time = accepted_at or datetime.now(timezone.utc)
+        try:
+            write_monthly_backup_receipt(
+                Path(monthly_receipt_root),
+                accepted_at=receipt_time,
+                chronicle_revision=str(chronicle_revision),
+                archive_path=receipt_archive,
+            )
+        except (ChronicleBackupError, OSError, ValueError) as exc:
+            # SMTP has already accepted the message. Raising here intentionally
+            # keeps the missing receipt visible; a retry may duplicate the mail.
+            raise EmailDeliveryError(
+                "Email was accepted but monthly Chronicle receipt could not be persisted: "
+                f"{exc}"
+            ) from exc
     return sum(1 for _ in message.iter_attachments())
 
 
@@ -163,6 +254,21 @@ def send_supplement_email(
     message = build_supplement_email(output_root, week, sender, recipient)
     _deliver(message, sender, app_password)
     return sum(1 for _ in message.iter_attachments())
+
+
+def _attachment_paths(
+    extra_attachments: tuple[Path, ...],
+    chronicle_archive: Path | None,
+) -> tuple[Path, ...]:
+    paths = [Path(path) for path in extra_attachments]
+    if chronicle_archive is not None:
+        archive = Path(chronicle_archive)
+        if archive not in paths:
+            paths.append(archive)
+    for path in paths:
+        if not path.is_file():
+            raise EmailDeliveryError(f"Attachment not found: {path}")
+    return tuple(paths)
 
 
 def _deliver(message: EmailMessage, sender: str, app_password: str) -> None:

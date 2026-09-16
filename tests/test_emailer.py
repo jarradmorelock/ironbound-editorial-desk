@@ -2,6 +2,8 @@ import json
 
 import pytest
 
+from editorial_desk.chronicle_backup import create_chronicle_backup
+from editorial_desk.cli import parser
 from editorial_desk.emailer import (
     EmailDeliveryError,
     build_dossier_email,
@@ -10,8 +12,8 @@ from editorial_desk.emailer import (
 )
 
 
-def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
-    week_root = tmp_path / "2026" / "week-01"
+def _weekly_packet(tmp_path, week=1):
+    week_root = tmp_path / "2026" / f"week-{week:02d}"
     publication_root = week_root / "ironbound"
     publication_root.mkdir(parents=True)
     (publication_root / "dossier.md").write_text("# Weekly packet\n", encoding="utf-8")
@@ -28,6 +30,12 @@ def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
         ),
         encoding="utf-8",
     )
+    return publication_root
+
+
+def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
+    week_root = tmp_path / "2026" / "week-01"
+    publication_root = _weekly_packet(tmp_path)
     data_only_root = week_root / "dont_tell_my_wife"
     data_only_root.mkdir()
     (data_only_root / "analysis.json").write_text("{}\n", encoding="utf-8")
@@ -46,6 +54,64 @@ def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
     attachments = list(message.iter_attachments())
     assert len(attachments) == 1
     assert attachments[0].get_filename() == "ironbound-week-01.md"
+
+
+def test_build_dossier_email_can_attach_validated_monthly_chronicle_archive(tmp_path):
+    _weekly_packet(tmp_path)
+    chronicle = tmp_path / "chronicle"
+    (chronicle / "registry").mkdir(parents=True)
+    (chronicle / "registry" / "identity.json").write_text("{}\n", encoding="utf-8")
+    archive = create_chronicle_backup(
+        chronicle,
+        tmp_path / "chronicle-backup.zip",
+        chronicle_revision="chronicle-sha-123",
+    )
+
+    message = build_dossier_email(
+        tmp_path,
+        1,
+        "desk@example.com",
+        "reader@example.com",
+        chronicle_archive=archive,
+    )
+
+    attachments = list(message.iter_attachments())
+    assert [part.get_filename() for part in attachments] == [
+        "ironbound-week-01.md",
+        "chronicle-backup.zip",
+    ]
+    assert attachments[-1].get_content_type() == "application/zip"
+    assert "Chronicle archive" in message.get_body().get_content()
+
+
+def test_build_dossier_email_rejects_invalid_chronicle_archive(tmp_path):
+    _weekly_packet(tmp_path)
+    archive = tmp_path / "bad.zip"
+    archive.write_bytes(b"not a zip")
+
+    with pytest.raises(EmailDeliveryError, match="Chronicle archive failed validation"):
+        build_dossier_email(
+            tmp_path,
+            1,
+            "desk@example.com",
+            "reader@example.com",
+            chronicle_archive=archive,
+        )
+
+
+def test_email_cli_accepts_optional_chronicle_archive():
+    args = parser().parse_args(
+        [
+            "email",
+            "--week",
+            "7",
+            "--output-dir",
+            "output",
+            "--chronicle-archive",
+            "backups/chronicle.zip",
+        ]
+    )
+    assert str(args.chronicle_archive) == "backups/chronicle.zip"
 
 
 def test_build_dossier_email_requires_publication_packets(tmp_path):

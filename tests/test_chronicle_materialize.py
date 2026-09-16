@@ -1,6 +1,8 @@
 from editorial_desk.chronicle_events import make_event
 from editorial_desk.chronicle_identity import IdentityOverride, IdentityRegistry
 from editorial_desk.chronicle_materialize import effective_events, materialize_league
+from editorial_desk.chronicle_runtime import run_materialize_partial
+from editorial_desk.chronicle_store import ChronicleStore
 
 
 def _match(event_id_suffix, season, week, left_points, right_points):
@@ -110,3 +112,18 @@ def test_record_events_are_derived_from_matchups_not_prior_materialized_totals()
     types = [event.evidence["record_type"] for event in history.record_events]
     assert "all_time_team_high_score" in types
     assert "all_time_largest_margin" in types
+
+
+def test_partial_materialize_reports_unmapped_live_league_without_losing_ledger(tmp_path):
+    store = ChronicleStore(tmp_path / "chronicle")
+    event = _match("cold-start", 2026, 1, 121, 117)
+    store.append_events([event])
+
+    result = run_materialize_partial(store)
+
+    assert result.failed_leagues == ("demo",)
+    assert result.unresolved_ambiguities == ()
+    assert result.record_events_added == 0
+    assert [row["event_id"] for row in store.read_all_league_events("demo")] == [
+        event.event_id
+    ]

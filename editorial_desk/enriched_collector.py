@@ -14,6 +14,7 @@ from .publication_render import write_publication_packet
 from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
+from .story_artifacts import write_story_desk_artifacts
 
 
 def collect_all(
@@ -24,6 +25,9 @@ def collect_all(
     publications: dict[str, PublicationConfig] | None = None,
     rankings_client: RankingsClient | None = None,
     nflverse_client: NFLVerseClient | None = None,
+    chronicle_root: Path | None = None,
+    external_inputs_dir: Path | None = None,
+    chronicle_revision: str | None = None,
 ) -> list[Path]:
     """Run the existing collector, then enrich publication dossiers for review."""
     sleeper = client or SleeperClient()
@@ -61,6 +65,8 @@ def collect_all(
         if snapshot_path is None:
             continue
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        if chronicle_revision:
+            snapshot["chronicle_revision"] = str(chronicle_revision)
         _apply_player_context(snapshot, player_directory)
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
         _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
@@ -68,6 +74,8 @@ def collect_all(
         _write_json(snapshot_path, snapshot)
 
         dossier = build_editorial_review(snapshot)
+        if chronicle_revision:
+            dossier["chronicle_revision"] = str(chronicle_revision)
         directory = snapshot_path.parent
         _write_json(directory / "dossier.json", dossier)
         (directory / "dossier.md").write_text(
@@ -76,7 +84,9 @@ def collect_all(
 
         if publications:
             profile = publications.get(config.publication_profile or "")
-            if profile is not None and profile.tier == "newspaper":
+            if profile is None:
+                continue
+            if profile.tier == "newspaper":
                 generated.extend(
                     _write_newspaper_packet(
                         directory,
@@ -84,6 +94,17 @@ def collect_all(
                         dossier,
                         profile,
                         phase="weekly",
+                    )
+                )
+            if profile.story_desk and chronicle_root is not None:
+                generated.extend(
+                    write_story_desk_artifacts(
+                        directory,
+                        snapshot,
+                        dossier,
+                        profile,
+                        chronicle_root=chronicle_root,
+                        external_inputs_dir=external_inputs_dir,
                     )
                 )
 

@@ -138,7 +138,7 @@ def _resolve_feature(
         return workload_stat_lines(snapshot)
     if feature == "game_window_context":
         return game_window_context(snapshot, dossier, chronicle_events)
-    if feature == "opening_statement_inputs":
+    if feature in {"opening_statement_inputs", "lead_inputs"}:
         return _weekly_lead_inputs(feature, snapshot, dossier, chronicle_events)
     if feature == "health_status":
         return _health_result(snapshot)

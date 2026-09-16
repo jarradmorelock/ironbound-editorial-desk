@@ -84,10 +84,11 @@ file does not stop the rest of the weekly collection.
 
 The source primers and publications have been audited into
 `config/publications.json`; see `docs/source-audit.md` for the resulting brand
-and editorial map. Cross-season and all-time records, Giant Killer based on
-prior published expectations, trade-afterlife trees, and persistent editorial
-memory still require a finalized-publication archive and are the next data
-layer.
+and editorial map. Chronicle now supplies cross-season and all-time factual
+history. Editorial constructs that depend on prior published expectations or
+richer narrative synthesis, such as Giant Killer framing, trade-afterlife
+features, and persistent magazine Story Desk memory, remain later editorial
+layers.
 
 ## Chronicle data branch and live pulse collection
 

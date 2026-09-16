@@ -1,0 +1,111 @@
+{
+  "league_key": "ironbound_sixteen",
+  "current_league_id": "2600",
+  "nfl_state": {"season": "2026", "week": 7},
+  "leagues": {
+    "2500": {
+      "league_id": "2500",
+      "season": "2025",
+      "name": "Ironbound Sixteen",
+      "previous_league_id": null,
+      "settings": {"playoff_week_start": 15}
+    },
+    "2600": {
+      "league_id": "2600",
+      "season": "2026",
+      "name": "Ironbound Sixteen",
+      "previous_league_id": "2500",
+      "settings": {"playoff_week_start": 15, "divisions": 2},
+      "metadata": {"division_1": "Hammer", "division_2": "Anvil"}
+    }
+  },
+  "users": {
+    "2500": [
+      {"user_id": "u1", "display_name": "Alice", "metadata": {"team_name": "Old Forge"}},
+      {"user_id": "u2", "display_name": "Bob", "metadata": {"team_name": "Anvil"}}
+    ],
+    "2600": [
+      {"user_id": "u3", "display_name": "Carol", "metadata": {"team_name": "New Forge"}},
+      {"user_id": "u2", "display_name": "Bob", "metadata": {"team_name": "Anvil"}}
+    ]
+  },
+  "rosters": {
+    "2500": [
+      {"roster_id": 1, "owner_id": "u1", "players": ["p1", "p3"], "reserve": [], "taxi": []},
+      {"roster_id": 2, "owner_id": "u2", "players": ["p2"], "reserve": [], "taxi": []}
+    ],
+    "2600": [
+      {"roster_id": 1, "owner_id": "u3", "players": ["p1", "p3", "backup"], "reserve": [], "taxi": [], "settings": {"division": 1}},
+      {"roster_id": 2, "owner_id": "u2", "players": ["p2"], "reserve": [], "taxi": [], "settings": {"division": 2}}
+    ]
+  },
+  "matchups": {
+    "2500": {
+      "1": [
+        {"matchup_id": 1, "roster_id": 1, "points": 110.0, "starters": ["p1"], "players": ["p1", "p3"], "players_points": {"p1": 20.0, "p3": 10.0}},
+        {"matchup_id": 1, "roster_id": 2, "points": 100.0, "starters": ["p2"], "players": ["p2"], "players_points": {"p2": 18.0}}
+      ],
+      "15": [
+        {"matchup_id": 9, "roster_id": 1, "points": 140.0, "starters": ["p1", "p3"], "players": ["p1", "p3"], "players_points": {"p1": 22.0, "p3": 25.0}},
+        {"matchup_id": 9, "roster_id": 2, "points": 130.0, "starters": ["p2"], "players": ["p2"], "players_points": {"p2": 24.0}}
+      ]
+    },
+    "2600": {
+      "1": [
+        {"matchup_id": 1, "roster_id": 1, "points": 125.0, "starters": ["p1"], "players": ["p1", "p3", "backup"], "players_points": {"p1": 19.0, "p3": 12.0, "backup": 4.0}},
+        {"matchup_id": 1, "roster_id": 2, "points": 115.0, "starters": ["p2"], "players": ["p2"], "players_points": {"p2": 20.0}}
+      ],
+      "7": [
+        {"matchup_id": 7, "roster_id": 1, "points": 130.0, "starters": ["p1"], "players": ["p1", "p3", "backup"], "players_points": {"p1": 5.0, "p3": 31.0, "backup": 9.0}},
+        {"matchup_id": 7, "roster_id": 2, "points": 100.0, "starters": ["p2"], "players": ["p2"], "players_points": {"p2": 20.0}}
+      ]
+    }
+  },
+  "transactions": {
+    "2500": {
+      "2": [
+        {
+          "transaction_id": "trade-25",
+          "status": "complete",
+          "type": "trade",
+          "created": 1730000000000,
+          "roster_ids": [1, 2],
+          "adds": {"p3": 1},
+          "drops": {},
+          "settings": {}
+        }
+      ]
+    },
+    "2600": {
+      "6": [
+        {
+          "transaction_id": "waiver-26",
+          "status": "complete",
+          "type": "waiver",
+          "created": 1760000000000,
+          "roster_ids": [2],
+          "adds": {"p2": 2},
+          "drops": {},
+          "settings": {"waiver_bid": 11}
+        }
+      ]
+    }
+  },
+  "traded_picks": {
+    "2500": [
+      {"season": "2027", "round": 1, "roster_id": 1, "owner_id": 2, "previous_owner_id": 1}
+    ],
+    "2600": []
+  },
+  "winners_bracket": {
+    "2500": [{"r": 1, "m": 9, "w": 1, "l": 2}],
+    "2600": []
+  },
+  "losers_bracket": {"2500": [], "2600": []},
+  "players": {
+    "p1": {"full_name": "Injured Star", "position": "WR", "fantasy_positions": ["WR"], "status": "Active", "injury_status": "Questionable"},
+    "p2": {"full_name": "Waiver Rocket", "position": "RB", "fantasy_positions": ["RB"], "status": "Active", "injury_status": null},
+    "p3": {"full_name": "Former Star", "position": "WR", "fantasy_positions": ["WR"], "status": "Active", "injury_status": null},
+    "backup": {"full_name": "Replacement", "position": "WR", "fantasy_positions": ["WR"], "status": "Active", "injury_status": null}
+  }
+}

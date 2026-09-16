@@ -142,6 +142,8 @@ def _resolve_feature(
         return _weekly_lead_inputs(feature, snapshot, dossier, chronicle_events)
     if feature == "hollywood_board":
         return _hollywood_board_inputs(snapshot, dossier, chronicle_events)
+    if feature == "weekly_briefs":
+        return _weekly_briefs(snapshot, dossier, chronicle_events)
     if feature == "health_status":
         return _health_result(snapshot)
     if feature == "manager_of_week":
@@ -274,6 +276,49 @@ def _hollywood_board_inputs(
     if all(value is None for value in board.values()):
         return ready_no_items("hollywood_board", reason="No Hollywood Board facts qualified")
     return ready("hollywood_board", board)
+
+
+def _weekly_briefs(
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    chronicle_events: list[dict[str, Any]] | None,
+) -> FeatureResult:
+    transactions = [
+        row
+        for row in (snapshot.get("transactions") or [])
+        if str(row.get("status") or "complete").casefold() in {"complete", "completed"}
+    ]
+    health_source = dossier.get("roster_health") or build_roster_health(snapshot)
+    health_available = health_source.get("status") == "available"
+    health = list(health_source.get("players") or []) if health_available else []
+    events = list(chronicle_events or [])
+    bundle = {
+        "transactions": transactions,
+        "health": health,
+        "chronicle_events": events,
+    }
+    if not transactions and not health and not events:
+        if health_available:
+            return ready_no_items(
+                "weekly_briefs",
+                reason="No transaction, roster-health, or Chronicle brief candidates qualified",
+            )
+        return ready(
+            "weekly_briefs",
+            bundle,
+            reason=str(health_source.get("error") or "Roster health source unavailable"),
+            degraded=True,
+        )
+    return ready(
+        "weekly_briefs",
+        bundle,
+        reason=(
+            None
+            if health_available
+            else str(health_source.get("error") or "Roster health source unavailable")
+        ),
+        degraded=not health_available,
+    )
 
 
 def _weekly_honors(dossier: dict[str, Any]) -> dict[str, Any]:

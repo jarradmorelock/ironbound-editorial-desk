@@ -30,6 +30,13 @@ from .feature_producers import (
 )
 from .health import build_roster_health
 from .publication_contracts import evaluate_dependencies
+from .preseason_features import (
+    draft_bargains,
+    draft_market,
+    draft_reach,
+    draft_value_board,
+)
+from .preseason_support import preseason_support
 
 POSITION_BOARD_POSITIONS = {
     "QB", "RB", "WR", "TE", "LB", "DL", "DE", "DT", "NT", "DB", "CB", "S"
@@ -186,6 +193,14 @@ def _resolve_feature(
         return _rename_result(result, feature)
     if feature == "draft_adp_value":
         return draft_adp_value(snapshot)
+    if feature == "draft_value_board":
+        return draft_value_board(snapshot)
+    if feature == "draft_reach":
+        return draft_reach(snapshot)
+    if feature == "draft_bargains":
+        return draft_bargains(snapshot)
+    if feature == "draft_market":
+        return draft_market(snapshot)
     if feature in {"keeper_costs", "keeper_value"}:
         result = keeper_value(snapshot)
         return _rename_result(result, feature)
@@ -209,6 +224,10 @@ def _resolve_feature(
         return streaming_roster_state(snapshot)
     if feature == "next_matchups":
         return _next_matchups_result(snapshot)
+
+    support = preseason_support(feature, snapshot, dossier)
+    if support is not None:
+        return support
 
     direct = _direct_feature_value(feature, snapshot, dossier)
     if direct is not _MISSING:

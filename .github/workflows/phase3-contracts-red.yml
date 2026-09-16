@@ -1,0 +1,21 @@
+name: Phase 3 contracts red
+
+on:
+  push:
+    branches:
+      - feature/editorial-desk-v2-phase3
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest tests/test_feature_models.py tests/test_publication_contracts.py tests/test_config.py -q

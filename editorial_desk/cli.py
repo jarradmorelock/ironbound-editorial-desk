@@ -68,6 +68,7 @@ def parser() -> argparse.ArgumentParser:
     email = subcommands.add_parser("email")
     email.add_argument("--week", type=int, required=True)
     email.add_argument("--output-dir", type=Path, required=True)
+    email.add_argument("--chronicle-archive", type=Path)
 
     subcommands.add_parser("completed-period")
 
@@ -135,18 +136,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         try:
-            delivery = (
-                send_dossier_email
-                if args.command == "email"
-                else send_supplement_email
-            )
-            attachment_count = delivery(
-                args.output_dir,
-                args.week,
-                sender,
-                app_password,
-                recipient,
-            )
+            if args.command == "email":
+                attachment_count = send_dossier_email(
+                    args.output_dir,
+                    args.week,
+                    sender,
+                    app_password,
+                    recipient,
+                    chronicle_archive=args.chronicle_archive,
+                )
+            else:
+                attachment_count = send_supplement_email(
+                    args.output_dir,
+                    args.week,
+                    sender,
+                    app_password,
+                    recipient,
+                )
         except EmailDeliveryError as exc:
             print(f"Email delivery error: {exc}")
             return 1

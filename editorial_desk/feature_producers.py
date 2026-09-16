@@ -255,6 +255,158 @@ def workload_stat_lines(snapshot: dict[str, Any]) -> FeatureResult:
     return ready("workload_stat_lines", leaders)
 
 
+def game_window_context(
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    chronicle_events: list[dict[str, Any]] | None = None,
+) -> FeatureResult:
+    windows = [
+        row
+        for row in ((snapshot.get("nfl_context") or {}).get("game_windows") or [])
+        if isinstance(row, dict) and row.get("name")
+    ]
+    if not windows:
+        return ready_no_items(
+            "game_window_context", reason="No identifiable final game window"
+        )
+
+    players = snapshot.get("players") or {}
+    matchups = {
+        _int(row.get("roster_id")): row for row in snapshot.get("matchups") or []
+    }
+    opponents = _opponent_roster_ids(snapshot)
+    games = _game_context(dossier)
+    events = chronicle_events or []
+    rows: list[dict[str, Any]] = []
+
+    for window in windows:
+        window_name = str(window.get("name"))
+        window_player_ids = {str(value) for value in window.get("player_ids") or []}
+        live_event = _latest_live_window_event(events, window_name)
+        evidence = (live_event or {}).get("evidence") or {}
+        live_scores = {
+            str(key): _number(value) for key, value in (evidence.get("scores") or {}).items()
+        }
+        live_remaining = {
+            str(key): [str(value) for value in values or []]
+            for key, values in (evidence.get("remaining_starters") or {}).items()
+        }
+
+        for roster_id, matchup in matchups.items():
+            starters = [str(value) for value in matchup.get("starters") or []]
+            reconstructed_remaining = [
+                player_id for player_id in starters if player_id in window_player_ids
+            ]
+            remaining = live_remaining.get(str(roster_id), reconstructed_remaining)
+            if not remaining:
+                continue
+
+            opponent_id = opponents.get(roster_id)
+            opponent_matchup = matchups.get(opponent_id or -1) or {}
+            final_score = _number(matchup.get("points"))
+            opponent_final_score = _number(opponent_matchup.get("points"))
+            points = _points_map(matchup)
+            opponent_points = _points_map(opponent_matchup)
+            opponent_starters = [
+                str(value) for value in opponent_matchup.get("starters") or []
+            ]
+            opponent_remaining = live_remaining.get(
+                str(opponent_id),
+                [player_id for player_id in opponent_starters if player_id in window_player_ids],
+            )
+
+            if live_event and str(roster_id) in live_scores:
+                provenance = "observed_live"
+                observed_at = live_event.get("observed_at")
+                pre_window_score = live_scores[str(roster_id)]
+                opponent_pre_window_score = live_scores.get(
+                    str(opponent_id), opponent_final_score
+                )
+                window_points = final_score - pre_window_score
+            else:
+                provenance = "reconstructed"
+                observed_at = None
+                window_points = sum(_number(points.get(player_id)) for player_id in remaining)
+                opponent_window_points = sum(
+                    _number(opponent_points.get(player_id))
+                    for player_id in opponent_remaining
+                )
+                pre_window_score = final_score - window_points
+                opponent_pre_window_score = opponent_final_score - opponent_window_points
+
+            game = games.get(roster_id) or {}
+            rows.append(
+                {
+                    "window": window_name,
+                    "roster_id": roster_id,
+                    "team": _team_name(snapshot, roster_id),
+                    "opponent_roster_id": opponent_id,
+                    "opponent": game.get("opponent") or _team_name(snapshot, opponent_id or 0),
+                    "provenance": provenance,
+                    "observed_at": observed_at,
+                    "pre_window_score": round(pre_window_score, 2),
+                    "opponent_pre_window_score": round(opponent_pre_window_score, 2),
+                    "remaining_players": [
+                        {
+                            "player_id": player_id,
+                            "player": _player_name(player_id, players),
+                            "points": round(_number(points.get(player_id)), 2),
+                        }
+                        for player_id in remaining
+                    ],
+                    "window_points": round(window_points, 2),
+                    "final_score": round(final_score, 2),
+                    "opponent_final_score": round(opponent_final_score, 2),
+                    "final_margin": round(abs(final_score - opponent_final_score), 2),
+                    "trailing_before_window": pre_window_score < opponent_pre_window_score,
+                    "final_result": game.get("result"),
+                    "swung_result": bool(
+                        pre_window_score < opponent_pre_window_score
+                        and final_score > opponent_final_score
+                    ),
+                }
+            )
+
+    if not rows:
+        return ready_no_items(
+            "game_window_context", reason="No fantasy starters remained in the final game window"
+        )
+    return ready(
+        "game_window_context",
+        sorted(rows, key=lambda row: (row["window"], row["roster_id"])),
+    )
+
+
+def _latest_live_window_event(
+    events: list[dict[str, Any]], window_name: str
+) -> dict[str, Any] | None:
+    candidates = [
+        event
+        for event in events
+        if event.get("event_type") == "MATCHUP_SCORE_SNAPSHOT"
+        and event.get("provenance") == "observed_live"
+        and str((event.get("evidence") or {}).get("window") or "") == window_name
+    ]
+    return max(candidates, key=lambda row: str(row.get("observed_at") or ""), default=None)
+
+
+def _opponent_roster_ids(snapshot: dict[str, Any]) -> dict[int, int]:
+    grouped: dict[str, list[int]] = defaultdict(list)
+    for matchup in snapshot.get("matchups") or []:
+        matchup_id = matchup.get("matchup_id")
+        if matchup_id is None:
+            continue
+        grouped[str(matchup_id)].append(_int(matchup.get("roster_id")))
+    opponents: dict[int, int] = {}
+    for roster_ids in grouped.values():
+        if len(roster_ids) != 2:
+            continue
+        first, second = roster_ids
+        opponents[first] = second
+        opponents[second] = first
+    return opponents
+
+
 def _legal_start_bench_pairs(
     snapshot: dict[str, Any], matchup: dict[str, Any]
 ) -> list[dict[str, str]]:

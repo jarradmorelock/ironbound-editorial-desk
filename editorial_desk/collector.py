@@ -168,6 +168,9 @@ def collect_league(
                 "recurring_sections": list(publication.recurring_sections),
                 "brand_departments": list(publication.brand_departments),
                 "editorial_priorities": list(publication.editorial_priorities),
+                "weekly_features": [
+                    contract.feature for contract in publication.contracts_for("weekly")
+                ],
             }
             if publication
             else None,

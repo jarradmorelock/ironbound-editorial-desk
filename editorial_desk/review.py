@@ -26,18 +26,19 @@ def render_editorial_review(dossier: dict[str, Any]) -> str:
     lines = [base, "", "## Weekly Magazine Features", ""]
     features = dossier.get("weekly_features") or {}
 
-    nominees = features.get("divisional_mvp_nominees") or []
-    lines.append("### Divisional MVP Nominations")
-    if not nominees:
-        lines.append("- No divisional nominees available")
-    for row in nominees:
-        foil = " — **GOLD FOIL**" if row.get("gold_foil") else ""
-        lines.append(
-            f"- {row.get('division_name')}: {row.get('player')} "
-            f"({row.get('position') or '?'}) — {row.get('team')} — "
-            f"{_points(row.get('points'))} — {row.get('status', 'STARTED')}{foil}"
-        )
-    lines.append("- Card images are generated separately after commissioner review.")
+    if "divisional_mvp_nominees" in features:
+        nominees = features.get("divisional_mvp_nominees") or []
+        lines.append("### Divisional MVP Nominations")
+        if not nominees:
+            lines.append("- No divisional nominees available")
+        for row in nominees:
+            foil = " — **GOLD FOIL**" if row.get("gold_foil") else ""
+            lines.append(
+                f"- {row.get('division_name')}: {row.get('player')} "
+                f"({row.get('position') or '?'}) — {row.get('team')} — "
+                f"{_points(row.get('points'))} — {row.get('status', 'STARTED')}{foil}"
+            )
+        lines.append("- Card images are generated separately after commissioner review.")
 
     lines.extend(["", "### Top Scorers by Position"])
     leaders = features.get("top_scorers_by_position") or {}

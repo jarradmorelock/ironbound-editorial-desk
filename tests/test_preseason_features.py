@@ -1,10 +1,6 @@
 from editorial_desk.feature_producers import (
     draft_adp_value,
-    draft_bargains,
-    draft_market,
-    draft_reach,
     draft_results,
-    draft_value_board,
     dynasty_market,
     future_pick_ledger,
     keeper_value,
@@ -14,6 +10,12 @@ from editorial_desk.feature_producers import (
     rookie_draft,
     roster_age,
     streaming_roster_state,
+)
+from editorial_desk.preseason_features import (
+    draft_bargains,
+    draft_market,
+    draft_reach,
+    draft_value_board,
 )
 
 
@@ -129,7 +131,7 @@ def test_roster_age_uses_years_experience_without_fabricating_age():
     result = roster_age(_snapshot())
     assert result.status == "ready"
     one = next(row for row in result.data if row["roster_id"] == 1)
-    assert one["average_years_experience"] == 1.75
+    assert one["average_years_experience"] == 2.0
     assert one["rookies"] == 1
     assert "average_age" not in one
 

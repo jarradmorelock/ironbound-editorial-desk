@@ -45,6 +45,7 @@ def build_publication_packet(
     chronicle_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     departments: list[dict[str, Any]] = []
+    blocked_features: set[str] = set()
     for contract in publication_config.contracts_for(phase):
         result = _resolve_feature(
             contract.feature,
@@ -55,8 +56,9 @@ def build_publication_packet(
         )
         blocked_reason, warnings = evaluate_dependencies(contract, snapshot)
         if blocked_reason:
+            blocked_features.add(contract.feature)
             result = unavailable(contract.feature, blocked_reason)
-        degraded = bool(result.degraded or (warnings and result.status != "unavailable"))
+        degraded = bool(result.degraded or warnings)
         departments.append(
             {
                 "feature": contract.feature,
@@ -71,18 +73,28 @@ def build_publication_packet(
             }
         )
 
-    required_unavailable = [
+    blocking_unavailable = [
         row
         for row in departments
-        if row["required_in_phase"] and row["status"] == "unavailable"
+        if row["required_in_phase"]
+        and row["status"] == "unavailable"
+        and (row["feature"] in blocked_features or not row["degraded"])
     ]
+    degraded_departments = [row for row in departments if row["degraded"]]
+    packet_status = (
+        "unavailable"
+        if blocking_unavailable
+        else "degraded"
+        if degraded_departments
+        else "ready"
+    )
     return {
         "schema_version": 1,
         "publication_key": publication_config.key,
         "publication": publication_config.name,
         "phase": phase,
         "week": snapshot.get("week"),
-        "status": "unavailable" if required_unavailable else "ready",
+        "status": packet_status,
         "departments": departments,
     }
 
@@ -273,8 +285,6 @@ def _hollywood_board_inputs(
         "plot_twist": flips[0] if flips else (late_swings[0] if late_swings else None),
         "bad_beat": (dossier.get("awards") or {}).get("bad_beat"),
     }
-    # Keep all four locked slots visible even when a given week has no qualifying
-    # plot twist or bad beat; absence is itself useful factual information.
     if all(value is None for value in board.values()):
         return ready_no_items("hollywood_board", reason="No Hollywood Board facts qualified")
     return ready("hollywood_board", board)

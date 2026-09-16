@@ -140,6 +140,8 @@ def _resolve_feature(
         return game_window_context(snapshot, dossier, chronicle_events)
     if feature in {"opening_statement_inputs", "lead_inputs"}:
         return _weekly_lead_inputs(feature, snapshot, dossier, chronicle_events)
+    if feature == "hollywood_board":
+        return _hollywood_board_inputs(snapshot, dossier, chronicle_events)
     if feature == "health_status":
         return _health_result(snapshot)
     if feature == "manager_of_week":
@@ -245,6 +247,33 @@ def _weekly_lead_inputs(
     if not usable:
         return ready_no_items(feature, reason="No deterministic weekly lead inputs qualified")
     return ready(feature, usable)
+
+
+def _hollywood_board_inputs(
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    chronicle_events: list[dict[str, Any]] | None,
+) -> FeatureResult:
+    lead = _weekly_lead_inputs("lead_inputs", snapshot, dossier, chronicle_events)
+    flips = result_flipping_decisions(snapshot, dossier)
+    late = game_window_context(snapshot, dossier, chronicle_events)
+    late_swings = [
+        row
+        for row in (late.data or [])
+        if isinstance(row, dict) and row.get("swung_result")
+    ] if late.status == "ready" else []
+
+    board = {
+        "top_billing": lead.data if lead.status == "ready" else None,
+        "scene_stealer": league_wide_started_mvp(snapshot),
+        "plot_twist": flips[0] if flips else (late_swings[0] if late_swings else None),
+        "bad_beat": (dossier.get("awards") or {}).get("bad_beat"),
+    }
+    # Keep all four locked slots visible even when a given week has no qualifying
+    # plot twist or bad beat; absence is itself useful factual information.
+    if all(value is None for value in board.values()):
+        return ready_no_items("hollywood_board", reason="No Hollywood Board facts qualified")
+    return ready("hollywood_board", board)
 
 
 def _weekly_honors(dossier: dict[str, Any]) -> dict[str, Any]:

@@ -138,6 +138,8 @@ def _resolve_feature(
         return workload_stat_lines(snapshot)
     if feature == "game_window_context":
         return game_window_context(snapshot, dossier, chronicle_events)
+    if feature == "opening_statement_inputs":
+        return _weekly_lead_inputs(feature, snapshot, dossier, chronicle_events)
     if feature == "health_status":
         return _health_result(snapshot)
     if feature == "manager_of_week":
@@ -194,6 +196,55 @@ def _resolve_feature(
     if direct is not _MISSING:
         return _value_result(feature, direct)
     return unavailable(feature, f"No neutral producer is implemented for {feature}")
+
+
+def _weekly_lead_inputs(
+    feature: str,
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    chronicle_events: list[dict[str, Any]] | None,
+) -> FeatureResult:
+    scoreboard = list(dossier.get("scoreboard") or [])
+    teams = [team for game in scoreboard for team in (game.get("teams") or [])]
+    lineup = list(dossier.get("lineup_efficiency") or [])
+    timing = dossier.get("game_timing") or {}
+    starter_timing = list(timing.get("starter_game_days") or [])
+    late_window = game_window_context(snapshot, dossier, chronicle_events)
+
+    values = {
+        "high_score": max(teams, key=lambda row: float(row.get("points") or 0), default=None),
+        "largest_margin": max(scoreboard, key=lambda row: float(row.get("margin") or 0), default=None),
+        "closest_finish": min(scoreboard, key=lambda row: float(row.get("margin") or 0), default=None),
+        "high_score_efficiency": max(
+            lineup,
+            key=lambda row: (
+                float(row.get("actual_points") or 0),
+                float(row.get("efficiency") or 0),
+            ),
+            default=None,
+        ),
+        "late_window_swings": [
+            row
+            for row in (late_window.data or [])
+            if isinstance(row, dict) and row.get("swung_result")
+        ]
+        if late_window.status == "ready"
+        else [],
+        "projection_overperformers": sorted(
+            (
+                row
+                for row in starter_timing
+                if row.get("projection_difference") is not None
+                and float(row.get("projection_difference") or 0) > 0
+            ),
+            key=lambda row: float(row.get("projection_difference") or 0),
+            reverse=True,
+        ),
+    }
+    usable = {key: value for key, value in values.items() if value not in (None, [], {})}
+    if not usable:
+        return ready_no_items(feature, reason="No deterministic weekly lead inputs qualified")
+    return ready(feature, usable)
 
 
 def _weekly_honors(dossier: dict[str, Any]) -> dict[str, Any]:

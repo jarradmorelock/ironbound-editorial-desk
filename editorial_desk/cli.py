@@ -12,6 +12,7 @@ from .chronicle_backup import (
     monthly_archive_due,
 )
 from .chronicle_collect import collect_pulse
+from .chronicle_runtime import run_materialize_partial
 from .chronicle_store import ChronicleStore
 from .config import (
     ConfigurationError,
@@ -68,6 +69,7 @@ def parser() -> argparse.ArgumentParser:
 
     materialize = subcommands.add_parser("chronicle-materialize")
     materialize.add_argument("--chronicle-root", type=Path, required=True)
+    materialize.add_argument("--allow-partial", action="store_true")
 
     identity_report = subcommands.add_parser("chronicle-identity-report")
     identity_report.add_argument("--chronicle-root", type=Path, required=True)
@@ -230,13 +232,21 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "chronicle-materialize":
-        result = run_materialize(ChronicleStore(args.chronicle_root))
+        store = ChronicleStore(args.chronicle_root)
+        result = (
+            run_materialize_partial(store)
+            if args.allow_partial
+            else run_materialize(store)
+        )
         _print_ambiguities(result.unresolved_ambiguities)
+        label = "degraded" if result.failed_leagues else "complete"
         print(
-            "Chronicle materialization complete: "
+            f"Chronicle materialization {label}: "
             f"{result.record_events_added} record event(s) added, "
             f"{len(result.failed_leagues)} league failure(s)"
         )
+        if args.allow_partial:
+            return 0
         return 1 if result.failed_leagues or result.unresolved_ambiguities else 0
 
     if args.command == "chronicle-identity-report":

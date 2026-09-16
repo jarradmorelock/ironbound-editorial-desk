@@ -6,6 +6,8 @@ from pathlib import Path
 import smtplib
 from typing import Any
 
+from .chronicle_backup import validate_chronicle_backup
+
 
 class EmailDeliveryError(RuntimeError):
     """Raised when a weekly email cannot be prepared or delivered."""
@@ -16,6 +18,7 @@ def build_dossier_email(
     week: int,
     sender: str,
     recipient: str,
+    chronicle_archive: Path | None = None,
 ) -> EmailMessage:
     dossier_paths = sorted(output_root.glob(f"*/week-{week:02d}/*/dossier.md"))
     if not dossier_paths:
@@ -40,6 +43,16 @@ def build_dossier_email(
         raise EmailDeliveryError("Weekly email contains more than one season")
     season = seasons.pop()
 
+    archive_path: Path | None = None
+    if chronicle_archive is not None:
+        archive_path = Path(chronicle_archive)
+        validation = validate_chronicle_backup(archive_path)
+        if not validation.valid:
+            raise EmailDeliveryError(
+                "Chronicle archive failed validation: "
+                + "; ".join(validation.errors)
+            )
+
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
@@ -53,11 +66,17 @@ def build_dossier_email(
         packet_lines.append(
             f"- {league.get('publication')}: {league.get('configured_name')}"
         )
+    archive_note = (
+        "\nA validated Chronicle archive is attached as this month's recovery copy.\n"
+        if archive_path is not None
+        else ""
+    )
     message.set_content(
         "The weekly editorial research packets are attached.\n\n"
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
+        + archive_note
     )
 
     for markdown_path, dossier in packets:
@@ -69,6 +88,13 @@ def build_dossier_email(
             subtype="markdown",
             filename=filename,
         )
+    if archive_path is not None:
+        message.add_attachment(
+            archive_path.read_bytes(),
+            maintype="application",
+            subtype="zip",
+            filename=archive_path.name,
+        )
     return message
 
 
@@ -78,9 +104,16 @@ def send_dossier_email(
     sender: str,
     app_password: str,
     recipient: str | None = None,
+    chronicle_archive: Path | None = None,
 ) -> int:
     recipient = recipient or sender
-    message = build_dossier_email(output_root, week, sender, recipient)
+    message = build_dossier_email(
+        output_root,
+        week,
+        sender,
+        recipient,
+        chronicle_archive=chronicle_archive,
+    )
     _deliver(message, sender, app_password)
     return sum(1 for _ in message.iter_attachments())
 

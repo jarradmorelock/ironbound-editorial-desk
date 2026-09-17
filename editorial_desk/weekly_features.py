@@ -4,6 +4,7 @@ import re
 from collections import defaultdict
 from typing import Any
 
+from .publication_policy import publication_view
 from .metrics import _eligible, optimal_lineup, starter_slots
 
 
@@ -52,7 +53,7 @@ def apply_weekly_features(
     ):
         features["divisional_mvp_nominees"] = _divisional_mvp_nominees(snapshot)
     dossier["weekly_features"] = features
-    return dossier
+    return publication_view(dossier, snapshot)
 
 
 def _lineup_efficiency(snapshot: dict[str, Any]) -> list[dict[str, Any]]:

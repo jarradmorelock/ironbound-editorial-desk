@@ -1,0 +1,25 @@
+name: Publication regression checks
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Full regression suite
+        run: python -m pytest -q
+      - name: Compile package
+        run: python -m compileall -q editorial_desk
+      - name: Validate publication configuration
+        run: python -m editorial_desk validate-config --config config/leagues.example.json --publications config/publications.json

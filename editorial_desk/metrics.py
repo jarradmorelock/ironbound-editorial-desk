@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 from .timing import build_game_timing
+from .publication_policy import publication_view
 
 
 NON_STARTER_SLOTS = {"BN", "IR", "RESERVE", "TAXI"}
@@ -87,7 +88,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
     if not flagship_supplement:
         deferred.insert(1, "completed and remaining strength of schedule")
 
-    return {
+    return publication_view({
         "schema_version": 1,
         "league": snapshot.get("editorial"),
         "sleeper_league_name": (snapshot.get("league") or {}).get("name"),
@@ -133,7 +134,7 @@ def build_weekly_dossier(snapshot: dict[str, Any]) -> dict[str, Any]:
             or []
         ),
         "deferred_until_history_exists": deferred,
-    }
+    }, snapshot)
 
 
 def starter_slots(league: dict[str, Any]) -> list[str]:

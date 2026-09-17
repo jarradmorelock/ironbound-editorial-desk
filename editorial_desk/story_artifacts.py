@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 from .chronicle_queries import ChronicleQueries
 from .config import PublicationConfig
+from .metrics import _team_directory
 from .external_inputs import load_external_inputs
 from .story_desk import build_story_desk
 
@@ -94,6 +96,7 @@ def write_story_desk_artifacts(
         ChronicleQueries(Path(chronicle_root)),
         external_inputs=external_inputs,
     )
+    packet = _with_display_subjects(packet, snapshot, ChronicleQueries(Path(chronicle_root)))
     packet = _with_headline_packages(packet)
     packet = _with_publication_readiness(packet, snapshot)
 
@@ -105,6 +108,65 @@ def write_story_desk_artifacts(
     )
     markdown_path.write_text(_render_story_desk(packet), encoding="utf-8")
     return (json_path, markdown_path)
+
+
+def _with_display_subjects(packet, snapshot, chronicle):
+    """Resolve display names while retaining all stable IDs and evidence verbatim."""
+    teams = _team_directory(snapshot)
+    players = snapshot.get("players") or {}
+    editorial = snapshot.get("editorial") or {}
+    league_key = str(editorial.get("league_key") or "")
+    season = str((snapshot.get("nfl_state") or {}).get("season") or (snapshot.get("league") or {}).get("season") or "")
+    identities = {}
+    for roster_id, team in teams.items():
+        identity = chronicle.identity_for_roster(league_key, season, roster_id)
+        if identity:
+            identities[identity] = team.get("team")
+
+    def resolve(key, value):
+        if isinstance(value, dict):
+            return [name for k, v in value.items() for name in resolve(k, v)]
+        if isinstance(value, list):
+            return [name for v in value for name in resolve(key, v)]
+        if value is None:
+            return []
+        if key == "player_id":
+            player = players.get(str(value)) or {}
+            name = player.get("full_name") or " ".join(str(player.get(k) or "") for k in ("first_name", "last_name")).strip()
+            return [name] if name else []
+        if key.endswith("roster_id"):
+            try:
+                name = (teams.get(int(value)) or {}).get("team")
+            except (TypeError, ValueError):
+                name = None
+            return [name] if name and not name.startswith("Roster ") else []
+        if key in {"identity", "identities", "winner", "loser", "opponents", "franchise_key", "manager_key"}:
+            if identities.get(str(value)):
+                return [identities[str(value)]]
+            aliases = chronicle.identity_context(str(value)).get("aliases") or []
+            aliases = [row for row in aliases if str(row.get("season") or "") <= season and row.get("name")]
+            if aliases:
+                return [max(aliases, key=lambda row: str(row.get("season") or ""))["name"]]
+        return []
+
+    candidates = []
+    for candidate in packet.get("candidates") or []:
+        facts = []
+        for fact in candidate.get("facts") or []:
+            statement = str(fact.get("statement") or "")
+            # Only replace explicit roster references, never bare numeric IDs.
+            statement = re.sub(
+                r"\bRoster (\d+)\b",
+                lambda match: str((teams.get(int(match.group(1))) or {}).get("team") or match.group(0)),
+                statement,
+            )
+            facts.append({**fact, "statement": statement})
+        candidates.append({
+            **candidate,
+            "display_subjects": list(dict.fromkeys(resolve("entities", candidate.get("entities") or {}))),
+            "display_facts": facts,
+        })
+    return {**packet, "candidates": candidates}
 
 
 def _external_input_path(

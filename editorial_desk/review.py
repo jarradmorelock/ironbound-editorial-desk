@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .publication_policy import publication_view
 from .health import build_roster_health, render_roster_health
 from .metrics import build_weekly_dossier
 from .nfl_enrichment import build_nfl_game_intelligence
@@ -18,7 +19,7 @@ def build_editorial_review(snapshot: dict[str, Any]) -> dict[str, Any]:
     intelligence = build_nfl_game_intelligence(snapshot)
     if intelligence is not None:
         dossier["nfl_game_intelligence"] = intelligence
-    return dossier
+    return publication_view(dossier, snapshot)
 
 
 def render_editorial_review(dossier: dict[str, Any]) -> str:

@@ -9,6 +9,7 @@ import requests
 from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
+from .reading_packet import reading_packet_from_artifacts
 from .publication_packets import build_publication_packet
 from .publication_render import write_publication_packet
 from .rankings import RankingsClient
@@ -107,6 +108,10 @@ def collect_all(
                         external_inputs_dir=external_inputs_dir,
                     )
                 )
+
+        reading_path = directory / "reading_packet.md"
+        reading_path.write_text(reading_packet_from_artifacts(directory, dossier), encoding="utf-8")
+        generated.append(reading_path)
 
     return generated
 

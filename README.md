@@ -263,6 +263,19 @@ All eight current league IDs are enabled for collection in the example
 configuration. Seven feed publications; Don't Tell My Wife I'm In This remains
 data-only. No credential is required to read public Sleeper league data.
 
+## Weekly reading packets
+
+Each publication now has a `reading_packet.md` and one email attachment in this order:
+
+1. **EDITOR'S BRIEF** — a plain-English account of the results and notable findings, targeted at 1–3 pages (capped at 1,200 words; sparse weeks are not padded).
+2. **COMMISSIONER REQUESTS** — the existing Publication Readiness buckets for Ironbound/Unbound, including inputs already supplied. Newspapers show only explicitly identified, unresolved human requests; automated source failures remain coverage notes.
+3. **STORY DESK** — for enabled magazines, candidates with resolved player/team/franchise names, readable facts, and historical coverage cautions. Unresolved identities are labeled for verification.
+4. Newspaper named departments in contract order, summarized in prose, followed by an evidence-artifact guide.
+
+The complete snapshot, detailed dossier, newspaper packet JSON, and Story Desk planning artifacts remain in the workflow artifacts for diagnostics. Email builds the reading packet from those structured artifacts and does not attach the raw dossier or a second raw Story Desk. `dossier.md` and `story_desk.md` remain detailed diagnostic views. This does not change Wednesday delta-only delivery.
+
+Rocky Top Rumble / Volunteer Voice is explicitly non-divisional for publication purposes. `editorial_desk/publication_policy.py` suppresses division metadata and derived division features in publication payloads, including Official Table standings and nested evidence. Sleeper snapshots retain the original divisions. Re-enabling divisions requires an explicit change to that publication rule; Sleeper settings or a stale feature contract cannot enable them. Other publications retain their division coverage.
+
 ## GitHub weekly delivery
 
 The scheduled workflow automatically identifies the most recently completed

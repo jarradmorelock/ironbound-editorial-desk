@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from .publication_policy import publication_view, divisions_disabled, DIVISION_FEATURES
 from .config import PublicationConfig
 from .feature_models import FeatureResult, ready, ready_no_items, unavailable
 from .feature_producers import (
@@ -51,9 +52,14 @@ def build_publication_packet(
     chronicle_history: dict[str, Any] | None = None,
     chronicle_events: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    policy = {"publication_key": publication_config.key}
+    snapshot = publication_view(snapshot, policy)
+    dossier = publication_view(dossier, policy)
     departments: list[dict[str, Any]] = []
     blocked_features: set[str] = set()
     for contract in publication_config.contracts_for(phase):
+        if divisions_disabled(policy) and contract.feature in DIVISION_FEATURES:
+            continue
         result = _resolve_feature(
             contract.feature,
             snapshot,
@@ -95,7 +101,7 @@ def build_publication_packet(
         if degraded_departments
         else "ready"
     )
-    return {
+    return publication_view({
         "schema_version": 1,
         "publication_key": publication_config.key,
         "publication": publication_config.name,
@@ -103,7 +109,7 @@ def build_publication_packet(
         "week": snapshot.get("week"),
         "status": packet_status,
         "departments": departments,
-    }
+    }, policy)
 
 
 def _resolve_feature(

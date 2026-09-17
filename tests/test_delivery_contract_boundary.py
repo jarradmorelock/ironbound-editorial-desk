@@ -188,6 +188,10 @@ def test_newspaper_email_delivers_named_publication_packet_not_generic_dossier(t
         encoding="utf-8",
     )
 
+    (directory / "publication_packet.json").write_text(json.dumps({
+        "publication_key": "volunteer_voice", "publication": "The Volunteer Voice", "week": 1,
+        "departments": [{"display_name": name, "status": "ready", "data": []} for name in ("Official Table", "Decision Desk", "Mountain MVP")],
+    }))
     message = build_dossier_email(
         tmp_path,
         1,
@@ -205,7 +209,7 @@ def test_newspaper_email_delivers_named_publication_packet_not_generic_dossier(t
     assert "Weekly Magazine Features" not in content
 
 
-def test_flagship_email_keeps_dossier_and_adds_story_desk(tmp_path):
+def test_flagship_email_consolidates_dossier_and_story_desk(tmp_path):
     directory = tmp_path / "2026" / "week-01" / "ironbound_sixteen"
     _write_dossier(directory, "ironbound_sixteen", "The Ironbound Weekly")
     (directory / "story_desk.md").write_text(
@@ -213,6 +217,12 @@ def test_flagship_email_keeps_dossier_and_adds_story_desk(tmp_path):
         encoding="utf-8",
     )
 
+    (directory / "story_desk.json").write_text(json.dumps({
+        "publication_key": "ironbound_weekly", "candidates": [{
+            "candidate_type": "rivalry_history", "display_subjects": ["Alpha", "Beta"],
+            "facts": [{"statement": "Three recorded meetings."}],
+        }],
+    }))
     message = build_dossier_email(
         tmp_path,
         1,
@@ -223,7 +233,10 @@ def test_flagship_email_keeps_dossier_and_adds_story_desk(tmp_path):
     attachments = list(message.iter_attachments())
     assert [part.get_filename() for part in attachments] == [
         "ironbound_sixteen-week-01.md",
-        "ironbound_sixteen-week-01-story-desk.md",
     ]
-    assert "Generic Research Dossier" in attachments[0].get_content()
-    assert "Rivalry/history candidate" in attachments[1].get_content()
+    content = attachments[0].get_content()
+    assert "Generic Research Dossier" not in content
+    assert "## EDITOR'S BRIEF" in content
+    assert "Rivalry History — Alpha / Beta" in content
+    assert (directory / "dossier.md").is_file()
+    assert (directory / "story_desk.md").is_file()

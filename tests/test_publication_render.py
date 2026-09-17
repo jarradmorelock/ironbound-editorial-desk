@@ -46,7 +46,8 @@ def test_renderer_preserves_contract_order_and_visible_unavailable_reason():
     assert "Status: ready" in text
     assert "Status: unavailable" in text
     assert "Sleeper player metadata was not collected" in text
-    assert '"matchup": "A vs B"' in text
+    assert 'A vs B: 100-99.' in text
+    assert '```json' not in text
 
 
 def test_writer_emits_json_and_markdown_without_mutating_packet(tmp_path):

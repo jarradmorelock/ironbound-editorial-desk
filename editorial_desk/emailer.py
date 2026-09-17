@@ -7,6 +7,8 @@ from pathlib import Path
 import smtplib
 from typing import Any
 
+from .reading_packet import reading_packet_from_artifacts
+
 from .chronicle_backup import (
     ChronicleBackupError,
     validate_chronicle_backup,
@@ -32,7 +34,7 @@ def build_dossier_email(
             f"No publication dossiers found for week {week} under {output_root}"
         )
 
-    packets: list[tuple[list[tuple[Path, str]], dict[str, Any]]] = []
+    packets: list[tuple[Path, str, dict[str, Any]]] = []
     seasons: set[str] = set()
     for markdown_path in dossier_paths:
         dossier_path = markdown_path.with_suffix(".json")
@@ -42,13 +44,11 @@ def build_dossier_email(
             raise EmailDeliveryError(
                 f"Cannot read the matching dossier data for {markdown_path}"
             ) from exc
-        publication_packet = markdown_path.parent / "publication_packet.md"
-        primary_path = publication_packet if publication_packet.is_file() else markdown_path
-        delivery_paths: list[tuple[Path, str]] = [(primary_path, "")]
-        story_desk = markdown_path.parent / "story_desk.md"
-        if story_desk.is_file():
-            delivery_paths.append((story_desk, "-story-desk"))
-        packets.append((delivery_paths, dossier))
+        try:
+            content = reading_packet_from_artifacts(markdown_path.parent, dossier)
+        except (ValueError, OSError) as exc:
+            raise EmailDeliveryError(f"Cannot read publication artifacts for {markdown_path}") from exc
+        packets.append((markdown_path, content, dossier))
         seasons.add(str(dossier.get("season") or "unknown"))
 
     if len(seasons) != 1:
@@ -73,7 +73,7 @@ def build_dossier_email(
     )
 
     packet_lines = []
-    for _, dossier in packets:
+    for _, _, dossier in packets:
         league = dossier.get("league") or {}
         packet_lines.append(
             f"- {league.get('publication')}: {league.get('configured_name')}"
@@ -84,24 +84,21 @@ def build_dossier_email(
         else ""
     )
     message.set_content(
-        "The weekly editorial research packets are attached.\n\n"
+        "The weekly reading packets are attached: Editor's Brief, Commissioner Requests, then Story Desk where applicable. Full evidence remains in the workflow artifacts.\n\n"
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
         + archive_note
     )
 
-    for delivery_paths, dossier in packets:
+    for markdown_path, content, dossier in packets:
         league = dossier.get("league") or {}
-        fallback_directory = delivery_paths[0][0].parent.name
-        league_key = str(league.get("league_key") or fallback_directory)
-        for markdown_path, suffix in delivery_paths:
-            filename = f"{league_key}-week-{week:02d}{suffix}.md"
-            message.add_attachment(
-                markdown_path.read_text(encoding="utf-8"),
-                subtype="markdown",
-                filename=filename,
-            )
+        league_key = str(league.get("league_key") or markdown_path.parent.name)
+        message.add_attachment(
+            content,
+            subtype="markdown",
+            filename=f"{league_key}-week-{week:02d}.md",
+        )
     for path in attachments:
         if path.suffix.lower() == ".zip":
             maintype, subtype = "application", "zip"

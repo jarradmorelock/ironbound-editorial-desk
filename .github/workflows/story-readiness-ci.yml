@@ -1,0 +1,26 @@
+name: Story Desk readiness final verification
+
+on:
+  push:
+    branches:
+      - feature/story-desk-publication-readiness
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Focused readiness tests
+        run: python -m pytest tests/test_story_readiness.py tests/test_story_readiness_render.py tests/test_story_artifacts.py -q
+      - name: Full regression suite
+        run: python -m pytest -q
+      - name: Compile package
+        run: python -m compileall -q editorial_desk

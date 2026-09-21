@@ -236,21 +236,30 @@ def _with_publication_readiness(
             }
         )
 
-    if external.get("war"):
-        no_action.append(
-            {
-                "input": "war",
-                "request": "WAR input is already supplied and can be used where relevant.",
-            }
-        )
-    elif candidate_types & _WAR_RELEVANT:
-        optional.append(
-            {
-                "input": "war",
-                "request": "Supply a current Dynasty Daddy WAR export if you want additional roster-value context for this week's dynasty feature.",
-                "reason": "At least one current Story Desk candidate can use WAR as supporting context, but the magazine can publish without it.",
-            }
-        )
+    for input_key, label in (
+        ("playoff_odds", "Playoff Odds"),
+        ("usage", "Dynasty Daddy usage"),
+        ("war", "WAR"),
+        ("cwar", "cWAR"),
+    ):
+        if external.get(input_key):
+            no_action.append(
+                {
+                    "input": input_key,
+                    "request": f"{label} input is already supplied for the flagship research packet.",
+                }
+            )
+        else:
+            required.append(
+                {
+                    "input": input_key,
+                    "request": f"Supply this week's {label} from the Tuesday rankings/data delivery.",
+                    "reason": (
+                        "The flagship production contract passes this external input through; "
+                        "the Editorial Desk does not recreate it."
+                    ),
+                }
+            )
 
     _append_nflverse_readiness(
         no_action,
@@ -441,7 +450,10 @@ def _render_story_desk(packet: dict[str, Any]) -> str:
         "- Official Power Rankings: "
         + ("supplied" if external.get("official_power_rankings") else "not supplied")
     )
+    lines.append("- Playoff Odds: " + ("supplied" if external.get("playoff_odds") else "not supplied"))
+    lines.append("- Usage: " + ("supplied" if external.get("usage") else "not supplied"))
     lines.append("- WAR: " + ("supplied" if external.get("war") else "not supplied"))
+    lines.append("- cWAR: " + ("supplied" if external.get("cwar") else "not supplied"))
 
     readiness = packet.get("publication_readiness")
     if readiness:

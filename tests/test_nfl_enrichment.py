@@ -283,3 +283,88 @@ def test_high_value_touch_shift_and_missed_windfall_surface_etienne_context():
     signals = intelligence["story_signals"]
     assert any(row["type"] == "HIGH_VALUE_TOUCH_SHIFT" and row.get("player_id") == "etn" for row in signals)
     assert any(row["type"] == "MISSED_WINDFALL" and row.get("player_id") == "etn" for row in signals)
+
+
+def test_flagship_stat_book_uses_actual_nfl_stats_and_excludes_fantasy_points():
+    data = flagship_snapshot()
+    data["users"] = [
+        {"user_id": "u1", "display_name": "Manager", "metadata": {"team_name": "Alpha"}}
+    ]
+    data["rosters"][0]["owner_id"] = "u1"
+    data["matchups"] = [
+        {
+            "roster_id": 1,
+            "starters": ["s-shough", "s-etn"],
+            "players": ["s-shough", "s-etn", "s-cmc"],
+        }
+    ]
+    for row in data["nfl_context"]["player_stats"]["records"]:
+        if row["player_id"] == "sho":
+            row.update(
+                {
+                    "completions": 21,
+                    "attempts": 29,
+                    "passing_yards": 269,
+                    "passing_tds": 2,
+                    "passing_interceptions": 1,
+                    "carries": 10,
+                    "rushing_yards": 65,
+                    "rushing_tds": 2,
+                }
+            )
+        if row["player_id"] == "etn":
+            row.update(
+                {
+                    "carries": 18,
+                    "rushing_yards": 81,
+                    "rushing_tds": 0,
+                    "receptions": 4,
+                    "targets": 5,
+                    "receiving_yards": 33,
+                    "receiving_tds": 0,
+                }
+            )
+
+    intelligence = build_nfl_game_intelligence(data)
+    book = intelligence["stat_book"]
+
+    assert book["status"] == "available"
+    assert not book["missing_starters"]
+    shough = next(row for row in book["records"] if row["player"] == "Tyler Shough")
+    etienne = next(row for row in book["records"] if row["player"] == "Travis Etienne Jr.")
+
+    assert shough["fantasy_team"] == "Alpha"
+    assert shough["completions"] == 21
+    assert shough["passing_yards"] == 269
+    assert "21/29 passing for 269 yards" in shough["nfl_stat_line"]
+    assert "10 carries for 65 yards" in shough["nfl_stat_line"]
+    assert etienne["receptions"] == 4
+    assert etienne["targets"] == 5
+    assert "4 catches on 5 targets for 33 yards" in etienne["nfl_stat_line"]
+    assert etienne["snap_share"] == 0.55
+    assert "fantasy_points" not in shough
+    assert "fantasy_points" not in etienne
+
+
+def test_flagship_stat_book_marks_unmatched_starters_for_manual_verification():
+    data = flagship_snapshot()
+    data["matchups"] = [
+        {
+            "roster_id": 1,
+            "starters": ["s-shough", "s-cmc"],
+            "players": ["s-shough", "s-etn", "s-cmc"],
+        }
+    ]
+    data["nfl_context"]["player_stats"]["records"] = [
+        row
+        for row in data["nfl_context"]["player_stats"]["records"]
+        if row["player_id"] != "cmc"
+    ]
+
+    intelligence = build_nfl_game_intelligence(data)
+    missing = intelligence["stat_book"]["missing_starters"]
+
+    assert any(row["player"] == "Christian McCaffrey" for row in missing)
+    assert "Verify bye, inactive/no-stat game" in next(
+        row["reason"] for row in missing if row["player"] == "Christian McCaffrey"
+    )

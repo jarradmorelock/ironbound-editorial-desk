@@ -190,6 +190,27 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             manual.append(f"Weekly Honors: {key.replace('_', ' ')} is missing or empty.")
 
+    season_week = int(packet.get("week") or 0)
+    efficiency_rows = honors.get("season_efficiency_top_three") or []
+    efficiency_coverage = (
+        bool(efficiency_rows)
+        and all(int(row.get("weeks") or 0) >= season_week for row in efficiency_rows)
+    )
+    _check(
+        checks,
+        "season_efficiency_history",
+        efficiency_coverage,
+        (
+            f"complete through Week {season_week}"
+            if efficiency_coverage
+            else f"fewer than {season_week} finalized efficiency weeks are recorded"
+        ),
+    )
+    if not efficiency_coverage:
+        manual.append(
+            "Running efficiency board is incomplete in Chronicle/history; backfill or manually verify missing completed weeks."
+        )
+
     for key, label in (
         ("power_rankings_chart", "Power Rankings"),
         ("playoff_odds_chart", "Playoff Odds"),

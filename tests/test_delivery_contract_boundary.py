@@ -240,3 +240,28 @@ def test_flagship_email_consolidates_dossier_and_story_desk(tmp_path):
     assert "Rivalry History — Alpha / Beta" in content
     assert (directory / "dossier.md").is_file()
     assert (directory / "story_desk.md").is_file()
+
+
+def test_flagship_email_uses_exact_validated_research_packet_when_present(tmp_path):
+    directory = tmp_path / "2026" / "week-01" / "ironbound_sixteen"
+    _write_dossier(directory, "ironbound_sixteen", "The Ironbound Weekly")
+    flagship_text = (
+        "# Ironbound Weekly — Week 1 Flagship Research\n\n"
+        "## RESEARCH READINESS\n\n"
+        "Structural contract valid: **YES**\n\n"
+        "## GAME COVERAGE LEDGER\n"
+    )
+    (directory / "flagship_research_packet.md").write_text(
+        flagship_text, encoding="utf-8"
+    )
+
+    message = build_dossier_email(
+        tmp_path,
+        1,
+        "desk@example.com",
+        "reader@example.com",
+    )
+
+    attachment = list(message.iter_attachments())[0]
+    assert attachment.get_content().strip() == flagship_text.strip()
+    assert "EDITOR'S BRIEF" not in attachment.get_content()

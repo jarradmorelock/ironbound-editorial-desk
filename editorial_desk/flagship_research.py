@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .external_inputs import ExternalEditorialInputs
+from .chronicle_queries import ChronicleQueries
 
 
 FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -18,6 +19,7 @@ def build_flagship_research_packet(
     external: ExternalEditorialInputs,
     *,
     history_root: Path,
+    chronicle: ChronicleQueries | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -82,8 +84,20 @@ def build_flagship_research_packet(
             "started_position_leaders": weekly.get("started_position_leaders") or {},
             "manager_of_the_week": awards.get("manager_of_the_week"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
-            "season_efficiency_top_three": _season_efficiency_top_three(history),
-            "season_team_score_top_three": _season_team_score_top_three(history),
+            "season_efficiency_top_three": _season_efficiency_top_three(
+                history,
+                snapshot=snapshot,
+                league_key=league_key,
+                season=season,
+                chronicle=chronicle,
+            ),
+            "season_team_score_top_three": _season_team_score_top_three(
+                history,
+                snapshot=snapshot,
+                league_key=league_key,
+                season=season,
+                chronicle=chronicle,
+            ),
             "benchwarmer_of_the_week": weekly.get("benchwarmer_of_the_week"),
             "rookie_watch_top_five": weekly.get("rookie_watch_top_five") or [],
             "rotating_award_candidates": _rotating_award_candidates(dossier),
@@ -511,30 +525,60 @@ def _season_dossiers(root: Path, season: str, league_key: str, through_week: int
     return rows
 
 
-def _season_team_score_top_three(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _season_team_score_top_three(
+    history: list[dict[str, Any]],
+    *,
+    snapshot: dict[str, Any],
+    league_key: str,
+    season: str,
+    chronicle: ChronicleQueries | None,
+) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for dossier in history:
-        week = int(dossier.get("week") or 0)
-        for game in dossier.get("scoreboard") or []:
-            for team in game.get("teams") or []:
+    if chronicle is not None:
+        names = _roster_team_names(snapshot)
+        for game in chronicle.league_matchups(league_key):
+            if str(game.get("season") or "") != str(season):
+                continue
+            for side in ("left", "right"):
+                roster_id = int(game.get(f"{side}_roster_id") or 0)
                 rows.append(
                     {
-                        "team": team.get("team"),
-                        "score": float(team.get("points") or 0),
-                        "week": week,
+                        "team": names.get(roster_id, f"Roster {roster_id}"),
+                        "score": float(game.get(f"{side}_points") or 0),
+                        "week": int(game.get("week") or 0),
                     }
                 )
+    if not rows:
+        for dossier in history:
+            week = int(dossier.get("week") or 0)
+            for game in dossier.get("scoreboard") or []:
+                for team in game.get("teams") or []:
+                    rows.append(
+                        {
+                            "team": team.get("team"),
+                            "score": float(team.get("points") or 0),
+                            "week": week,
+                        }
+                    )
     rows.sort(key=lambda row: (-row["score"], row["week"], str(row.get("team") or "")))
     return rows[:3]
 
 
-def _season_efficiency_top_three(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _season_efficiency_top_three(
+    history: list[dict[str, Any]],
+    *,
+    snapshot: dict[str, Any],
+    league_key: str,
+    season: str,
+    chronicle: ChronicleQueries | None,
+) -> list[dict[str, Any]]:
     by_team: dict[str, dict[str, float]] = {}
     max_week = 0
-    for dossier in history:
-        max_week = max(max_week, int(dossier.get("week") or 0))
-        for row in dossier.get("lineup_efficiency") or []:
-            team = str(row.get("team") or "")
+    if chronicle is not None:
+        names = _roster_team_names(snapshot)
+        for row in chronicle.season_efficiency(league_key, season):
+            max_week = max(max_week, int(row.get("week") or 0))
+            team = names.get(int(row.get("roster_id") or 0))
             if not team:
                 continue
             aggregate = by_team.setdefault(
@@ -543,6 +587,19 @@ def _season_efficiency_top_three(history: list[dict[str, Any]]) -> list[dict[str
             aggregate["actual"] += float(row.get("actual_points") or 0)
             aggregate["optimal"] += float(row.get("optimal_points") or 0)
             aggregate["weeks"] += 1
+    if not by_team:
+        for dossier in history:
+            max_week = max(max_week, int(dossier.get("week") or 0))
+            for row in dossier.get("lineup_efficiency") or []:
+                team = str(row.get("team") or "")
+                if not team:
+                    continue
+                aggregate = by_team.setdefault(
+                    team, {"actual": 0.0, "optimal": 0.0, "weeks": 0.0}
+                )
+                aggregate["actual"] += float(row.get("actual_points") or 0)
+                aggregate["optimal"] += float(row.get("optimal_points") or 0)
+                aggregate["weeks"] += 1
     rows = [
         {
             "team": team,
@@ -627,6 +684,23 @@ def _power_board_inputs(dossier: dict[str, Any], external: ExternalEditorialInpu
             }
         )
     return rows
+
+
+def _roster_team_names(snapshot: dict[str, Any]) -> dict[int, str]:
+    users = {
+        str(row.get("user_id")): row for row in snapshot.get("users") or []
+    }
+    names: dict[int, str] = {}
+    for roster in snapshot.get("rosters") or []:
+        roster_id = int(roster.get("roster_id") or 0)
+        owner = users.get(str(roster.get("owner_id"))) or {}
+        metadata = owner.get("metadata") or {}
+        names[roster_id] = str(
+            metadata.get("team_name")
+            or owner.get("display_name")
+            or f"Roster {roster_id}"
+        )
+    return names
 
 
 def _external_status(supplied: bool) -> str:

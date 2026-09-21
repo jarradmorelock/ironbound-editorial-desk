@@ -67,7 +67,7 @@ def test_readiness_does_not_request_rankings_when_already_supplied():
     assert any(item["input"] == "official_power_rankings" for item in readiness["no_action_needed"])
 
 
-def test_readiness_requests_war_only_when_relevant_story_family_would_benefit():
+def test_readiness_requires_tuesday_flagship_inputs_independent_of_story_family():
     relevant = _with_publication_readiness(
         _packet([_candidate("roster_architecture")], rankings=True),
         _snapshot(),
@@ -77,8 +77,9 @@ def test_readiness_requests_war_only_when_relevant_story_family_would_benefit():
         _snapshot(),
     )["publication_readiness"]
 
-    assert any(item["input"] == "war" for item in relevant["optional_enrichment"])
-    assert not any(item["input"] == "war" for item in irrelevant["optional_enrichment"])
+    for readiness in (relevant, irrelevant):
+        required = {item["input"] for item in readiness["required_before_publication"]}
+        assert {"playoff_odds", "usage", "war", "cwar"} <= required
 
 
 def test_readiness_acknowledges_nflverse_sources_already_available():

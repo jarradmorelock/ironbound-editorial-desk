@@ -196,10 +196,11 @@ historical coverage, objective signal components, cautions, headline concepts,
 depth suggestions, and graphic ideas. A temporal sequence may be reported when
 supported; unsupported motive or causation is not asserted.
 
-Official Ironbound/Unbound Power Rankings remain owned by the separate rankings
-workflow. Editorial Desk does not fetch, recreate, or substitute for those
-rankings. Optional official ranking or WAR context may be supplied manually as
-publication-named JSON files in a directory passed with
+Official Ironbound/Unbound Power Rankings and playoff odds remain owned by the
+separate rankings workflow. Editorial Desk does not fetch, recreate, or
+substitute for those outputs. The Tuesday handoff also carries Dynasty Daddy
+usage, WAR, and cWAR context. These inputs may be supplied as publication-named
+JSON files in a directory passed with
 `--external-inputs-dir`, for example:
 
 ```bash
@@ -212,8 +213,10 @@ python -m editorial_desk collect \
 ```
 
 If no external input file is supplied, Story Desk still operates from Chronicle
-and weekly evidence, but ranking-specific claims are unavailable. Story Desk
-also does not collect images. Headline packages may include a text-only
+and weekly evidence, but the flagship research contract marks Power Rankings,
+playoff odds, Dynasty Daddy usage, WAR, and cWAR as
+`AWAITING_TUESDAY_INPUT`. This is distinct from a collection failure. Story
+Desk also does not collect images. Headline packages may include a text-only
 suggested visual based on the supported story content, such as a rivalry image,
 game-action photo concept, trade-chain graphic, workload chart, or record-card
 overlay. No image URL, path, asset, or downloaded file is produced.
@@ -267,6 +270,35 @@ python -m editorial_desk collect --config config/leagues.json --week 1
 All eight current league IDs are enabled for collection in the example
 configuration. Seven feed publications; Don't Tell My Wife I'm In This remains
 data-only. No credential is required to read public Sleeper league data.
+
+## Flagship production research contract
+
+Ironbound Weekly and Unbound Weekly now receive a deterministic
+`flagship_research_packet.json` plus a matching Markdown reading packet. The
+contract mirrors the approved production-manuscript requirements rather than
+asking an LLM to discover the league story from scratch. It includes all eight
+completed matchups, two editorial cover-feature slots plus six remaining game
+writeups, actual NFL starter stat lines and usage signals, Injury & Roster
+Health, Weekly Honors, Benchwarmer of the Week, Rookie Watch Top 5, running
+season efficiency and team-score record boards, rotating-award candidates, and
+Power Board evidence.
+
+The contract deliberately separates three states:
+
+- collected/deterministic facts;
+- `AWAITING_TUESDAY_INPUT` for Power Rankings, playoff odds, Dynasty Daddy
+  usage, WAR, and cWAR that arrive from the separate rankings/data workflow; and
+- `MANUAL_VERIFY` when a required source or identity cannot be verified.
+
+Cover selection, the rotating award choice, headlines, prose, context-box
+wording, Power Board writeups, and art direction remain editorial/AI work after
+the facts are validated. The emailed flagship Markdown is the exact validated
+research artifact that will later feed the Word production manuscript.
+
+Finalized Chronicle collection also stores one
+`LINEUP_EFFICIENCY_FINAL` event per roster/week. This makes the running
+season-to-date efficiency board durable instead of depending on temporary
+GitHub Actions artifacts.
 
 ## Weekly reading packets
 

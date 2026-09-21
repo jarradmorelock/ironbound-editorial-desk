@@ -39,8 +39,10 @@ def apply_weekly_features(
     features = {
         "lineup_efficiency_top_three": lineup[:3],
         "top_scorers_by_position": _top_scorers_by_position(snapshot),
+        "started_position_leaders": _started_position_leaders(snapshot),
         "benchwarmer_of_the_week": _benchwarmer_of_week(snapshot),
         "rookie_of_the_week": _rookie_of_week(snapshot),
+        "rookie_watch_top_five": _rookie_watch_top_five(snapshot),
         "free_agent_of_the_week": _free_agent_of_week(snapshot),
     }
     editorial = snapshot.get("editorial") or {}
@@ -370,6 +372,55 @@ def _divisional_mvp_nominees(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
         gold = max(nominees, key=lambda row: (row["points"], row["player"]))
         gold["gold_foil"] = True
     return nominees
+
+
+def _started_position_leaders(
+    snapshot: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Highest-scoring submitted starter at each core offensive position."""
+    leaders: dict[str, dict[str, Any]] = {}
+    for row in _rostered_player_weeks(snapshot):
+        if row.get("status") != "STARTED":
+            continue
+        position = str(row.get("position") or "")
+        if position not in {"QB", "RB", "WR", "TE"}:
+            continue
+        current = leaders.get(position)
+        if current is None or (row["points"], row["player"]) > (
+            current["points"],
+            current["player"],
+        ):
+            leaders[position] = row
+    return leaders
+
+
+def _rookie_watch_top_five(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Top five scoring rostered rookies for the reviewed week."""
+    players = snapshot.get("players") or {}
+    rows: list[dict[str, Any]] = []
+    for row in _rostered_player_weeks(snapshot):
+        player = players.get(str(row.get("player_id") or "")) or {}
+        years_exp = player.get("years_exp")
+        if years_exp is None or _position(player) == "DEF":
+            continue
+        if _integer(years_exp) != 0:
+            continue
+        rows.append(
+            {
+                **row,
+                "nfl_team": player.get("team"),
+                "draft_year": player.get("draft_year"),
+                "draft_round": player.get("draft_round"),
+                "draft_number": player.get("draft_number"),
+            }
+        )
+    rows.sort(
+        key=lambda row: (
+            -_number(row.get("points")),
+            str(row.get("player") or "").casefold(),
+        )
+    )
+    return rows[:5]
 
 
 def _top_scorers_by_position(snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:

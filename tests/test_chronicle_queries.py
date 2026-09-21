@@ -266,3 +266,47 @@ def test_missing_head_to_head_returns_none(chronicle_root):
         )
         is None
     )
+
+
+def test_season_efficiency_reads_finalized_metric_events(tmp_path):
+    from editorial_desk.chronicle_events import make_event
+    from editorial_desk.chronicle_store import ChronicleStore
+
+    store = ChronicleStore(tmp_path)
+    store.append_events(
+        [
+            make_event(
+                event_type="LINEUP_EFFICIENCY_FINAL",
+                source="sleeper_matchups",
+                source_ref="eff:1",
+                league_key="demo",
+                season="2026",
+                week=1,
+                provenance="reconstructed_from_sleeper",
+                entities={"roster_id": 1},
+                evidence={
+                    "roster_id": 1,
+                    "actual_points": 100,
+                    "optimal_points": 110,
+                    "points_left_on_bench": 10,
+                    "efficiency": 0.9091,
+                },
+                observed_at="2026-09-10T12:00:00+00:00",
+            )
+        ]
+    )
+
+    rows = ChronicleQueries(tmp_path).season_efficiency("demo", "2026")
+
+    assert rows == [
+        {
+            "season": "2026",
+            "week": 1,
+            "roster_id": 1,
+            "actual_points": 100.0,
+            "optimal_points": 110.0,
+            "points_left_on_bench": 10.0,
+            "efficiency": 0.9091,
+            "event_id": rows[0]["event_id"],
+        }
+    ]

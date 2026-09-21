@@ -10,12 +10,18 @@ from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
 from .reading_packet import reading_packet_from_artifacts
+from .external_inputs import load_external_inputs
+from .flagship_research import (
+    build_flagship_research_packet,
+    write_flagship_research_packet,
+)
 from .publication_packets import build_publication_packet
 from .publication_render import write_publication_packet
 from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
+from .chronicle_queries import ChronicleQueries
 
 
 def collect_all(
@@ -108,6 +114,36 @@ def collect_all(
                         external_inputs_dir=external_inputs_dir,
                     )
                 )
+            if profile.tier == "flagship":
+                external_path = (
+                    Path(external_inputs_dir) / f"{profile.key}.json"
+                    if external_inputs_dir is not None
+                    and (Path(external_inputs_dir) / f"{profile.key}.json").exists()
+                    else None
+                )
+                external_inputs = load_external_inputs(external_path, profile.key)
+                story_path = directory / "story_desk.json"
+                story = (
+                    json.loads(story_path.read_text(encoding="utf-8"))
+                    if story_path.exists()
+                    else {}
+                )
+                flagship_packet = build_flagship_research_packet(
+                    snapshot,
+                    dossier,
+                    story,
+                    external_inputs,
+                    history_root=output_root,
+                    chronicle=(
+                        ChronicleQueries(Path(chronicle_root))
+                        if chronicle_root is not None
+                        else None
+                    ),
+                )
+                if flagship_packet is not None:
+                    generated.extend(
+                        write_flagship_research_packet(directory, flagship_packet)
+                    )
 
         reading_path = directory / "reading_packet.md"
         reading_path.write_text(reading_packet_from_artifacts(directory, dossier), encoding="utf-8")

@@ -371,3 +371,47 @@ def test_lightweight_pulse_does_not_fetch_users_when_identity_is_not_needed(
         "2026-09-16T17:05:00+00:00",
     )
     assert not any(call[0] == "users" for call in client.calls)
+
+
+def test_finalize_matchups_persists_lineup_efficiency_event(tmp_path: Path):
+    store = ChronicleStore(tmp_path)
+    client = FakeClient()
+    client.player_payload = {
+        "p1": {"status": "Active", "injury_status": None, "position": "QB", "fantasy_positions": ["QB"]},
+        "p2": {"status": "Active", "injury_status": None, "position": "QB", "fantasy_positions": ["QB"]},
+    }
+
+    original_league = client.league
+    def league_with_slots(league_id):
+        value = original_league(league_id)
+        value["roster_positions"] = ["QB", "BN"]
+        return value
+    client.league = league_with_slots
+
+    original_matchups = client.matchups
+    def scored_matchups(league_id, week):
+        rows = original_matchups(league_id, week)
+        rows[0]["players_points"] = {"p1": 20, "p2": 10}
+        rows[1]["players_points"] = {"p1": 15}
+        return rows
+    client.matchups = scored_matchups
+
+    collect_pulse(
+        [League("a", "1")],
+        client,
+        store,
+        2,
+        "2026-09-17T02:00:00+00:00",
+        finalize_matchups=True,
+    )
+
+    rows = [
+        row
+        for row in store.read_events("a", "2026")
+        if row["event_type"] == "LINEUP_EFFICIENCY_FINAL"
+    ]
+    assert len(rows) == 2
+    first = next(row for row in rows if row["entities"]["roster_id"] == 1)
+    assert first["evidence"]["actual_points"] == 20
+    assert first["evidence"]["optimal_points"] == 20
+    assert first["evidence"]["efficiency"] == 1.0

@@ -16,6 +16,9 @@ def test_missing_external_input_path_returns_empty_valid_object(tmp_path):
     assert result.publication_key == "ironbound_weekly"
     assert result.official_power_rankings == ()
     assert result.war == ()
+    assert result.cwar == ()
+    assert result.usage == ()
+    assert result.playoff_odds == ()
     assert result.notes == ()
     assert result.source_metadata == {}
     assert result.power_rankings_supplied is False
@@ -34,6 +37,15 @@ def test_valid_external_input_packet_preserves_authoritative_rankings_and_metada
             "war": [
                 {"franchise_key": "franchise:a", "value": 2.4},
             ],
+            "cwar": [
+                {"franchise_key": "franchise:a", "value": 1.8},
+            ],
+            "usage": [
+                {"franchise_key": "franchise:a", "value": 0.61},
+            ],
+            "playoff_odds": [
+                {"franchise_key": "franchise:a", "playoff": 72, "crown": 14},
+            ],
             "notes": ["Commissioner-supplied context"],
             "source_metadata": {"label": "Ironbound Power Rankings", "week": 7},
         },
@@ -46,9 +58,15 @@ def test_valid_external_input_packet_preserves_authoritative_rankings_and_metada
         ("franchise:b", 15),
     ]
     assert result.war == ({"franchise_key": "franchise:a", "value": 2.4},)
+    assert result.cwar == ({"franchise_key": "franchise:a", "value": 1.8},)
+    assert result.usage == ({"franchise_key": "franchise:a", "value": 0.61},)
+    assert result.playoff_odds == ({"franchise_key": "franchise:a", "playoff": 72, "crown": 14},)
     assert result.source_metadata["week"] == 7
     assert result.power_rankings_supplied is True
     assert result.war_supplied is True
+    assert result.cwar_supplied is True
+    assert result.usage_supplied is True
+    assert result.playoff_odds_supplied is True
 
 
 @pytest.mark.parametrize(

@@ -8,6 +8,7 @@ import requests
 
 from .chronicle_events import ChronicleEvent, make_event
 from .chronicle_store import ChronicleStore
+from .metrics import optimal_lineup, starter_slots
 
 
 def _source_time(value: Any) -> str | None:
@@ -290,6 +291,77 @@ def _normalize_matchup_finals(
     return events
 
 
+def _normalize_efficiency_finals(
+    league_key: str,
+    season: str,
+    week: int,
+    league: dict[str, Any],
+    rosters: list[dict[str, Any]],
+    matchups: list[dict[str, Any]],
+    players: dict[str, Any],
+    observed_at: str,
+) -> list[ChronicleEvent]:
+    """Persist final weekly lineup-efficiency evidence for running season boards."""
+    slots = starter_slots(league)
+    roster_by_id = {
+        int(row.get("roster_id") or 0): row for row in rosters
+    }
+    events: list[ChronicleEvent] = []
+    for matchup in matchups:
+        roster_id = int(matchup.get("roster_id") or 0)
+        if not roster_id:
+            continue
+        roster = roster_by_id.get(roster_id) or {}
+        points_raw = (
+            matchup.get("players_points")
+            or matchup.get("players_points_custom")
+            or {}
+        )
+        points = {
+            str(player_id): float(value or 0)
+            for player_id, value in points_raw.items()
+        }
+        starters = [str(value) for value in matchup.get("starters") or []]
+        actual = sum(points.get(player_id, 0.0) for player_id in starters)
+        excluded = {
+            str(player_id)
+            for key in ("reserve", "taxi")
+            for player_id in roster.get(key) or []
+        }
+        eligible = [
+            str(player_id)
+            for player_id in matchup.get("players") or []
+            if str(player_id) not in excluded
+        ]
+        optimal, _ = optimal_lineup(eligible, points, slots, players)
+        efficiency = actual / optimal if optimal > 0 else 0.0
+        evidence = {
+            "roster_id": roster_id,
+            "actual_points": round(actual, 2),
+            "optimal_points": round(optimal, 2),
+            "points_left_on_bench": round(max(0.0, optimal - actual), 2),
+            "efficiency": round(efficiency, 4),
+        }
+        events.append(
+            make_event(
+                event_type="LINEUP_EFFICIENCY_FINAL",
+                source="sleeper_matchups",
+                source_ref=(
+                    f"league:{league_key}:season:{season}:week:{week}:"
+                    f"efficiency:{roster_id}"
+                ),
+                league_key=league_key,
+                season=season,
+                week=week,
+                provenance="reconstructed_from_sleeper",
+                entities={"roster_id": roster_id},
+                observed_at=observed_at,
+                evidence=evidence,
+            )
+        )
+    return events
+
+
 def _status_events(
     season: str,
     week: int,
@@ -427,6 +499,17 @@ def collect_pulse(
                 events += _normalize_matchup_finals(
                     key, season, week, matchups, observed_at
                 )
+                if players is not None:
+                    events += _normalize_efficiency_finals(
+                        key,
+                        season,
+                        week,
+                        league,
+                        rosters,
+                        matchups,
+                        players,
+                        observed_at,
+                    )
             result = store.append_events(events)
             store.write_current_state(f"league-{key}", current)
             _mark_first_success(

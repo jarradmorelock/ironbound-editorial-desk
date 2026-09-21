@@ -155,7 +155,13 @@ def test_story_desk_loads_optional_external_inputs_from_publication_named_file(t
     )
 
     packet = json.loads((output / "story_desk.json").read_text())
-    assert packet["external_inputs"] == {"official_power_rankings": True, "war": True}
+    assert packet["external_inputs"] == {
+        "official_power_rankings": True,
+        "playoff_odds": False,
+        "usage": False,
+        "war": True,
+        "cwar": False,
+    }
 
 
 def test_collect_cli_accepts_chronicle_and_external_inputs_paths():

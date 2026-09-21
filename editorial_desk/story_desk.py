@@ -919,7 +919,10 @@ def _win_pct(record: dict[str, Any]) -> float:
 def _external_status(external: ExternalEditorialInputs | None) -> dict[str, Any]:
     return {
         "official_power_rankings": bool(external and external.power_rankings_supplied),
+        "playoff_odds": bool(external and external.playoff_odds_supplied),
+        "usage": bool(external and external.usage_supplied),
         "war": bool(external and external.war_supplied),
+        "cwar": bool(external and external.cwar_supplied),
     }
 
 

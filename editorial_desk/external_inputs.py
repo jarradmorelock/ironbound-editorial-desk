@@ -21,6 +21,9 @@ class ExternalEditorialInputs:
     publication_key: str
     official_power_rankings: tuple[OfficialPowerRanking, ...] = ()
     war: tuple[dict[str, Any], ...] = ()
+    cwar: tuple[dict[str, Any], ...] = ()
+    usage: tuple[dict[str, Any], ...] = ()
+    playoff_odds: tuple[dict[str, Any], ...] = ()
     notes: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -31,6 +34,18 @@ class ExternalEditorialInputs:
     @property
     def war_supplied(self) -> bool:
         return bool(self.war)
+
+    @property
+    def cwar_supplied(self) -> bool:
+        return bool(self.cwar)
+
+    @property
+    def usage_supplied(self) -> bool:
+        return bool(self.usage)
+
+    @property
+    def playoff_odds_supplied(self) -> bool:
+        return bool(self.playoff_odds)
 
     def ranking_for(self, franchise_key: str) -> int | None:
         wanted = str(franchise_key)
@@ -98,6 +113,15 @@ def load_external_inputs(
     war_raw = raw.get("war") or []
     if not isinstance(war_raw, list) or any(not isinstance(row, dict) for row in war_raw):
         raise ExternalInputError("war must be a list of objects")
+    cwar_raw = raw.get("cwar") or []
+    if not isinstance(cwar_raw, list) or any(not isinstance(row, dict) for row in cwar_raw):
+        raise ExternalInputError("cwar must be a list of objects")
+    usage_raw = raw.get("usage") or []
+    if not isinstance(usage_raw, list) or any(not isinstance(row, dict) for row in usage_raw):
+        raise ExternalInputError("usage must be a list of objects")
+    playoff_odds_raw = raw.get("playoff_odds") or []
+    if not isinstance(playoff_odds_raw, list) or any(not isinstance(row, dict) for row in playoff_odds_raw):
+        raise ExternalInputError("playoff_odds must be a list of objects")
     notes_raw = raw.get("notes") or []
     if not isinstance(notes_raw, list) or any(not isinstance(note, str) for note in notes_raw):
         raise ExternalInputError("notes must be a list of strings")
@@ -109,6 +133,9 @@ def load_external_inputs(
         publication_key=publication_key,
         official_power_rankings=tuple(rankings),
         war=tuple(dict(row) for row in war_raw),
+        cwar=tuple(dict(row) for row in cwar_raw),
+        usage=tuple(dict(row) for row in usage_raw),
+        playoff_odds=tuple(dict(row) for row in playoff_odds_raw),
         notes=tuple(str(note) for note in notes_raw),
         source_metadata=dict(source_metadata),
     )

@@ -188,6 +188,39 @@ class ChronicleQueries:
         )
         return [dict(row) for row in document.get("matchups") or []]
 
+    def season_efficiency(
+        self, league_key: str, season: str
+    ) -> list[dict[str, Any]]:
+        """Return finalized weekly lineup-efficiency evidence for one season."""
+        wanted = str(season)
+        rows = []
+        for event in self.league_events(
+            league_key, {"LINEUP_EFFICIENCY_FINAL"}
+        ):
+            if str(event.get("season") or "") != wanted:
+                continue
+            evidence = dict(event.get("evidence") or {})
+            roster_id = (
+                (event.get("entities") or {}).get("roster_id")
+                or evidence.get("roster_id")
+            )
+            rows.append(
+                {
+                    "season": wanted,
+                    "week": int(event.get("week") or 0),
+                    "roster_id": int(roster_id or 0),
+                    "actual_points": float(evidence.get("actual_points") or 0),
+                    "optimal_points": float(evidence.get("optimal_points") or 0),
+                    "points_left_on_bench": float(
+                        evidence.get("points_left_on_bench") or 0
+                    ),
+                    "efficiency": float(evidence.get("efficiency") or 0),
+                    "event_id": event.get("event_id"),
+                }
+            )
+        rows.sort(key=lambda row: (row["week"], row["roster_id"]))
+        return rows
+
     def league_events(
         self, league_key: str, event_types: Iterable[str] | None = None
     ) -> list[dict[str, Any]]:

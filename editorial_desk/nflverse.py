@@ -24,6 +24,10 @@ SNAP_COUNTS_URL = (
     "https://github.com/nflverse/nflverse-data/releases/download/"
     "snap_counts/snap_counts_{season}.csv"
 )
+INJURIES_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "injuries/injuries_{season}.csv"
+)
 USER_AGENT = "ironbound-editorial-desk/0.1"
 
 
@@ -130,6 +134,37 @@ class NFLVerseClient:
                 )
                 for field in fields
             }
+            for row in rows
+            if row.get("season") == str(season)
+            and row.get("week") == str(week)
+            and row.get("season_type") == "REG"
+        ]
+
+    def injuries(self, season: str, week: int) -> list[dict[str, Any]]:
+        """Return official weekly practice/game injury report rows."""
+        rows = self._csv_rows(
+            INJURIES_URL.format(season=season), compressed=False
+        )
+        fields = (
+            "season",
+            "season_type",
+            "team",
+            "week",
+            "gsis_id",
+            "position",
+            "full_name",
+            "first_name",
+            "last_name",
+            "report_primary_injury",
+            "report_secondary_injury",
+            "report_status",
+            "practice_primary_injury",
+            "practice_secondary_injury",
+            "practice_status",
+            "date_modified",
+        )
+        return [
+            {field: row.get(field) for field in fields}
             for row in rows
             if row.get("season") == str(season)
             and row.get("week") == str(week)

@@ -21,6 +21,7 @@ from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
+from .chronicle_queries import ChronicleQueries
 
 
 def collect_all(
@@ -133,6 +134,11 @@ def collect_all(
                     story,
                     external_inputs,
                     history_root=output_root,
+                    chronicle=(
+                        ChronicleQueries(Path(chronicle_root))
+                        if chronicle_root is not None
+                        else None
+                    ),
                 )
                 if flagship_packet is not None:
                     generated.extend(

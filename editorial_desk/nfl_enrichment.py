@@ -212,6 +212,8 @@ def build_nfl_game_intelligence(snapshot: dict[str, Any]) -> dict[str, Any] | No
     signals.extend(_high_value_touch_signals(usage, rostered_gsis, relevant_teams))
     signals.extend(_individual_signals(usage, rostered_gsis, team_tds, trailing_q4, winners))
 
+    stat_book = _build_flagship_stat_book(snapshot, stats, usage)
+
     return {
         "source_status": {
             "play_by_play": pbp.get("status", "unavailable"),
@@ -221,8 +223,258 @@ def build_nfl_game_intelligence(snapshot: dict[str, Any]) -> dict[str, Any] | No
         },
         "team_offensive_touchdowns": dict(sorted(team_tds.items())),
         "players": usage,
+        "stat_book": stat_book,
         "story_signals": signals,
     }
+
+
+def _build_flagship_stat_book(
+    snapshot: dict[str, Any],
+    stats_source: dict[str, Any],
+    usage: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    """Build a writing-first starter stat book from official weekly NFL stats.
+
+    Fantasy points are deliberately excluded. The magazine should describe
+    football performance with real box-score and usage evidence, reserving
+    fantasy points for matchup totals and decisions where the point swing
+    changes the fantasy outcome.
+    """
+    status = str(stats_source.get("status") or "unavailable")
+    if status != "available":
+        return {
+            "status": "unavailable",
+            "records": [],
+            "missing_starters": [],
+            "error": str(
+                stats_source.get("error")
+                or "weekly nflverse player statistics were unavailable"
+            ),
+        }
+
+    stats = stats_source.get("records") or []
+    team_carries: dict[str, float] = defaultdict(float)
+    team_targets: dict[str, float] = defaultdict(float)
+    for row in stats:
+        team = str(row.get("team") or "")
+        if not team:
+            continue
+        team_carries[team] += _number(row.get("carries"))
+        team_targets[team] += _number(row.get("targets"))
+
+    players = snapshot.get("players") or {}
+    users = {
+        str(user.get("user_id")): user for user in snapshot.get("users") or []
+    }
+    rosters = {
+        int(roster.get("roster_id") or 0): roster
+        for roster in snapshot.get("rosters") or []
+    }
+
+    by_gsis: dict[str, dict[str, Any]] = {}
+    by_signature: dict[tuple[str, str, str], dict[str, Any]] = {}
+    expected: dict[str, dict[str, Any]] = {}
+
+    for matchup in snapshot.get("matchups") or []:
+        roster_id = int(matchup.get("roster_id") or 0)
+        roster = rosters.get(roster_id) or {}
+        owner = users.get(str(roster.get("owner_id"))) or {}
+        metadata = owner.get("metadata") or {}
+        fantasy_team = str(
+            metadata.get("team_name")
+            or owner.get("display_name")
+            or f"Roster {roster_id}"
+        )
+        for raw_player_id in matchup.get("starters") or []:
+            sleeper_id = str(raw_player_id)
+            player = players.get(sleeper_id) or {}
+            position = str(player.get("position") or "")
+            # nflverse weekly player stats do not provide a team-defense row.
+            if position.upper() in {"DEF", "DST", "D/ST"}:
+                continue
+            context = {
+                "sleeper_player_id": sleeper_id,
+                "fantasy_team": fantasy_team,
+                "roster_id": roster_id,
+                "player": _sleeper_player_name(player) or sleeper_id,
+                "position": position or None,
+                "nfl_team": player.get("team"),
+            }
+            expected[sleeper_id] = context
+            gsis_id = str(player.get("gsis_id") or "").strip()
+            if gsis_id:
+                by_gsis[gsis_id] = context
+            signature = _identity_signature(
+                context["player"],
+                player.get("team"),
+                player.get("position"),
+            )
+            if signature:
+                by_signature[signature] = context
+
+    records: list[dict[str, Any]] = []
+    matched_sleeper_ids: set[str] = set()
+
+    for row in stats:
+        nfl_id = str(row.get("player_id") or "").strip()
+        name = str(
+            row.get("player_display_name")
+            or row.get("player_name")
+            or nfl_id
+        )
+        signature = _identity_signature(
+            name,
+            row.get("team"),
+            row.get("position"),
+        )
+        context = by_gsis.get(nfl_id) or (
+            by_signature.get(signature) if signature else None
+        )
+        if not context:
+            continue
+
+        matched_sleeper_ids.add(str(context["sleeper_player_id"]))
+        usage_row = usage.get(nfl_id) or {}
+        team = str(row.get("team") or "")
+        carries = _number(row.get("carries"))
+        targets = _number(row.get("targets"))
+        carry_share = (
+            carries / team_carries[team] if team and team_carries.get(team) else None
+        )
+        target_share = (
+            targets / team_targets[team] if team and team_targets.get(team) else None
+        )
+
+        record = {
+            **context,
+            "nfl_player_id": nfl_id or None,
+            "opponent": row.get("opponent_team"),
+            "completions": _number(row.get("completions")),
+            "attempts": _number(row.get("attempts")),
+            "passing_yards": _number(row.get("passing_yards")),
+            "passing_tds": _number(row.get("passing_tds")),
+            "passing_interceptions": _number(row.get("passing_interceptions")),
+            "carries": carries,
+            "rushing_yards": _number(row.get("rushing_yards")),
+            "rushing_tds": _number(row.get("rushing_tds")),
+            "receptions": _number(row.get("receptions")),
+            "targets": targets,
+            "receiving_yards": _number(row.get("receiving_yards")),
+            "receiving_tds": _number(row.get("receiving_tds")),
+            "carry_share": round(carry_share, 4) if carry_share is not None else None,
+            "target_share": round(target_share, 4) if target_share is not None else None,
+            "offense_snaps": usage_row.get("offense_snaps"),
+            "snap_share": usage_row.get("snap_share"),
+            "red_zone_opportunities": usage_row.get("red_zone_opportunities"),
+            "inside_10_opportunities": usage_row.get("inside_10_opportunities"),
+            "inside_5_opportunities": usage_row.get("inside_5_opportunities"),
+        }
+        record["nfl_stat_line"] = _format_nfl_stat_line(record)
+        records.append(record)
+
+    missing = [
+        {
+            **context,
+            "reason": (
+                "No weekly nflverse player-stat row matched this submitted starter. "
+                "Verify bye, inactive/no-stat game, or player identity manually before publication."
+            ),
+        }
+        for sleeper_id, context in expected.items()
+        if sleeper_id not in matched_sleeper_ids
+    ]
+
+    records.sort(
+        key=lambda row: (
+            str(row.get("fantasy_team") or "").casefold(),
+            str(row.get("position") or ""),
+            str(row.get("player") or "").casefold(),
+        )
+    )
+    missing.sort(
+        key=lambda row: (
+            str(row.get("fantasy_team") or "").casefold(),
+            str(row.get("position") or ""),
+            str(row.get("player") or "").casefold(),
+        )
+    )
+    return {
+        "status": "available",
+        "records": records,
+        "missing_starters": missing,
+    }
+
+
+def _format_nfl_stat_line(row: dict[str, Any]) -> str:
+    """Format actual NFL production and usage for magazine research."""
+    parts: list[str] = []
+
+    attempts = int(_number(row.get("attempts")))
+    completions = int(_number(row.get("completions")))
+    passing_yards = _number(row.get("passing_yards"))
+    passing_tds = int(_number(row.get("passing_tds")))
+    interceptions = int(_number(row.get("passing_interceptions")))
+    if attempts or completions or passing_yards or passing_tds or interceptions:
+        passing = (
+            f"{completions}/{attempts} passing for "
+            f"{_display_number(passing_yards)} yards"
+        )
+        if passing_tds:
+            passing += f", {passing_tds} TD"
+        if interceptions:
+            passing += f", {interceptions} INT"
+        parts.append(passing)
+
+    carries = int(_number(row.get("carries")))
+    rushing_yards = _number(row.get("rushing_yards"))
+    rushing_tds = int(_number(row.get("rushing_tds")))
+    if carries or rushing_yards or rushing_tds:
+        rushing = f"{carries} carries for {_display_number(rushing_yards)} yards"
+        if rushing_tds:
+            rushing += f", {rushing_tds} TD"
+        if row.get("carry_share") is not None:
+            rushing += f" ({_number(row['carry_share']):.1%} team carries)"
+        parts.append(rushing)
+
+    receptions = int(_number(row.get("receptions")))
+    targets = int(_number(row.get("targets")))
+    receiving_yards = _number(row.get("receiving_yards"))
+    receiving_tds = int(_number(row.get("receiving_tds")))
+    if receptions or targets or receiving_yards or receiving_tds:
+        receiving = (
+            f"{receptions} catches on {targets} targets for "
+            f"{_display_number(receiving_yards)} yards"
+        )
+        if receiving_tds:
+            receiving += f", {receiving_tds} TD"
+        if row.get("target_share") is not None:
+            receiving += f" ({_number(row['target_share']):.1%} team targets)"
+        parts.append(receiving)
+
+    if row.get("snap_share") is not None:
+        snap_text = f"{_number(row['snap_share']):.1%} offensive snap share"
+        if row.get("offense_snaps") is not None:
+            snap_text += f" ({_display_number(row['offense_snaps'])} snaps)"
+        parts.append(snap_text)
+
+    high_value: list[str] = []
+    for key, label in (
+        ("red_zone_opportunities", "red-zone opps"),
+        ("inside_10_opportunities", "inside-10"),
+        ("inside_5_opportunities", "inside-5"),
+    ):
+        value = int(_number(row.get(key)))
+        if value:
+            high_value.append(f"{value} {label}")
+    if high_value:
+        parts.append(", ".join(high_value))
+
+    return "; ".join(parts) if parts else "No recorded offensive box-score production"
+
+
+def _display_number(value: Any) -> str:
+    number = _number(value)
+    return str(int(number)) if number.is_integer() else f"{number:.1f}".rstrip("0").rstrip(".")
 
 
 def _current_roster_player_ids(snapshot: dict[str, Any]) -> set[str]:

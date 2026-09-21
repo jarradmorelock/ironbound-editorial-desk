@@ -56,6 +56,7 @@ def _snapshot(tier="newspaper"):
                 "practice_participation": "Limited Participation",
                 "injury_start_date": "2026-09-14",
                 "depth_chart_order": 1,
+                "gsis_id": "00-0039999",
             },
             "reserve": {
                 "full_name": "Reserve Player",
@@ -110,6 +111,26 @@ def test_newspaper_health_report_includes_general_status_and_ir_only():
 
 def test_flagship_health_report_retains_expanded_health_context():
     snapshot = _snapshot("flagship")
+    snapshot["nfl_context"] = {
+        "injuries": {
+            "status": "available",
+            "records": [
+                {
+                    "gsis_id": "00-0039999",
+                    "full_name": "Questionable Player",
+                    "position": "WR",
+                    "team": "KC",
+                    "report_primary_injury": "Hamstring",
+                    "report_secondary_injury": None,
+                    "report_status": "Questionable",
+                    "practice_primary_injury": "Hamstring",
+                    "practice_secondary_injury": None,
+                    "practice_status": "Limited Participation",
+                    "date_modified": "2026-09-16T20:00:00Z",
+                }
+            ],
+        }
+    }
     snapshot["flagship_sleeper"] = {
         "schedule": {"status": "available", "weeks": {}},
         "transactions": {"status": "available", "weeks": {}},
@@ -125,12 +146,18 @@ def test_flagship_health_report_retains_expanded_health_context():
     )
 
     assert questionable["practice_participation"] == "Limited Participation"
+    assert questionable["report_primary_injury"] == "Hamstring"
+    assert questionable["report_status"] == "Questionable"
+    assert questionable["injury_report_updated"] == "2026-09-16T20:00:00Z"
     assert questionable["injury_start_date"] == "2026-09-14"
     assert questionable["depth_chart_order"] == 1
+    assert questionable["health_source"] == "nflverse+Sleeper"
 
     markdown = render_editorial_review(dossier)
+    assert "Hamstring" in markdown
     assert "Limited Participation" in markdown
     assert "injury start 2026-09-14" in markdown
+    assert "official report updated 2026-09-16T20:00:00Z" in markdown
 
 
 def test_healthy_roster_is_reported_as_clear_not_unavailable():
@@ -140,7 +167,43 @@ def test_healthy_roster_is_reported_as_clear_not_unavailable():
 
     dossier = build_editorial_review(snapshot)
 
-    assert dossier["roster_health"] == {"status": "available", "players": []}
+    assert dossier["roster_health"]["status"] == "available"
+    assert dossier["roster_health"]["players"] == []
+    assert dossier["roster_health"]["source_status"]["sleeper"] == "available"
     markdown = render_editorial_review(dossier)
     assert "No roster health flags returned" in markdown
     assert "injury data unavailable" not in markdown.lower()
+
+
+def test_newspaper_uses_official_game_designation_without_expanded_injury_detail():
+    snapshot = _snapshot("newspaper")
+    snapshot["players"]["questionable"]["gsis_id"] = "00-0039999"
+    snapshot["players"]["questionable"]["injury_status"] = None
+    snapshot["nfl_context"] = {
+        "injuries": {
+            "status": "available",
+            "records": [
+                {
+                    "gsis_id": "00-0039999",
+                    "full_name": "Questionable Player",
+                    "position": "WR",
+                    "team": "KC",
+                    "report_primary_injury": "Hamstring",
+                    "report_status": "Questionable",
+                    "practice_status": "Limited Participation",
+                    "date_modified": "2026-09-16T20:00:00Z",
+                }
+            ],
+        }
+    }
+
+    dossier = build_editorial_review(snapshot)
+    row = next(
+        row for row in dossier["roster_health"]["players"]
+        if row["player"] == "Questionable Player"
+    )
+
+    assert row["injury_status"] == "Questionable"
+    assert row["health_source"] == "nflverse+Sleeper"
+    assert "report_primary_injury" not in row
+    assert "practice_participation" not in row

@@ -37,3 +37,26 @@ def test_late_play_feed_keeps_only_noteworthy_endgame_plays():
     assert result[0]["walkoff_candidate"] is True
     assert result[0]["yards_gained"] == 70
     assert result[0]["player_ids"] == ["p1"]
+
+
+def test_injury_feed_returns_weekly_official_report_fields():
+    rows = "\n".join(
+        [
+            "season,season_type,team,week,gsis_id,position,full_name,first_name,last_name,"
+            "report_primary_injury,report_secondary_injury,report_status,"
+            "practice_primary_injury,practice_secondary_injury,practice_status,date_modified",
+            "2026,REG,KC,2,00-0039999,WR,Player One,Player,One,Hamstring,,Questionable,"
+            "Hamstring,,Limited Participation,2026-09-16T20:00:00Z",
+            "2026,REG,KC,1,00-0039999,WR,Player One,Player,One,Hamstring,,Questionable,"
+            "Hamstring,,Did Not Participate,2026-09-10T20:00:00Z",
+        ]
+    )
+    client = NFLVerseClient(session=Session(rows.encode()))
+
+    result = client.injuries("2026", 2)
+
+    assert len(result) == 1
+    assert result[0]["gsis_id"] == "00-0039999"
+    assert result[0]["report_primary_injury"] == "Hamstring"
+    assert result[0]["report_status"] == "Questionable"
+    assert result[0]["practice_status"] == "Limited Participation"

@@ -335,17 +335,19 @@ def _collect_nfl_week_context(
     client: NFLVerseClient, season: str, week: int
 ) -> dict[str, Any]:
     sources = {}
-    for name, fetcher in (
-        ("schedule", client.schedule),
-        ("player_stats", client.player_stats),
-        ("noteworthy_late_plays", client.noteworthy_late_plays),
+    for name, method_name in (
+        ("schedule", "schedule"),
+        ("player_stats", "player_stats"),
+        ("injuries", "injuries"),
+        ("noteworthy_late_plays", "noteworthy_late_plays"),
     ):
         try:
+            fetcher = getattr(client, method_name)
             records = fetcher(season, week)
             if not isinstance(records, list):
                 raise ValueError("NFL context response was not a list")
             sources[name] = {"status": "available", "records": records}
-        except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        except (requests.RequestException, ValueError, KeyError, OSError, AttributeError) as exc:
             sources[name] = {
                 "status": "unavailable",
                 "records": [],
@@ -370,7 +372,7 @@ def _trim_nfl_context(
     result = {
         key: value
         for key, value in context.items()
-        if key not in {"schedule", "player_stats", "noteworthy_late_plays"}
+        if key not in {"schedule", "player_stats", "injuries", "noteworthy_late_plays"}
     }
     result["schedule"] = dict(context.get("schedule") or {})
     stats = dict(context.get("player_stats") or {})
@@ -380,6 +382,13 @@ def _trim_nfl_context(
         if str(row.get("player_id") or "") in gsis_ids
     ]
     result["player_stats"] = stats
+    injuries = dict(context.get("injuries") or {})
+    injuries["records"] = [
+        row
+        for row in injuries.get("records") or []
+        if str(row.get("gsis_id") or "") in gsis_ids
+    ]
+    result["injuries"] = injuries
     plays = dict(context.get("noteworthy_late_plays") or {})
     plays["records"] = [
         row

@@ -193,3 +193,120 @@ def test_health_summary_keeps_ir_and_practice_alert_reasons():
     text = ' '.join(fact_lines([{'player': 'Player One', 'team': 'Alpha', 'status': 'Active', 'on_ir': True, 'practice_participation': 'Did Not Participate'}]))
     assert 'IR/RESERVE' in text
     assert 'Did Not Participate' in text
+
+
+def test_flagship_reading_packet_has_dedicated_health_and_actual_stats_sections():
+    from editorial_desk.reading_packet import render_reading_packet
+
+    dossier = {
+        "league": {"tier": "flagship", "publication": "Ironbound Weekly"},
+        "week": 2,
+        "roster_health": {
+            "status": "available",
+            "players": [
+                {
+                    "team": "Alpha",
+                    "player": "Player One",
+                    "position": "WR",
+                    "nfl_team": "BUF",
+                    "status": "Active",
+                    "injury_status": "Questionable",
+                    "practice_participation": "Limited Participation",
+                    "on_ir": False,
+                }
+            ],
+        },
+        "nfl_game_intelligence": {
+            "source_status": {
+                "player_stats": "available",
+                "snap_counts": "available",
+                "play_by_play": "available",
+                "schedule": "available",
+            },
+            "stat_book": {
+                "status": "available",
+                "records": [
+                    {
+                        "fantasy_team": "Alpha",
+                        "player": "Player One",
+                        "position": "WR",
+                        "nfl_team": "BUF",
+                        "opponent": "MIA",
+                        "nfl_stat_line": "8 catches on 10 targets for 121 yards, 1 TD; 91.2% offensive snap share (62 snaps)",
+                    }
+                ],
+                "missing_starters": [],
+            },
+        },
+    }
+
+    text = render_reading_packet(dossier)
+
+    assert "## INJURY & ROSTER HEALTH" in text
+    assert "Limited Participation" in text
+    assert "## ACTUAL NFL STATS — SUBMITTED STARTERS" in text
+    assert "8 catches on 10 targets for 121 yards" in text
+    assert "91.2% offensive snap share" in text
+    assert "Fantasy points belong in matchup totals" in text
+
+
+def test_newspaper_reading_packet_keeps_health_section_compact():
+    from editorial_desk.reading_packet import render_reading_packet
+
+    dossier = {
+        "league": {"tier": "newspaper", "publication": "Volunteer Voice"},
+        "week": 2,
+        "roster_health": {
+            "status": "available",
+            "players": [
+                {
+                    "team": "Alpha",
+                    "player": "Player One",
+                    "position": "WR",
+                    "nfl_team": "BUF",
+                    "status": "Active",
+                    "injury_status": "Questionable",
+                    "on_ir": False,
+                }
+            ],
+        },
+    }
+
+    text = render_reading_packet(dossier)
+
+    assert "## ROSTER HEALTH" in text
+    assert "## INJURY & ROSTER HEALTH" not in text
+    assert "## ACTUAL NFL STATS — SUBMITTED STARTERS" not in text
+    assert "Questionable" in text
+
+
+def test_flagship_reading_packet_exposes_manual_stat_verification_gaps():
+    from editorial_desk.reading_packet import render_reading_packet
+
+    dossier = {
+        "league": {"tier": "flagship", "publication": "Ironbound Weekly"},
+        "week": 2,
+        "roster_health": {"status": "available", "players": []},
+        "nfl_game_intelligence": {
+            "source_status": {"player_stats": "available", "snap_counts": "unavailable"},
+            "stat_book": {
+                "status": "available",
+                "records": [],
+                "missing_starters": [
+                    {
+                        "fantasy_team": "Alpha",
+                        "player": "Player Missing",
+                        "position": "RB",
+                        "nfl_team": "TEN",
+                    }
+                ],
+            },
+        },
+    }
+
+    text = render_reading_packet(dossier)
+
+    assert "snap counts=unavailable" in text
+    assert "### MANUAL VERIFICATION NEEDED" in text
+    assert "Player Missing" in text
+    assert "Do not assume zero production" in text

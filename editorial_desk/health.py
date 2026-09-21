@@ -33,6 +33,13 @@ def build_roster_health(snapshot: dict[str, Any]) -> dict[str, Any]:
 
     editorial = snapshot.get("editorial") or {}
     expanded = str(editorial.get("tier") or "").casefold() == "flagship"
+    injury_source = (snapshot.get("nfl_context") or {}).get("injuries") or {}
+    injury_source_status = str(injury_source.get("status") or "not_collected")
+    injury_by_gsis = {
+        str(row.get("gsis_id")): row
+        for row in (injury_source.get("records") or [])
+        if row.get("gsis_id")
+    }
     users = {
         str(user.get("user_id")): user for user in snapshot.get("users") or []
     }
@@ -53,13 +60,22 @@ def build_roster_health(snapshot: dict[str, Any]) -> dict[str, Any]:
             player_id = str(raw_player_id)
             player = raw_players.get(player_id) or {}
             status = str(player.get("status") or "").strip()
-            injury_status = player.get("injury_status")
+            official = injury_by_gsis.get(str(player.get("gsis_id") or "")) or {}
+            report_status = official.get("report_status")
+            sleeper_injury_status = player.get("injury_status")
+            injury_status = sleeper_injury_status or report_status
             on_ir = player_id in reserve
-            practice = player.get("practice_participation") if expanded else None
+            practice = (
+                official.get("practice_status")
+                or player.get("practice_participation")
+            )
 
             generally_flagged = bool(
                 on_ir
                 or injury_status
+                or report_status
+                or official.get("report_primary_injury")
+                or official.get("practice_primary_injury")
                 or status.casefold() not in {"", "active"}
             )
             if not generally_flagged and not (expanded and practice):
@@ -70,17 +86,26 @@ def build_roster_health(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "team": team,
                 "manager": owner.get("display_name"),
                 "player_id": player_id,
-                "player": str(player.get("full_name") or player_id),
-                "position": player.get("position"),
-                "nfl_team": player.get("team"),
+                "player": str(player.get("full_name") or official.get("full_name") or player_id),
+                "position": player.get("position") or official.get("position"),
+                "nfl_team": player.get("team") or official.get("team"),
                 "status": status or None,
                 "injury_status": injury_status,
                 "on_ir": on_ir,
+                "health_source": (
+                    "nflverse+Sleeper" if official else "Sleeper"
+                ),
             }
             if expanded:
                 row.update(
                     {
+                        "report_status": report_status,
+                        "report_primary_injury": official.get("report_primary_injury"),
+                        "report_secondary_injury": official.get("report_secondary_injury"),
                         "practice_participation": practice,
+                        "practice_primary_injury": official.get("practice_primary_injury"),
+                        "practice_secondary_injury": official.get("practice_secondary_injury"),
+                        "injury_report_updated": official.get("date_modified"),
                         "injury_start_date": player.get("injury_start_date"),
                         "depth_chart_order": player.get("depth_chart_order"),
                         "news_updated": player.get("news_updated"),
@@ -94,7 +119,14 @@ def build_roster_health(snapshot: dict[str, Any]) -> dict[str, Any]:
             str(row.get("player") or "").casefold(),
         )
     )
-    return {"status": "available", "players": alerts}
+    return {
+        "status": "available",
+        "players": alerts,
+        "source_status": {
+            "sleeper": "available",
+            "nflverse_injuries": injury_source_status,
+        },
+    }
 
 
 def render_roster_health(health: dict[str, Any], *, expanded: bool) -> list[str]:
@@ -119,12 +151,20 @@ def render_roster_health(health: dict[str, Any], *, expanded: bool) -> list[str]
         if row.get("on_ir"):
             details.append("IR/RESERVE")
         if expanded:
+            if row.get("report_primary_injury"):
+                details.append(str(row["report_primary_injury"]))
+            if row.get("report_secondary_injury"):
+                details.append(f"secondary {row['report_secondary_injury']}")
             if row.get("practice_participation"):
                 details.append(str(row["practice_participation"]))
+            if row.get("practice_primary_injury") and row.get("practice_primary_injury") != row.get("report_primary_injury"):
+                details.append(f"practice injury {row['practice_primary_injury']}")
             if row.get("injury_start_date"):
                 details.append(f"injury start {row['injury_start_date']}")
             if row.get("depth_chart_order") is not None:
                 details.append(f"depth chart {row['depth_chart_order']}")
+            if row.get("injury_report_updated"):
+                details.append(f"official report updated {row['injury_report_updated']}")
 
         position = row.get("position") or "N/A"
         nfl_team = row.get("nfl_team") or "FA"

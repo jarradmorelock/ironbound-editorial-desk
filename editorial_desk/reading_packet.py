@@ -308,4 +308,11 @@ def read_optional_artifact(directory: Path, name: str) -> dict[str, Any] | None:
 
 
 def reading_packet_from_artifacts(directory: Path, dossier: dict[str, Any]) -> str:
-    return render_reading_packet(dossier, packet=read_optional_artifact(directory, 'publication_packet.json'), story=read_optional_artifact(directory, 'story_desk.json'))
+    flagship_path = Path(directory) / "flagship_research_packet.md"
+    if flagship_path.exists():
+        return flagship_path.read_text(encoding="utf-8")
+    return render_reading_packet(
+        dossier,
+        packet=read_optional_artifact(directory, "publication_packet.json"),
+        story=read_optional_artifact(directory, "story_desk.json"),
+    )

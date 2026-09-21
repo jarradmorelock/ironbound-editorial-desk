@@ -39,8 +39,10 @@ def apply_weekly_features(
     features = {
         "lineup_efficiency_top_three": lineup[:3],
         "top_scorers_by_position": _top_scorers_by_position(snapshot),
+        "started_position_leaders": _started_position_leaders(snapshot),
         "benchwarmer_of_the_week": _benchwarmer_of_week(snapshot),
         "rookie_of_the_week": _rookie_of_week(snapshot),
+        "rookie_watch_top_five": _rookie_watch_top_five(snapshot),
         "free_agent_of_the_week": _free_agent_of_week(snapshot),
     }
     editorial = snapshot.get("editorial") or {}

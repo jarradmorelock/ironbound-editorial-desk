@@ -59,20 +59,25 @@ the winner and consolation brackets, the future-pick ledger, next-week
 projections, and expanded player availability and depth-chart fields. The
 human-readable email attachment turns those sources into:
 
-- starter-by-starter box-score and projection evidence;
+- starter-by-starter **actual NFL box-score and usage evidence**, including completions/attempts, passing/rushing/receiving yards and touchdowns, catches/targets, offensive snap share, target share, carry share, and high-value opportunities when the relevant source is available;
 - team and division strength-of-schedule comparisons;
 - current-season team, player, and positional record watches;
 - a decoded seven-day activity report plus the season trade file;
 - draft first-round archives and playoff bracket history;
 - next-week matchup projections; and
-- injury, practice, and roster-availability flags.
+- a dedicated injury/roster-health section that merges Sleeper availability/IR state with nflverse official weekly injury-report fields, practice participation, injury designation, and report timestamp where available.
 
 The flagship versions retain a larger candidate list and a calendar of all
 Wednesday, Thursday, Friday, Saturday, and Monday starters. Newspaper packets
 receive a shorter version of the same timing evidence. Sleeper remains
 authoritative for fantasy points; nflverse supplies NFL weekday, game,
-real-life stat line, and late-play description. A missing optional nflverse file
-does not stop the rest of the weekly collection.
+real-life stat line, snap/usage context, official weekly injury reports, and
+late-play description. Flagship research packets use real NFL statistics as the
+default language for player performance. Fantasy points remain available for
+matchup totals, awards, lineup efficiency, and start/sit decisions where the
+point swing matters to the fantasy result. A missing optional nflverse file does
+not stop the rest of the weekly collection; the packet names the missing source
+and identifies submitted starters whose stat line requires manual verification.
 
 - Dynasty leagues use the Ironbound/Unbound editorial model: starter strength
   and projected scoring lead, with dynasty value, playoff and title

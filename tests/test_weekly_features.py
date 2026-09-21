@@ -253,3 +253,22 @@ def test_free_agent_of_week_uses_league_scoring_and_excludes_rostered_players():
     assert free_agent["player"] == "Free Agent Star"
     assert free_agent["position"] == "RB"
     assert free_agent["points"] == 27.5
+
+
+def test_started_position_leaders_ignore_taxi_and_nonstarters():
+    _, dossier = enriched()
+    leaders = dossier["weekly_features"]["started_position_leaders"]
+    assert leaders["QB"]["player"] == "Quarterback Two"
+    assert leaders["QB"]["status"] == "STARTED"
+    assert leaders["RB"]["player"] == "Runner One"
+    assert leaders["RB"]["status"] == "STARTED"
+    assert leaders["WR"]["player"] == "Receiver One"
+    assert leaders["WR"]["status"] == "STARTED"
+
+
+def test_rookie_watch_top_five_is_ranked_and_keeps_roster_status():
+    _, dossier = enriched()
+    rookies = dossier["weekly_features"]["rookie_watch_top_five"]
+    assert [row["player"] for row in rookies] == ["Rookie Runner"]
+    assert rookies[0]["points"] == 35
+    assert rookies[0]["status"] == "TAXI"

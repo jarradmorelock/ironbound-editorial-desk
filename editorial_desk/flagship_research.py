@@ -329,7 +329,10 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for position in CORE_POSITIONS:
         row = (honors.get("started_position_leaders") or {}).get(position)
         if row:
-            lines.append(f"- {position}: {row.get('player')} — {row.get('team')} — {float(row.get('points') or 0):.2f} FP")
+            line = f"- {position}: {row.get('player')} — {row.get('team')} — {float(row.get('points') or 0):.2f} FP"
+            if row.get("nfl_stat_line"):
+                line += f" — {row.get('nfl_stat_line')}"
+            lines.append(line)
 
     manager = honors.get("manager_of_the_week")
     lines.extend(["", "### Manager of the Week"])
@@ -338,21 +341,63 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
         if manager else "- No eligible manager."
     )
 
-    lines.extend(["", "### Season Efficiency Top 3"])
+    lines.extend(
+        [
+            "",
+            "### Season Efficiency Top 3",
+            "",
+            "| Rank | Team | Cumulative Efficiency | Weeks |",
+            "|---:|---|---:|---:|",
+        ]
+    )
     for rank, row in enumerate(honors.get("season_efficiency_top_three") or [], 1):
-        lines.append(f"- #{rank} {row.get('team')} — {float(row.get('efficiency') or 0):.1%} through Week {row.get('through_week')}")
+        lines.append(
+            f"| {rank} | {row.get('team')} | {float(row.get('efficiency') or 0):.1%} | {row.get('weeks')} |"
+        )
 
-    lines.extend(["", "### Season Team Score Top 3"])
+    lines.extend(
+        [
+            "",
+            "### Season Team Score Top 3",
+            "",
+            "| Rank | Team | Score | Week |",
+            "|---:|---|---:|---:|",
+        ]
+    )
     for rank, row in enumerate(honors.get("season_team_score_top_three") or [], 1):
-        lines.append(f"- #{rank} {row.get('team')} — {float(row.get('score') or 0):.2f} — Week {row.get('week')}")
+        lines.append(
+            f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('week')} |"
+        )
 
     lines.extend(["", "### Benchwarmer of the Week"])
     bench = honors.get("benchwarmer_of_the_week")
-    lines.append(f"- {bench.get('player')} — {bench.get('team')} — {float(bench.get('points') or 0):.2f} FP" if bench else "- No eligible benchwarmer.")
+    if bench:
+        line = f"- {bench.get('player')} — {bench.get('team')} — {float(bench.get('points') or 0):.2f} FP"
+        if bench.get("nfl_stat_line"):
+            line += f" — {bench.get('nfl_stat_line')}"
+        lines.append(line)
+    else:
+        lines.append("- No eligible benchwarmer.")
 
-    lines.extend(["", "### Rookie Watch — Top 5"])
+    lines.extend(
+        [
+            "",
+            "### Rookie Watch — Top 5",
+            "",
+            "| Rank | Rookie | Week Line / FP | Ironbound | NFL Draft |",
+            "|---:|---|---|---|---|",
+        ]
+    )
     for rank, row in enumerate(honors.get("rookie_watch_top_five") or [], 1):
-        lines.append(f"- #{rank} {row.get('player')} — {row.get('team')} — {float(row.get('points') or 0):.2f} FP — {row.get('status')}")
+        draft = "Not recorded"
+        if row.get("draft_number") is not None:
+            draft = f"No. {row.get('draft_number')}"
+        elif row.get("draft_round") is not None:
+            draft = f"Round {row.get('draft_round')}"
+        line = row.get("nfl_stat_line") or "NFL stat line unavailable"
+        lines.append(
+            f"| {rank} | {row.get('player')} | {line}; {float(row.get('points') or 0):.2f} FP | {row.get('team')} | {draft} |"
+        )
 
     lines.extend(["", "### Rotating Award Candidates"])
     for row in honors.get("rotating_award_candidates") or []:

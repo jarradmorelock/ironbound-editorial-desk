@@ -529,23 +529,33 @@ def _season_team_score_top_three(history: list[dict[str, Any]]) -> list[dict[str
 
 
 def _season_efficiency_top_three(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    by_team: dict[str, list[float]] = {}
+    by_team: dict[str, dict[str, float]] = {}
     max_week = 0
     for dossier in history:
         max_week = max(max_week, int(dossier.get("week") or 0))
         for row in dossier.get("lineup_efficiency") or []:
             team = str(row.get("team") or "")
-            if team:
-                by_team.setdefault(team, []).append(float(row.get("efficiency") or 0))
+            if not team:
+                continue
+            aggregate = by_team.setdefault(
+                team, {"actual": 0.0, "optimal": 0.0, "weeks": 0.0}
+            )
+            aggregate["actual"] += float(row.get("actual_points") or 0)
+            aggregate["optimal"] += float(row.get("optimal_points") or 0)
+            aggregate["weeks"] += 1
     rows = [
         {
             "team": team,
-            "efficiency": round(sum(values) / len(values), 4),
-            "weeks": len(values),
+            "efficiency": round(
+                values["actual"] / values["optimal"], 4
+            ) if values["optimal"] else 0.0,
+            "actual_points": round(values["actual"], 2),
+            "optimal_points": round(values["optimal"], 2),
+            "weeks": int(values["weeks"]),
             "through_week": max_week,
         }
         for team, values in by_team.items()
-        if values
+        if values["weeks"]
     ]
     rows.sort(key=lambda row: (-row["efficiency"], -row["weeks"], row["team"].casefold()))
     return rows[:3]
@@ -565,24 +575,27 @@ def _rotating_award_candidates(dossier: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
     for row in awards.get("result_flipping_decisions") or []:
-        if not row.get("would_flip_result") and not row.get("protected_win"):
-            continue
         rows.append(
             {
-                "candidate_type": "LOWER_PROJECTED_START_WON_GAME",
+                "candidate_type": "RESULT_CHANGING_START_SIT",
                 "team": row.get("team"),
-                "player": row.get("started_player"),
-                "reason": "Start/sit decision materially affected the fantasy result.",
+                "player": row.get("bench_player"),
+                "reason": (
+                    f"{row.get('bench_player')} over {row.get('started_player')} "
+                    f"would have swung the result by {float(row.get('point_swing') or 0):.2f}."
+                ),
                 "evidence": row,
             }
         )
-    for row in dossier.get("weekly_records") or []:
+    records = dossier.get("weekly_records") or {}
+    high = records.get("highest_score") if isinstance(records, dict) else None
+    if high:
         rows.append(
             {
-                "candidate_type": "SEASON_OR_RECORD_PERFORMANCE",
-                "team": row.get("team"),
-                "reason": str(row.get("label") or row.get("record") or "Weekly record signal"),
-                "evidence": row,
+                "candidate_type": "WEEKLY_HIGH_SCORE_RECORD_CANDIDATE",
+                "team": high.get("team"),
+                "reason": f"Weekly high score: {float(high.get('points') or 0):.2f}.",
+                "evidence": high,
             }
         )
     return rows

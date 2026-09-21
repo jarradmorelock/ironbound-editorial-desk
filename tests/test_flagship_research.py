@@ -231,9 +231,12 @@ def _external():
 
 
 def _write_history(root, dossier):
-    directory = root / "2026" / "week-04" / "ironbound_sixteen"
-    directory.mkdir(parents=True)
-    (directory / "dossier.json").write_text(json.dumps(dossier), encoding="utf-8")
+    for week in range(1, 5):
+        value = dict(dossier)
+        value["week"] = week
+        directory = root / "2026" / f"week-{week:02d}" / "ironbound_sixteen"
+        directory.mkdir(parents=True)
+        (directory / "dossier.json").write_text(json.dumps(value), encoding="utf-8")
 
 
 def test_flagship_contract_covers_all_eight_games_and_required_honors(tmp_path):

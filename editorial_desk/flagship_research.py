@@ -81,7 +81,9 @@ def build_flagship_research_packet(
         },
         "injury_roster_health": health,
         "weekly_honors": {
-            "started_position_leaders": weekly.get("started_position_leaders") or {},
+            "started_position_leaders": _attach_stat_lines(
+                weekly.get("started_position_leaders") or {}, intelligence
+            ),
             "manager_of_the_week": awards.get("manager_of_the_week"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
             "season_efficiency_top_three": _season_efficiency_top_three(
@@ -98,13 +100,24 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
-            "benchwarmer_of_the_week": weekly.get("benchwarmer_of_the_week"),
-            "rookie_watch_top_five": weekly.get("rookie_watch_top_five") or [],
+            "benchwarmer_of_the_week": _attach_stat_lines(
+                weekly.get("benchwarmer_of_the_week"), intelligence
+            ),
+            "rookie_watch_top_five": _attach_stat_lines(
+                weekly.get("rookie_watch_top_five") or [], intelligence
+            ),
             "rotating_award_candidates": _rotating_award_candidates(dossier),
             "divisional_mvp_nominees": weekly.get("divisional_mvp_nominees") or [],
         },
         "power_board": {
-            "writeup_inputs": _power_board_inputs(dossier, external),
+            "writeup_inputs": _power_board_inputs(
+                dossier,
+                external,
+                snapshot=snapshot,
+                league_key=league_key,
+                season=season,
+                chronicle=chronicle,
+            ),
             "writeups_are_editorial": True,
         },
         "power_rankings_chart": {
@@ -679,32 +692,101 @@ def _rotating_award_candidates(dossier: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-def _power_board_inputs(dossier: dict[str, Any], external: ExternalEditorialInputs) -> list[dict[str, Any]]:
-    standings = ((dossier.get("rankings") or {}).get("official_standings") or dossier.get("standings") or [])
+def _power_board_inputs(
+    dossier: dict[str, Any],
+    external: ExternalEditorialInputs,
+    *,
+    snapshot: dict[str, Any],
+    league_key: str,
+    season: str,
+    chronicle: ChronicleQueries | None,
+) -> list[dict[str, Any]]:
+    standings = (
+        (dossier.get("rankings") or {}).get("official_standings")
+        or dossier.get("standings")
+        or []
+    )
     efficiency = {
         int(row.get("roster_id") or 0): row
         for row in dossier.get("lineup_efficiency") or []
     }
-    official_by_team = {
-        str(row.get("team") or row.get("franchise_key") or ""): row.get("rank")
-        for row in [
-            {"franchise_key": item.franchise_key, "rank": item.rank}
-            for item in external.official_power_rankings
-        ]
+    ranking_by_franchise = {
+        row.franchise_key: row.rank for row in external.official_power_rankings
     }
+    playoff_by_franchise = _rows_by_franchise(external.playoff_odds)
+    usage_by_franchise = _rows_by_franchise(external.usage)
+    war_by_franchise = _rows_by_franchise(external.war)
+    cwar_by_franchise = _rows_by_franchise(external.cwar)
+
     rows = []
     for row in standings:
         rid = int(row.get("roster_id") or 0)
         eff = efficiency.get(rid) or {}
+        franchise_key = (
+            chronicle.identity_for_roster(league_key, season, rid)
+            if chronicle is not None
+            else None
+        )
         rows.append(
             {
                 **row,
+                "franchise_key": franchise_key,
                 "efficiency": eff.get("efficiency"),
                 "points_left_on_bench": eff.get("points_left_on_bench"),
-                "official_rank": official_by_team.get(str(row.get("team") or "")),
+                "official_rank": ranking_by_franchise.get(str(franchise_key or "")),
+                "playoff_odds": playoff_by_franchise.get(str(franchise_key or "")),
+                "usage": usage_by_franchise.get(str(franchise_key or "")),
+                "war": war_by_franchise.get(str(franchise_key or "")),
+                "cwar": cwar_by_franchise.get(str(franchise_key or "")),
             }
         )
+    rows.sort(
+        key=lambda row: (
+            int(row.get("official_rank") or 999),
+            str(row.get("team") or "").casefold(),
+        )
+    )
     return rows
+
+
+def _rows_by_franchise(rows: Any) -> dict[str, dict[str, Any]]:
+    result: dict[str, dict[str, Any]] = {}
+    for row in rows or []:
+        key = str(row.get("franchise_key") or "").strip()
+        if key:
+            result[key] = dict(row)
+    return result
+
+
+def _attach_stat_lines(value: Any, intelligence: dict[str, Any]) -> Any:
+    by_sleeper = {
+        str(row.get("sleeper_player_id")): row
+        for row in ((intelligence.get("stat_book") or {}).get("records") or [])
+        if row.get("sleeper_player_id")
+    }
+
+    def enrich(row: dict[str, Any]) -> dict[str, Any]:
+        stat = by_sleeper.get(str(row.get("player_id") or "")) or {}
+        return {
+            **row,
+            "nfl_stat_line": stat.get("nfl_stat_line"),
+            "snap_share": stat.get("snap_share"),
+            "target_share": stat.get("target_share"),
+            "carry_share": stat.get("carry_share"),
+        }
+
+    if value is None:
+        return None
+    if isinstance(value, list):
+        return [enrich(dict(row)) for row in value]
+    if isinstance(value, dict):
+        if "player_id" in value:
+            return enrich(dict(value))
+        return {
+            key: enrich(dict(row)) if isinstance(row, dict) else row
+            for key, row in value.items()
+        }
+    return value
 
 
 def _roster_team_names(snapshot: dict[str, Any]) -> dict[int, str]:

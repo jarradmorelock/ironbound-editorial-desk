@@ -200,13 +200,21 @@ def _render_health_section(
         if row.get("on_ir"):
             details.append("IR/RESERVE")
         if flagship:
+            if row.get("report_primary_injury"):
+                details.append(str(row["report_primary_injury"]))
+            if row.get("report_secondary_injury"):
+                details.append(f"secondary {row['report_secondary_injury']}")
             if row.get("practice_participation"):
                 details.append(str(row["practice_participation"]))
+            if row.get("practice_primary_injury") and row.get("practice_primary_injury") != row.get("report_primary_injury"):
+                details.append(f"practice injury {row['practice_primary_injury']}")
             if row.get("injury_start_date"):
                 details.append(f"injury start {row['injury_start_date']}")
             if row.get("depth_chart_order") is not None:
                 details.append(f"depth chart {row['depth_chart_order']}")
-            if row.get("news_updated"):
+            if row.get("injury_report_updated"):
+                details.append(f"official report updated {row['injury_report_updated']}")
+            elif row.get("news_updated"):
                 details.append(f"news updated {row['news_updated']}")
         position = row.get("position") or "N/A"
         nfl_team = row.get("nfl_team") or "FA"

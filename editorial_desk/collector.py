@@ -335,18 +335,19 @@ def _collect_nfl_week_context(
     client: NFLVerseClient, season: str, week: int
 ) -> dict[str, Any]:
     sources = {}
-    for name, fetcher in (
-        ("schedule", client.schedule),
-        ("player_stats", client.player_stats),
-        ("injuries", client.injuries),
-        ("noteworthy_late_plays", client.noteworthy_late_plays),
+    for name, method_name in (
+        ("schedule", "schedule"),
+        ("player_stats", "player_stats"),
+        ("injuries", "injuries"),
+        ("noteworthy_late_plays", "noteworthy_late_plays"),
     ):
         try:
+            fetcher = getattr(client, method_name)
             records = fetcher(season, week)
             if not isinstance(records, list):
                 raise ValueError("NFL context response was not a list")
             sources[name] = {"status": "available", "records": records}
-        except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+        except (requests.RequestException, ValueError, KeyError, OSError, AttributeError) as exc:
             sources[name] = {
                 "status": "unavailable",
                 "records": [],

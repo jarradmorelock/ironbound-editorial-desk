@@ -291,6 +291,7 @@ def test_season_efficiency_reads_finalized_metric_events(tmp_path):
                     "points_left_on_bench": 10,
                     "efficiency": 0.9091,
                 },
+                observed_at="2026-09-10T12:00:00+00:00",
             )
         ]
     )

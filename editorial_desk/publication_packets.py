@@ -159,7 +159,10 @@ def _resolve_feature(
     if feature == "record_watch":
         value = record_watch(dossier, chronicle_history)
         if not value.get("records") and dossier.get("weekly_records"):
-            value = {**value, "records": list(dossier.get("weekly_records") or [])}
+            value = {
+                **value,
+                "records": _weekly_record_rows(dossier.get("weekly_records")),
+            }
         return ready(feature, value)
     if feature == "workload_stat_lines":
         return workload_stat_lines(snapshot)
@@ -457,6 +460,34 @@ def _next_matchups_result(snapshot: dict[str, Any]) -> FeatureResult:
     if not games:
         return ready_no_items("next_matchups", reason="No complete next-week matchup pairs returned")
     return ready("next_matchups", games)
+
+
+def _weekly_record_rows(value: Any) -> list[dict[str, Any]]:
+    """Normalize the metrics weekly_records mapping into renderer-safe rows."""
+    if isinstance(value, list):
+        return [dict(row) for row in value if isinstance(row, dict)]
+    if not isinstance(value, dict):
+        return []
+
+    rows: list[dict[str, Any]] = []
+    status = value.get("status")
+    for record_type in (
+        "highest_score",
+        "lowest_score",
+        "largest_margin",
+        "smallest_margin",
+    ):
+        record = value.get(record_type)
+        if not isinstance(record, dict):
+            continue
+        rows.append(
+            {
+                "record_type": record_type,
+                "status": status,
+                **record,
+            }
+        )
+    return rows
 
 
 def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:

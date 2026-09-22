@@ -372,11 +372,21 @@ def _weekly_briefs(
                     "health_flags": health_by_roster.get(roster_id, []),
                 }
             )
-    if not rows:
+    if not rows and not transactions and not chronicle_events:
         return ready_no_items("weekly_briefs", reason="No completed team dailies qualified")
+    bundle = {
+        "teams": sorted(rows, key=lambda row: str(row.get("team") or "").casefold()),
+        "transactions": transactions,
+        "health": [
+            row
+            for row in health_source.get("players") or []
+            if _meaningful_health_row(row)
+        ] if health_source.get("status") == "available" else [],
+        "chronicle_events": list(chronicle_events or []),
+    }
     return ready(
         "weekly_briefs",
-        sorted(rows, key=lambda row: str(row.get("team") or "").casefold()),
+        bundle,
         degraded=health_source.get("status") != "available",
         reason=(
             None
@@ -452,12 +462,17 @@ def _next_matchups_result(snapshot: dict[str, Any]) -> FeatureResult:
 def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
     rankings = dossier.get("rankings") or {}
     power = rankings.get("data_power_ranking") or {}
-    rows = list(power.get("rows") or [])
+    if isinstance(power, list):
+        rows = list(power)
+        power_status = "calculated"
+    elif isinstance(power, dict):
+        rows = list(power.get("rows") or [])
+        power_status = str(power.get("status") or "Data Power ranking inputs unavailable")
+    else:
+        rows = []
+        power_status = "Data Power ranking inputs unavailable"
     if not rows:
-        return unavailable(
-            "ranking_movement",
-            str(power.get("status") or "Data Power ranking inputs unavailable"),
-        )
+        return unavailable("ranking_movement", power_status)
     previous = {
         int(row.get("roster_id") or 0): row
         for row in ((rankings.get("prior_published_ranking") or {}).get("rows") or [])

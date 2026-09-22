@@ -322,9 +322,110 @@ def test_missing_tuesday_handoff_is_awaiting_input_not_data_failure(tmp_path):
     waiting = " ".join(packet["validation"]["awaiting_tuesday_input"])
     assert "Power Rankings" in waiting
     assert "Playoff Odds" in waiting
-    assert "WAR" in waiting
-    assert "cWAR" in waiting
-    assert "usage" in waiting.lower()
+    assert "WAR" not in waiting
+    assert "cWAR" not in waiting
+    assert "usage" not in waiting.lower()
+
+
+def test_internal_usage_makes_packet_complete_without_external_usage_war_or_cwar(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        official_power_rankings=tuple(
+            OfficialPowerRanking(
+                franchise_key=None,
+                rank=rank,
+                roster_id=rank,
+                team=f"Team {rank}",
+            )
+            for rank in range(1, 17)
+        ),
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+    )
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        external,
+        history_root=tmp_path,
+    )
+
+    assert packet["validation"]["research_complete"] is True
+    assert packet["validation"]["awaiting_tuesday_input"] == []
+    assert packet["usage_desk"]["status"] == "READY"
+    assert packet["tuesday_external_inputs"]["war"]["status"] == "OPTIONAL_NOT_SUPPLIED"
+    assert packet["tuesday_external_inputs"]["cwar"]["status"] == "OPTIONAL_NOT_SUPPLIED"
+
+
+def test_usage_desk_ranks_rostered_player_workload_from_internal_nfl_data(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    dossier["nfl_game_intelligence"]["stat_book"]["records"][0].update(
+        {
+            "carries": 18,
+            "carry_share": 0.72,
+            "targets": 9,
+            "target_share": 0.30,
+            "snap_share": 0.88,
+            "offense_snaps": 61,
+            "red_zone_opportunities": 5,
+        }
+    )
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+
+    usage = packet["usage_desk"]
+    assert usage["status"] == "READY"
+    assert usage["leaders"]["targets"][0]["player"] == "Player 1"
+    assert usage["leaders"]["carries"][0]["carries"] == 18
+    text = render_flagship_research_packet(packet)
+    assert "## USAGE DESK INPUT" in text
+    assert "18 carries" in text
+    assert "30.0% team targets" in text
+    assert "88.0% snaps" in text
+    assert "5 red-zone opps" in text
+
+
+def test_power_rankings_chart_uses_team_name_when_franchise_key_is_absent(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        official_power_rankings=tuple(
+            OfficialPowerRanking(
+                franchise_key=None,
+                rank=rank,
+                roster_id=rank,
+                team=f"Team {rank}",
+            )
+            for rank in range(1, 17)
+        ),
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+    )
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        external,
+        history_root=tmp_path,
+    )
+    text = render_flagship_research_packet(packet)
+    assert "#1 Team 1" in text
+    assert "#1 None" not in text
 
 
 def test_rookie_watch_keeps_current_team_and_adds_ironbound_draft_context(tmp_path):

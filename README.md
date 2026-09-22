@@ -198,9 +198,12 @@ supported; unsupported motive or causation is not asserted.
 
 Official Ironbound/Unbound Power Rankings and playoff odds remain owned by the
 separate rankings workflow. Editorial Desk does not fetch, recreate, or
-substitute for those outputs. The Tuesday handoff also carries Dynasty Daddy
-usage, WAR, and cWAR context. These inputs may be supplied as publication-named
-JSON files in a directory passed with
+substitute for those outputs. Weekly player usage is owned by Editorial Desk
+itself: nflverse weekly player stats supply carries and targets, snap-count
+files supply offensive snap share, and play-by-play supplies red-zone and
+inside-the-10/inside-the-5 opportunities. WAR and cWAR are optional analytical
+enrichment only and do not gate weekly production. Optional external inputs may
+still be supplied as publication-named JSON files in a directory passed with
 `--external-inputs-dir`, for example:
 
 ```bash
@@ -285,10 +288,14 @@ Power Board evidence.
 
 The contract deliberately separates three states:
 
-- collected/deterministic facts;
-- `AWAITING_TUESDAY_INPUT` for Power Rankings, playoff odds, Dynasty Daddy
-  usage, WAR, and cWAR that arrive from the separate rankings/data workflow; and
+- collected/deterministic facts, including a required internal Usage Desk built
+  from nflverse carries, targets, snap share, and high-value opportunities;
+- `AWAITING_TUESDAY_INPUT` for Power Rankings and playoff odds from the
+  separate rankings workflow; and
 - `MANUAL_VERIFY` when a required source or identity cannot be verified.
+
+WAR and cWAR are optional feature-story enrichment. Their absence does not make
+the weekly research packet incomplete.
 
 Cover selection, the rotating award choice, headlines, prose, context-box
 wording, Power Board writeups, and art direction remain editorial/AI work after
@@ -319,8 +326,10 @@ The obsolete Phase 4 verification workflow has been removed.
 The Tuesday ranking handoff is read from the public
 `jarradmorelock/Ironbound_power_ranks` repository when available. That
 handoff supplies official Power Rankings and playoff forecast rows by roster ID.
-Usage, WAR, and cWAR remain explicit awaiting inputs until a verified source is
-wired into the handoff; the Editorial Desk does not synthesize them.
+Usage does not require a separate handoff: Editorial Desk builds it from the
+same verified nflverse player-stat, snap-count, and play-by-play sources used
+for the flagship game evidence. WAR and cWAR are optional and are not required
+for a complete weekly packet.
 
 ## Newspaper research contracts
 
@@ -393,12 +402,12 @@ so they remain 9:17 p.m. and 5:17 a.m. across daylight-saving changes.
 
 ## Manual GitHub run
 
-Open **Actions -> Editorial desk weekly delivery -> Run workflow**. Validation is
-the default. Select **collect**, enter the week, and enable **send_email** to
-deliver one email containing the seven publication Markdown dossiers. The
-data-only league remains excluded from the email. Manual collection reads the
-current Chronicle revision but does not perform the scheduled Tuesday
-finalization transaction.
+Open **Actions -> RUN THIS - Weekly Editorial Delivery -> Run workflow**. Select
+**Production**, enter the completed NFL week, and enable **send_email** if you
+want the seven publication research packets delivered. Production verifies the
+week is complete, finalizes Chronicle, loads the ranking handoff, and builds
+against the pinned Chronicle revision. **Preview** is read-only and **Validate**
+checks configuration only.
 
 ## Email secrets
 

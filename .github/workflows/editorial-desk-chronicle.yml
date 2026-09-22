@@ -1,4 +1,4 @@
-name: Editorial Chronicle collection
+name: INTERNAL - Chronicle Collection
 
 on:
   workflow_dispatch:

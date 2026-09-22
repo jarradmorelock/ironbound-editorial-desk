@@ -300,6 +300,35 @@ Finalized Chronicle collection also stores one
 season-to-date efficiency board durable instead of depending on temporary
 GitHub Actions artifacts.
 
+## Newspaper research contracts
+
+The five newspaper-tier publications now generate a publication-specific
+`newspaper_research_packet.json` plus matching Markdown artifact. These
+contracts are derived from the actual finished papers rather than one generic
+newspaper formatter.
+
+- **The Ballad Crier** requires Week Cardiogram results, the median line,
+  late-window/Monday context, Final Monitor, result-flipping Weekly Rounds,
+  standings/rankings, honors, position leaders, waiver impact, Ward Report,
+  record watch, and the next card.
+- **The Hollywood Beat** requires Box Office results and median, Marquee
+  standings, Top Billing/First Cut evidence, the Hollywood Board, Late Show,
+  honors plus position leaders, Cutting Room Floor, efficiency, Casting Call,
+  Production Delays, Backlot briefs, and the next bill.
+- **The Saturday Standard** keeps active East/West evidence, IDP as first-class
+  production, Manager of the Week, Saturday honors/desk, and dynasty market
+  evidence. Transfer Portal, recruiting, future-pick, and next-week modules are
+  conditional rather than mandatory filler.
+- **The Volunteer Voice** is explicitly non-divisional even if dormant Sleeper
+  division metadata still exists. Any division evidence leaking into its
+  research packet fails validation. Mountain MVP is league-wide.
+- **The Stampede** keeps real-NFL workload as a defining department; workload
+  leaders are restricted to players rostered in the 9-to-5 league.
+
+Newspaper packets expose contract readiness and manual-verification gaps, then
+the exact rendered research Markdown is used for email delivery. Flagship
+Ironbound/Unbound research remains on the separate production-v0.4 contract.
+
 ## Weekly reading packets
 
 Each publication now has a `reading_packet.md` and one email attachment in this order:

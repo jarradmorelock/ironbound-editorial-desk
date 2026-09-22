@@ -187,3 +187,59 @@ def test_newspaper_renderer_surfaces_median_line_cleanly():
     text = render_newspaper_research_packet(research)
     assert "Median line: 136.36" in text
     assert "Above median: Alpha" in text
+
+
+def test_newspaper_renderer_never_uses_json_only_placeholder():
+    packet = _packet("saturday_standard", ["dynasty_market_values"])
+    packet["departments"][0]["data"] = {
+        "p1": {
+            "full_name": "Example Receiver",
+            "position": "WR",
+            "team": "TEN",
+            "trade_value": 5123,
+            "overall_rank": 18,
+        }
+    }
+    research = build_newspaper_research_packet(
+        {"matchups": [], "next_matchups": {"status": "available"}, "nfl_context": {}},
+        {"roster_health": {"status": "available"}},
+        packet,
+    )
+    text = render_newspaper_research_packet(research)
+
+    assert "Example Receiver (WR, TEN)" in text
+    assert "value 5123" in text
+    assert "Structured evidence is present" not in text
+
+
+def test_newspaper_health_renderer_drops_bare_active_noise():
+    packet = _packet("the_stampede", ["health_status"])
+    packet["departments"][0]["data"] = [
+        {
+            "team": "Alpha",
+            "player": "Healthy Star",
+            "position": "RB",
+            "nfl_team": "TEN",
+            "status": "Active",
+        },
+        {
+            "team": "Beta",
+            "player": "Questionable Star",
+            "position": "WR",
+            "nfl_team": "KC",
+            "status": "Active",
+            "game_designation": "Questionable",
+            "injury": "Hamstring",
+            "practice_participation": "Limited Participation",
+        },
+    ]
+    research = build_newspaper_research_packet(
+        {"matchups": [], "next_matchups": {"status": "available"}, "nfl_context": {}},
+        {"roster_health": {"status": "available"}},
+        packet,
+    )
+    text = render_newspaper_research_packet(research)
+
+    assert "Questionable Star" in text
+    assert "Hamstring" in text
+    assert "Healthy Star" not in text

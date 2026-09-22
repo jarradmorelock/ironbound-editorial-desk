@@ -344,6 +344,9 @@ def test_flagship_stat_book_uses_actual_nfl_stats_and_excludes_fantasy_points():
     assert etienne["snap_share"] == 0.55
     assert "fantasy_points" not in shough
     assert "fantasy_points" not in etienne
+    rostered_names = {row["player"] for row in book["rostered_records"]}
+    assert "Christian McCaffrey" in rostered_names
+    assert len(book["rostered_records"]) >= len(book["records"])
 
 
 def test_flagship_stat_book_marks_unmatched_starters_for_manual_verification():

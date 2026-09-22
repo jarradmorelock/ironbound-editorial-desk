@@ -125,3 +125,42 @@ def test_loader_rejects_non_object_json_instead_of_guessing(tmp_path):
 
     with pytest.raises(ExternalInputError, match="JSON object"):
         load_external_inputs(path, "ironbound_weekly")
+
+
+def test_ranking_handoff_accepts_roster_and_team_keys(tmp_path):
+    path = _write(
+        tmp_path / "handoff.json",
+        {
+            "publication_key": "ironbound_weekly",
+            "official_power_rankings": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "rank": 1,
+                    "previous_rank": 3,
+                    "movement": 2,
+                    "score": 91.2,
+                }
+            ],
+            "playoff_odds": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "playoff": 91.0,
+                    "championship": 15.0,
+                }
+            ],
+        },
+    )
+
+    result = load_external_inputs(path, "ironbound_weekly")
+    row = result.official_power_rankings[0]
+
+    assert row.franchise_key is None
+    assert row.roster_id == 7
+    assert row.team == "San Carlos FC"
+    assert row.previous_rank == 3
+    assert row.movement == 2
+    assert row.score == 91.2
+    assert result.ranking_for_roster(7).rank == 1
+    assert result.ranking_for_roster(99, team="San Carlos FC").rank == 1

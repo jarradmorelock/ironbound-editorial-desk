@@ -103,8 +103,11 @@ def build_flagship_research_packet(
             "benchwarmer_of_the_week": _attach_stat_lines(
                 weekly.get("benchwarmer_of_the_week"), intelligence
             ),
-            "rookie_watch_top_five": _attach_stat_lines(
-                weekly.get("rookie_watch_top_five") or [], intelligence
+            "rookie_watch_top_five": _attach_rookie_draft_context(
+                _attach_stat_lines(
+                    weekly.get("rookie_watch_top_five") or [], intelligence
+                ),
+                snapshot,
             ),
             "rotating_award_candidates": _rotating_award_candidates(dossier),
             "divisional_mvp_nominees": weekly.get("divisional_mvp_nominees") or [],
@@ -123,7 +126,15 @@ def build_flagship_research_packet(
         "power_rankings_chart": {
             "status": _external_status(external.power_rankings_supplied),
             "rows": [
-                {"franchise_key": row.franchise_key, "rank": row.rank}
+                {
+                    "franchise_key": row.franchise_key,
+                    "roster_id": row.roster_id,
+                    "team": row.team,
+                    "rank": row.rank,
+                    "previous_rank": row.previous_rank,
+                    "movement": row.movement,
+                    "score": row.score,
+                }
                 for row in external.official_power_rankings
             ],
         },
@@ -384,16 +395,12 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             "",
             "### Rookie Watch — Top 5",
             "",
-            "| Rank | Rookie | Week Line / FP | Ironbound | NFL Draft |",
+            "| Rank | Rookie | Week Line / FP | Current Team | Ironbound Draft |",
             "|---:|---|---|---|---|",
         ]
     )
     for rank, row in enumerate(honors.get("rookie_watch_top_five") or [], 1):
-        draft = "Not recorded"
-        if row.get("draft_number") is not None:
-            draft = f"No. {row.get('draft_number')}"
-        elif row.get("draft_round") is not None:
-            draft = f"Round {row.get('draft_round')}"
+        draft = str(row.get("ironbound_draft") or "Not recorded")
         line = row.get("nfl_stat_line") or "NFL stat line unavailable"
         lines.append(
             f"| {rank} | {row.get('player')} | {line}; {float(row.get('points') or 0):.2f} FP | {row.get('team')} | {draft} |"
@@ -612,34 +619,61 @@ def _season_team_score_top_three(
     season: str,
     chronicle: ChronicleQueries | None,
 ) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
+    names = _roster_team_names(snapshot)
+    by_week_roster: dict[tuple[int, int], dict[str, Any]] = {}
+
     if chronicle is not None:
-        names = _roster_team_names(snapshot)
-        for game in chronicle.league_matchups(league_key):
-            if str(game.get("season") or "") != str(season):
-                continue
-            for side in ("left", "right"):
-                roster_id = int(game.get(f"{side}_roster_id") or 0)
-                rows.append(
-                    {
-                        "team": names.get(roster_id, f"Roster {roster_id}"),
-                        "score": float(game.get(f"{side}_points") or 0),
-                        "week": int(game.get("week") or 0),
-                    }
-                )
-    if not rows:
-        for dossier in history:
-            week = int(dossier.get("week") or 0)
-            for game in dossier.get("scoreboard") or []:
-                for team in game.get("teams") or []:
-                    rows.append(
+        for row in chronicle.season_matchup_finals(league_key, season):
+            roster_id = int(row.get("roster_id") or 0)
+            week = int(row.get("week") or 0)
+            if roster_id and week:
+                by_week_roster[(week, roster_id)] = {
+                    "team": names.get(roster_id, f"Roster {roster_id}"),
+                    "roster_id": roster_id,
+                    "score": float(row.get("points") or 0),
+                    "week": week,
+                }
+
+    # Historical dossier artifacts are a compatibility fallback for weeks that
+    # predate durable MATCHUP_FINAL events.
+    for dossier in history:
+        week = int(dossier.get("week") or 0)
+        for game in dossier.get("scoreboard") or []:
+            for team in game.get("teams") or []:
+                roster_id = int(team.get("roster_id") or 0)
+                if roster_id and week:
+                    by_week_roster.setdefault(
+                        (week, roster_id),
                         {
-                            "team": team.get("team"),
+                            "team": team.get("team") or names.get(roster_id),
+                            "roster_id": roster_id,
                             "score": float(team.get("points") or 0),
                             "week": week,
-                        }
+                        },
                     )
-    rows.sort(key=lambda row: (-row["score"], row["week"], str(row.get("team") or "")))
+
+    # Always merge the reviewed week from the live dossier so a correctly
+    # completed packet does not depend on materialized Chronicle freshness.
+    current_week = int(snapshot.get("week") or 0)
+    teams_by_name = {value: key for key, value in names.items()}
+    for matchup in snapshot.get("matchups") or []:
+        roster_id = int(matchup.get("roster_id") or 0)
+        if roster_id and current_week:
+            by_week_roster[(current_week, roster_id)] = {
+                "team": names.get(roster_id, f"Roster {roster_id}"),
+                "roster_id": roster_id,
+                "score": float(matchup.get("points") or 0),
+                "week": current_week,
+            }
+
+    rows = list(by_week_roster.values())
+    rows.sort(
+        key=lambda row: (
+            -row["score"],
+            row["week"],
+            str(row.get("team") or "").casefold(),
+        )
+    )
     return rows[:3]
 
 
@@ -755,22 +789,20 @@ def _power_board_inputs(
         int(row.get("roster_id") or 0): row
         for row in dossier.get("lineup_efficiency") or []
     }
-    ranking_by_franchise = {
-        row.franchise_key: row.rank for row in external.official_power_rankings
-    }
-    playoff_by_franchise = _rows_by_franchise(external.playoff_odds)
-    usage_by_franchise = _rows_by_franchise(external.usage)
-    war_by_franchise = _rows_by_franchise(external.war)
-    cwar_by_franchise = _rows_by_franchise(external.cwar)
-
     rows = []
     for row in standings:
         rid = int(row.get("roster_id") or 0)
+        team = str(row.get("team") or "")
         eff = efficiency.get(rid) or {}
         franchise_key = (
             chronicle.identity_for_roster(league_key, season, rid)
             if chronicle is not None
             else None
+        )
+        ranking = external.ranking_for_roster(
+            rid,
+            franchise_key=franchise_key,
+            team=team,
         )
         rows.append(
             {
@@ -778,11 +810,16 @@ def _power_board_inputs(
                 "franchise_key": franchise_key,
                 "efficiency": eff.get("efficiency"),
                 "points_left_on_bench": eff.get("points_left_on_bench"),
-                "official_rank": ranking_by_franchise.get(str(franchise_key or "")),
-                "playoff_odds": playoff_by_franchise.get(str(franchise_key or "")),
-                "usage": usage_by_franchise.get(str(franchise_key or "")),
-                "war": war_by_franchise.get(str(franchise_key or "")),
-                "cwar": cwar_by_franchise.get(str(franchise_key or "")),
+                "official_rank": ranking.rank if ranking else None,
+                "previous_rank": ranking.previous_rank if ranking else None,
+                "rank_movement": ranking.movement if ranking else None,
+                "ranking_score": ranking.score if ranking else None,
+                "playoff_odds": _row_for_team(
+                    external.playoff_odds, rid, franchise_key, team
+                ),
+                "usage": _row_for_team(external.usage, rid, franchise_key, team),
+                "war": _row_for_team(external.war, rid, franchise_key, team),
+                "cwar": _row_for_team(external.cwar, rid, franchise_key, team),
             }
         )
     rows.sort(
@@ -794,19 +831,41 @@ def _power_board_inputs(
     return rows
 
 
-def _rows_by_franchise(rows: Any) -> dict[str, dict[str, Any]]:
-    result: dict[str, dict[str, Any]] = {}
+def _row_for_team(
+    rows: Any,
+    roster_id: int,
+    franchise_key: str | None,
+    team: str,
+) -> dict[str, Any] | None:
+    wanted_team = str(team or "").strip().casefold()
     for row in rows or []:
-        key = str(row.get("franchise_key") or "").strip()
-        if key:
-            result[key] = dict(row)
-    return result
+        if row.get("roster_id") is not None:
+            try:
+                if int(row.get("roster_id")) == int(roster_id):
+                    return dict(row)
+            except (TypeError, ValueError):
+                pass
+    if franchise_key:
+        for row in rows or []:
+            if str(row.get("franchise_key") or "") == str(franchise_key):
+                return dict(row)
+    if wanted_team:
+        for row in rows or []:
+            if str(row.get("team") or "").strip().casefold() == wanted_team:
+                return dict(row)
+    return None
 
 
 def _attach_stat_lines(value: Any, intelligence: dict[str, Any]) -> Any:
+    stat_book = intelligence.get("stat_book") or {}
+    source_rows = (
+        stat_book.get("rostered_records")
+        or stat_book.get("records")
+        or []
+    )
     by_sleeper = {
         str(row.get("sleeper_player_id")): row
-        for row in ((intelligence.get("stat_book") or {}).get("records") or [])
+        for row in source_rows
         if row.get("sleeper_player_id")
     }
 
@@ -832,6 +891,71 @@ def _attach_stat_lines(value: Any, intelligence: dict[str, Any]) -> Any:
             for key, row in value.items()
         }
     return value
+
+
+def _attach_rookie_draft_context(
+    rows: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+) -> list[dict[str, Any]]:
+    draft_source = (
+        ((snapshot.get("flagship_sleeper") or {}).get("drafts") or {})
+        or (snapshot.get("draft_context") or {})
+    )
+    current_names = _roster_team_names(snapshot)
+    team_count = max(1, len(current_names))
+    by_player: dict[str, dict[str, Any]] = {}
+
+    for record in draft_source.get("records") or []:
+        draft = record.get("draft") or {}
+        draft_season = str(draft.get("season") or "")
+        league_season = str((snapshot.get("league") or {}).get("season") or "")
+        if league_season and draft_season and draft_season != league_season:
+            continue
+        for pick in record.get("picks") or []:
+            player_id = str(pick.get("player_id") or "")
+            if not player_id:
+                continue
+            round_no = _safe_int(pick.get("round"))
+            slot = _safe_int(pick.get("draft_slot"))
+            pick_no = _safe_int(pick.get("pick_no"))
+            if slot is None and round_no and pick_no:
+                slot = pick_no - (round_no - 1) * team_count
+            if round_no is None or slot is None or slot <= 0:
+                continue
+            by_player[player_id] = {
+                "round": round_no,
+                "slot": slot,
+                "roster_id": _safe_int(pick.get("roster_id")),
+            }
+
+    enriched = []
+    for row in rows:
+        item = dict(row)
+        pick = by_player.get(str(item.get("player_id") or ""))
+        if pick:
+            label = f"{pick['round']}.{pick['slot']:02d}"
+            drafting_roster = pick.get("roster_id")
+            drafting_team = current_names.get(int(drafting_roster or 0))
+            current_team = str(item.get("team") or "")
+            if drafting_team and drafting_team != current_team:
+                label += f" — drafted by {drafting_team}"
+            item["ironbound_draft"] = label
+            item["ironbound_draft_round"] = pick["round"]
+            item["ironbound_draft_slot"] = pick["slot"]
+            item["ironbound_drafted_by"] = drafting_team
+        else:
+            item["ironbound_draft"] = None
+        enriched.append(item)
+    return enriched
+
+
+def _safe_int(value: Any) -> int | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _roster_team_names(snapshot: dict[str, Any]) -> dict[int, str]:

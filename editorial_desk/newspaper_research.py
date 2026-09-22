@@ -297,7 +297,7 @@ def render_newspaper_research_packet(packet: dict[str, Any]) -> str:
             facts = fact_lines(data, 16)
             lines.extend(f"- {row}" for row in facts)
             if data not in (None, [], {}, ()) and not facts:
-                lines.append("- Structured evidence is present in newspaper_research_packet.json.")
+                lines.extend(f"- {row}" for row in _compact_evidence(data))
 
     lines.extend(
         [
@@ -380,18 +380,175 @@ def _render_feature(feature: str, data: Any) -> list[str]:
         lines = []
         for row in data:
             swing = "RESULT SWUNG" if row.get("swung_result") else "final-window context"
-            remaining = ", ".join(
-                f"{player.get('player')} {float(player.get('points') or 0):.2f}"
-                for player in row.get("remaining_players") or []
-            )
             lines.append(
                 f"- {row.get('team')} vs {row.get('opponent')}: "
                 f"{float(row.get('pre_window_score') or 0):.2f}-"
                 f"{float(row.get('opponent_pre_window_score') or 0):.2f} before {row.get('window')}; "
                 f"final {float(row.get('final_score') or 0):.2f}-"
-                f"{float(row.get('opponent_final_score') or 0):.2f}; {swing}"
-                + (f"; remaining players: {remaining}" if remaining else "")
+                f"{float(row.get('opponent_final_score') or 0):.2f}; {swing}."
+            )
+            players = (row.get("remaining_players") or []) + (row.get("opponent_remaining_players") or [])
+            for player in players:
+                detail = f"{player.get('player')} — {float(player.get('points') or 0):.2f} FP"
+                if player.get("nfl_stat_line"):
+                    detail += f"; {player.get('nfl_stat_line')}"
+                lines.append(f"  - {detail}")
+        return lines
+
+    if feature == "ranking_movement" and isinstance(data, list):
+        lines = []
+        for row in sorted(data, key=lambda item: int(item.get("rank") or 999)):
+            prior = row.get("previous_rank")
+            movement = row.get("movement")
+            if prior is None:
+                move_text = "movement unavailable (no prior published baseline)"
+            elif int(movement or 0) > 0:
+                move_text = f"up {int(movement)} from #{int(prior)}"
+            elif int(movement or 0) < 0:
+                move_text = f"down {abs(int(movement))} from #{int(prior)}"
+            else:
+                move_text = f"unchanged from #{int(prior)}"
+            lines.append(f"- #{int(row.get('rank') or 0)} {row.get('team')} — {move_text}.")
+        return lines
+
+    if feature == "record_watch" and isinstance(data, dict):
+        lines = []
+        for row in data.get("records") or []:
+            facts = fact_lines(row, 2)
+            if facts:
+                lines.extend(f"- {fact}" for fact in facts)
+            else:
+                label = row.get("label") or row.get("record_type") or "Record signal"
+                value = row.get("value", row.get("points"))
+                team = row.get("team")
+                suffix = f": {value}" if value is not None else ""
+                lines.append(f"- {label}" + (f" — {team}" if team else "") + suffix)
+        if data.get("coverage_complete") is False:
+            lines.append("- Historical coverage is incomplete; record claims are limited to captured history.")
+        for warning in data.get("coverage_warnings") or []:
+            lines.append(f"- Coverage warning: {warning}")
+        return lines
+
+    if feature == "next_matchups" and isinstance(data, list):
+        lines = []
+        for row in data:
+            teams = row.get("teams") or []
+            if len(teams) == 2:
+                prefix = f"Week {row.get('week')}: " if row.get("week") else ""
+                lines.append(f"- {prefix}{teams[0].get('team')} vs {teams[1].get('team')}.")
+        return lines
+
+    if feature == "transactions" and isinstance(data, list):
+        lines = []
+        for row in data:
+            tx_type = str(row.get("type") or "transaction").replace("_", " ").title()
+            for move in row.get("moves") or []:
+                bid = f" for ${row.get('faab')} FAAB" if row.get("faab") not in (None, "") else ""
+                lines.append(f"- {tx_type}: {move.get('player')} — {move.get('from_team')} → {move.get('to_team')}{bid}.")
+        return lines
+
+    if feature == "future_picks" and isinstance(data, list):
+        lines = []
+        for row in data:
+            lines.append(
+                f"- {row.get('season')} Round {row.get('round')}: originally {row.get('original_team')}; "
+                f"now owned by {row.get('current_team')}"
+                + (f" via {row.get('previous_team')}" if row.get("previous_team") else "")
+                + "."
             )
         return lines
 
+    if feature == "rookie_draft" and isinstance(data, list):
+        lines = []
+        for row in data:
+            round_no = row.get("round")
+            pick_no = row.get("pick_no")
+            draft_slot = (row.get("metadata") or {}).get("draft_slot") or row.get("draft_slot")
+            slot = draft_slot or pick_no
+            draft_label = (
+                f"{int(round_no)}.{int(slot):02d}"
+                if round_no is not None and slot is not None
+                else f"pick {pick_no}"
+            )
+            lines.append(f"- {draft_label}: {row.get('player')} ({row.get('position') or 'N/A'}).")
+        return lines
+
+    if feature == "dynasty_market_values" and isinstance(data, dict):
+        rows = [row for row in data.values() if isinstance(row, dict)]
+        rows.sort(key=lambda row: (-float(row.get("trade_value") or row.get("sf_trade_value") or 0), str(row.get("full_name") or "")))
+        lines = []
+        for row in rows[:16]:
+            value = row.get("trade_value") if row.get("trade_value") is not None else row.get("sf_trade_value")
+            rank = row.get("overall_rank")
+            line = f"- {row.get('full_name') or row.get('name_id')} ({row.get('position')}, {row.get('team') or 'FA'})"
+            if value is not None:
+                line += f" — value {float(value):.0f}"
+            if rank is not None:
+                line += f", overall rank {rank}"
+            lines.append(line + ".")
+        return lines
+
+    if feature == "health_status" and isinstance(data, list):
+        lines = []
+        for row in data:
+            details = []
+            designation = row.get("injury_status") or row.get("game_designation")
+            if designation:
+                details.append(str(designation))
+            if row.get("injury"):
+                details.append(str(row.get("injury")))
+            if row.get("practice_participation"):
+                details.append(str(row.get("practice_participation")))
+            if row.get("on_ir"):
+                details.append("IR/RESERVE")
+            if not details:
+                continue
+            details = list(dict.fromkeys(details))
+            lines.append(f"- {row.get('team')}: {row.get('player')} ({row.get('position') or 'N/A'}, {row.get('nfl_team') or 'FA'}) — " + ", ".join(details) + ".")
+        return lines
+
+    if feature == "weekly_briefs" and isinstance(data, (list, dict)):
+        lines = []
+        team_rows = data.get("teams") or [] if isinstance(data, dict) else data
+        for row in team_rows:
+            detail = f"{row.get('result')} vs {row.get('opponent')}, {float(row.get('score') or 0):.2f}-{float(row.get('opponent_score') or 0):.2f}"
+            if row.get("efficiency") is not None:
+                detail += f"; {float(row.get('efficiency')):.1%} lineup efficiency"
+            if row.get("transactions"):
+                detail += f"; {int(row.get('transactions'))} transaction(s)"
+            if row.get("health_flags"):
+                detail += "; health watch: " + ", ".join(row.get("health_flags") or [])
+            lines.append(f"- {row.get('team')}: {detail}.")
+        return lines
+
     return []
+
+
+def _compact_evidence(value: Any, limit: int = 12) -> list[str]:
+    """Human-readable last-resort rendering for structured newspaper evidence."""
+    rows: list[str] = []
+
+    def visit(item: Any, prefix: str = "") -> None:
+        if len(rows) >= limit:
+            return
+        if isinstance(item, list):
+            for child in item:
+                visit(child, prefix)
+        elif isinstance(item, dict):
+            scalar = {
+                str(key): child
+                for key, child in item.items()
+                if not isinstance(child, (dict, list)) and child not in (None, "")
+            }
+            if scalar:
+                text = ", ".join(
+                    f"{key.replace('_', ' ')}={child}"
+                    for key, child in list(scalar.items())[:8]
+                )
+                rows.append((prefix + text).strip())
+            for key, child in item.items():
+                if isinstance(child, (dict, list)):
+                    visit(child, prefix=f"{key.replace('_', ' ')}: ")
+
+    visit(value)
+    return rows[:limit]

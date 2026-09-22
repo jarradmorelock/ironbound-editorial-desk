@@ -205,13 +205,19 @@ def positional_strength(snapshot: dict[str, Any]) -> FeatureResult:
 def future_pick_ledger(snapshot: dict[str, Any]) -> FeatureResult:
     rows = []
     for raw in snapshot.get("traded_picks") or []:
+        original = _int_or_none(raw.get("roster_id"))
+        current = _int_or_none(raw.get("owner_id"))
+        previous = _int_or_none(raw.get("previous_owner_id"))
         rows.append(
             {
                 "season": str(raw.get("season") or ""),
                 "round": _int_or_none(raw.get("round")),
-                "original_roster_id": _int_or_none(raw.get("roster_id")),
-                "current_roster_id": _int_or_none(raw.get("owner_id")),
-                "previous_roster_id": _int_or_none(raw.get("previous_owner_id")),
+                "original_roster_id": original,
+                "original_team": _team_name(snapshot, original or 0),
+                "current_roster_id": current,
+                "current_team": _team_name(snapshot, current or 0),
+                "previous_roster_id": previous,
+                "previous_team": _team_name(snapshot, previous or 0) if previous else None,
             }
         )
     rows.sort(key=lambda row: (row["season"], row["round"] or 99, row["original_roster_id"] or 0))

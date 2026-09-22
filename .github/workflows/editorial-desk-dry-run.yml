@@ -1,18 +1,19 @@
-name: Editorial desk weekly delivery
+name: RUN THIS - Weekly Editorial Delivery
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Validate configuration or collect a live read-only snapshot
+        description: Production finalizes a completed week; Preview is read-only
         required: true
-        default: validate
+        default: production
         type: choice
         options:
+          - production
+          - preview
           - validate
-          - collect
       week:
-        description: NFL week to collect when mode is collect
+        description: NFL week for Production or Preview
         required: true
         default: "1"
       send_email:
@@ -74,13 +75,43 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "active=true" >> "$GITHUB_OUTPUT"
-            echo "season=manual" >> "$GITHUB_OUTPUT"
-            echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
             if [[ "${{ inputs.mode }}" == "validate" ]]; then
+              echo "active=true" >> "$GITHUB_OUTPUT"
+              echo "season=manual" >> "$GITHUB_OUTPUT"
+              echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
               echo "job=validate" >> "$GITHUB_OUTPUT"
+            elif [[ "${{ inputs.mode }}" == "preview" ]]; then
+              echo "active=true" >> "$GITHUB_OUTPUT"
+              echo "season=manual" >> "$GITHUB_OUTPUT"
+              echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
+              echo "job=preview" >> "$GITHUB_OUTPUT"
             else
-              echo "job=manual" >> "$GITHUB_OUTPUT"
+              echo "job=primary" >> "$GITHUB_OUTPUT"
+              REQUESTED_WEEK="${{ inputs.week }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from editorial_desk.period import detect_completed_period, PeriodDetectionError
+
+          requested = int(os.environ["REQUESTED_WEEK"])
+          try:
+              period = detect_completed_period()
+          except PeriodDetectionError as exc:
+              print("active=false")
+              print("season=unknown")
+              print(f"week={requested}")
+              print(f"reason=Could not verify completed NFL week: {exc}")
+          else:
+              verified = bool(period["active"]) and int(period["week"]) == requested
+              print(f"active={str(verified).lower()}")
+              print(f"season={period['season']}")
+              print(f"week={requested}")
+              if verified:
+                  print(f"reason=NFL Week {requested} is verified fully complete; safe to finalize")
+              else:
+                  print(
+                      "reason=Requested production week does not match the latest fully "
+                      f"completed NFL week ({period['week']})"
+                  )
+          PY
             fi
           else
             if [[ "${{ github.event.schedule }}" == "17 21 * * 2" ]]; then
@@ -91,8 +122,15 @@ jobs:
             python -m editorial_desk completed-period >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Refuse unsafe manual Production
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'production' && steps.plan.outputs.active != 'true' }}
+        run: |
+          echo "${{ steps.plan.outputs.reason }}"
+          echo "Production was not run because the requested week is not verified fully complete."
+          exit 1
+
       - name: Explain a scheduled no-op
-        if: ${{ steps.plan.outputs.active != 'true' }}
+        if: ${{ github.event_name != 'workflow_dispatch' && steps.plan.outputs.active != 'true' }}
         run: echo "${{ steps.plan.outputs.reason }}; no packet will be sent."
 
       - name: Validate configuration
@@ -144,13 +182,31 @@ jobs:
 
       - name: Capture pinned Chronicle SHA
         id: chronicle_sha
-        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'manual') }}
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
         working-directory: chronicle-data
         shell: bash
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch Tuesday rankings handoff when available
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: app
+        shell: bash
+        run: |
+          mkdir -p editorial-inputs
+          for pair in "main:ironbound_weekly" "free:unbound_weekly"; do
+            source_key="${pair%%:*}"
+            publication_key="${pair##*:}"
+            url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/${source_key}.json"
+            if curl --fail --silent --show-error --location "$url" -o "editorial-inputs/${publication_key}.json"; then
+              echo "Loaded ranking handoff for ${publication_key}."
+            else
+              rm -f "editorial-inputs/${publication_key}.json"
+              echo "WARNING: No current ranking handoff for ${publication_key}; packet will mark those inputs awaiting."
+            fi
+          done
+
       - name: Collect complete weekly dossiers
-        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'manual') }}
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
         working-directory: app
         run: >-
           python -m editorial_desk collect
@@ -202,7 +258,7 @@ jobs:
           --chronicle-revision "${{ steps.chronicle_sha.outputs.sha }}"
 
       - name: Upload complete research dossiers
-        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'manual') }}
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
         uses: actions/upload-artifact@v7
         with:
           name: editorial-desk-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
@@ -211,7 +267,7 @@ jobs:
           retention-days: 14
 
       - name: Email complete publication dossiers
-        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || (steps.plan.outputs.job == 'manual' && inputs.send_email)) }}
+        if: ${{ steps.plan.outputs.active == 'true' && ((steps.plan.outputs.job == 'primary' && (github.event_name != 'workflow_dispatch' || inputs.send_email)) || (steps.plan.outputs.job == 'preview' && inputs.send_email)) }}
         working-directory: app
         shell: bash
         env:

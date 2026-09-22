@@ -61,6 +61,7 @@ def _fixture():
         )
         stat_rows.append(
             {
+                "sleeper_player_id": player_id,
                 "fantasy_team": team,
                 "player": f"Player {roster_id}",
                 "nfl_player_id": f"g{roster_id}",
@@ -139,6 +140,30 @@ def _fixture():
         "rosters": rosters,
         "players": players,
         "matchups": matchups,
+        "draft_context": {
+            "status": "available",
+            "records": [
+                {
+                    "draft": {"season": "2026", "draft_id": "rookies"},
+                    "picks": [
+                        {
+                            "player_id": "p1",
+                            "round": 1,
+                            "draft_slot": 3,
+                            "pick_no": 3,
+                            "roster_id": 2,
+                        },
+                        {
+                            "player_id": "p2",
+                            "round": 1,
+                            "draft_slot": 4,
+                            "pick_no": 4,
+                            "roster_id": 2,
+                        },
+                    ],
+                }
+            ],
+        },
     }
 
     dossier = {
@@ -300,3 +325,68 @@ def test_missing_tuesday_handoff_is_awaiting_input_not_data_failure(tmp_path):
     assert "WAR" in waiting
     assert "cWAR" in waiting
     assert "usage" in waiting.lower()
+
+
+def test_rookie_watch_keeps_current_team_and_adds_ironbound_draft_context(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+
+    rookies = packet["weekly_honors"]["rookie_watch_top_five"]
+    first = next(row for row in rookies if row["player_id"] == "p1")
+    second = next(row for row in rookies if row["player_id"] == "p2")
+
+    assert first["team"] == "Team 1"
+    assert first["ironbound_draft"] == "1.03 — drafted by Team 2"
+    assert second["team"] == "Team 2"
+    assert second["ironbound_draft"] == "1.04"
+
+    text = render_flagship_research_packet(packet)
+    assert "| Current Team | Ironbound Draft |" in text
+    assert "1.03 — drafted by Team 2" in text
+
+
+def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        official_power_rankings=tuple(
+            OfficialPowerRanking(
+                franchise_key=None,
+                rank=rank,
+                roster_id=rank,
+                team=f"Team {rank}",
+                previous_rank=rank + 1,
+                movement=1,
+            )
+            for rank in range(1, 17)
+        ),
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+        usage=({"roster_id": 1, "value": 0.61},),
+        war=({"roster_id": 1, "value": 2.4},),
+        cwar=({"roster_id": 1, "value": 1.8},),
+    )
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        external,
+        history_root=tmp_path,
+    )
+
+    first = next(row for row in packet["power_board"]["writeup_inputs"] if row["roster_id"] == 1)
+    assert first["official_rank"] == 1
+    assert first["previous_rank"] == 2
+    assert first["rank_movement"] == 1
+    assert first["playoff_odds"]["playoff"] == 79
+    assert first["war"]["value"] == 2.4

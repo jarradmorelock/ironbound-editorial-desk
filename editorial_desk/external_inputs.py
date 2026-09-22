@@ -12,8 +12,13 @@ class ExternalInputError(ValueError):
 
 @dataclass(frozen=True)
 class OfficialPowerRanking:
-    franchise_key: str
+    franchise_key: str | None
     rank: int
+    roster_id: int | None = None
+    team: str | None = None
+    previous_rank: int | None = None
+    movement: int | None = None
+    score: float | None = None
 
 
 @dataclass(frozen=True)
@@ -52,6 +57,29 @@ class ExternalEditorialInputs:
         for row in self.official_power_rankings:
             if row.franchise_key == wanted:
                 return row.rank
+        return None
+
+    def ranking_for_roster(
+        self,
+        roster_id: int,
+        *,
+        franchise_key: str | None = None,
+        team: str | None = None,
+    ) -> OfficialPowerRanking | None:
+        wanted_roster = int(roster_id)
+        wanted_franchise = str(franchise_key or "").strip()
+        wanted_team = str(team or "").strip().casefold()
+        for row in self.official_power_rankings:
+            if row.roster_id is not None and int(row.roster_id) == wanted_roster:
+                return row
+        if wanted_franchise:
+            for row in self.official_power_rankings:
+                if str(row.franchise_key or "") == wanted_franchise:
+                    return row
+        if wanted_team:
+            for row in self.official_power_rankings:
+                if str(row.team or "").strip().casefold() == wanted_team:
+                    return row
         return None
 
 
@@ -94,21 +122,44 @@ def load_external_inputs(
             raise ExternalInputError(
                 f"official_power_rankings[{index}] must be an object"
             )
-        franchise_key = str(row.get("franchise_key") or "").strip()
-        if not franchise_key:
+        franchise_key = str(row.get("franchise_key") or "").strip() or None
+        roster_id_raw = row.get("roster_id")
+        roster_id = None
+        if roster_id_raw is not None:
+            if isinstance(roster_id_raw, bool):
+                raise ExternalInputError("roster_id must be a positive integer")
+            try:
+                roster_id = int(roster_id_raw)
+            except (TypeError, ValueError) as exc:
+                raise ExternalInputError("roster_id must be a positive integer") from exc
+            if roster_id <= 0:
+                raise ExternalInputError("roster_id must be a positive integer")
+        team = str(row.get("team") or "").strip() or None
+        if not franchise_key and roster_id is None and not team:
             raise ExternalInputError(
-                f"official_power_rankings[{index}].franchise_key is required"
+                f"official_power_rankings[{index}] requires franchise_key, roster_id, or team"
             )
         rank = row.get("rank")
         if isinstance(rank, bool) or not isinstance(rank, int) or rank <= 0:
             raise ExternalInputError("Official rank must be a positive integer")
         if rank in seen_ranks:
             raise ExternalInputError(f"Duplicate official rank: {rank}")
-        if franchise_key in seen_franchises:
+        if franchise_key and franchise_key in seen_franchises:
             raise ExternalInputError(f"Duplicate franchise_key: {franchise_key}")
         seen_ranks.add(rank)
-        seen_franchises.add(franchise_key)
-        rankings.append(OfficialPowerRanking(franchise_key=franchise_key, rank=rank))
+        if franchise_key:
+            seen_franchises.add(franchise_key)
+        rankings.append(
+            OfficialPowerRanking(
+                franchise_key=franchise_key,
+                rank=rank,
+                roster_id=roster_id,
+                team=team,
+                previous_rank=_optional_int(row.get("previous_rank")),
+                movement=_optional_int(row.get("movement")),
+                score=_optional_float(row.get("score")),
+            )
+        )
 
     war_raw = raw.get("war") or []
     if not isinstance(war_raw, list) or any(not isinstance(row, dict) for row in war_raw):
@@ -139,3 +190,24 @@ def load_external_inputs(
         notes=tuple(str(note) for note in notes_raw),
         source_metadata=dict(source_metadata),
     )
+
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

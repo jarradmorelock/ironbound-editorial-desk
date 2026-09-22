@@ -1,4 +1,4 @@
-name: Publication regression checks
+name: INTERNAL - Publication Tests
 
 on:
   pull_request:

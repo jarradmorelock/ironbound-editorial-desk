@@ -233,23 +233,15 @@ def _build_flagship_stat_book(
     stats_source: dict[str, Any],
     usage: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
-    """Build a writing-first starter stat book from official weekly NFL stats.
-
-    Fantasy points are deliberately excluded. The magazine should describe
-    football performance with real box-score and usage evidence, reserving
-    fantasy points for matchup totals and decisions where the point swing
-    changes the fantasy outcome.
-    """
+    """Build real-NFL stat books for starters and all rostered players."""
     status = str(stats_source.get("status") or "unavailable")
     if status != "available":
         return {
             "status": "unavailable",
             "records": [],
+            "rostered_records": [],
             "missing_starters": [],
-            "error": str(
-                stats_source.get("error")
-                or "weekly nflverse player statistics were unavailable"
-            ),
+            "error": str(stats_source.get("error") or "weekly nflverse player statistics were unavailable"),
         }
 
     stats = stats_source.get("records") or []
@@ -263,33 +255,23 @@ def _build_flagship_stat_book(
         team_targets[team] += _number(row.get("targets"))
 
     players = snapshot.get("players") or {}
-    users = {
-        str(user.get("user_id")): user for user in snapshot.get("users") or []
-    }
+    users = {str(user.get("user_id")): user for user in snapshot.get("users") or []}
     rosters = {
         int(roster.get("roster_id") or 0): roster
         for roster in snapshot.get("rosters") or []
     }
 
+    rostered_by_id: dict[str, dict[str, Any]] = {}
     by_gsis: dict[str, dict[str, Any]] = {}
     by_signature: dict[tuple[str, str, str], dict[str, Any]] = {}
-    expected: dict[str, dict[str, Any]] = {}
-
-    for matchup in snapshot.get("matchups") or []:
-        roster_id = int(matchup.get("roster_id") or 0)
-        roster = rosters.get(roster_id) or {}
+    for roster_id, roster in rosters.items():
         owner = users.get(str(roster.get("owner_id"))) or {}
         metadata = owner.get("metadata") or {}
-        fantasy_team = str(
-            metadata.get("team_name")
-            or owner.get("display_name")
-            or f"Roster {roster_id}"
-        )
-        for raw_player_id in matchup.get("starters") or []:
+        fantasy_team = str(metadata.get("team_name") or owner.get("display_name") or f"Roster {roster_id}")
+        for raw_player_id in roster.get("players") or []:
             sleeper_id = str(raw_player_id)
             player = players.get(sleeper_id) or {}
             position = str(player.get("position") or "")
-            # nflverse weekly player stats do not provide a team-defense row.
             if position.upper() in {"DEF", "DST", "D/ST"}:
                 continue
             context = {
@@ -300,51 +282,38 @@ def _build_flagship_stat_book(
                 "position": position or None,
                 "nfl_team": player.get("team"),
             }
-            expected[sleeper_id] = context
+            rostered_by_id[sleeper_id] = context
             gsis_id = str(player.get("gsis_id") or "").strip()
             if gsis_id:
                 by_gsis[gsis_id] = context
-            signature = _identity_signature(
-                context["player"],
-                player.get("team"),
-                player.get("position"),
-            )
+            signature = _identity_signature(context["player"], player.get("team"), player.get("position"))
             if signature:
                 by_signature[signature] = context
 
-    records: list[dict[str, Any]] = []
-    matched_sleeper_ids: set[str] = set()
+    expected: dict[str, dict[str, Any]] = {}
+    for matchup in snapshot.get("matchups") or []:
+        for raw_player_id in matchup.get("starters") or []:
+            sleeper_id = str(raw_player_id)
+            context = rostered_by_id.get(sleeper_id)
+            if context is not None:
+                expected[sleeper_id] = context
 
+    rostered_records: list[dict[str, Any]] = []
+    starter_records: list[dict[str, Any]] = []
+    matched_starter_ids: set[str] = set()
     for row in stats:
         nfl_id = str(row.get("player_id") or "").strip()
-        name = str(
-            row.get("player_display_name")
-            or row.get("player_name")
-            or nfl_id
-        )
-        signature = _identity_signature(
-            name,
-            row.get("team"),
-            row.get("position"),
-        )
-        context = by_gsis.get(nfl_id) or (
-            by_signature.get(signature) if signature else None
-        )
+        name = str(row.get("player_display_name") or row.get("player_name") or nfl_id)
+        signature = _identity_signature(name, row.get("team"), row.get("position"))
+        context = by_gsis.get(nfl_id) or (by_signature.get(signature) if signature else None)
         if not context:
             continue
-
-        matched_sleeper_ids.add(str(context["sleeper_player_id"]))
         usage_row = usage.get(nfl_id) or {}
         team = str(row.get("team") or "")
         carries = _number(row.get("carries"))
         targets = _number(row.get("targets"))
-        carry_share = (
-            carries / team_carries[team] if team and team_carries.get(team) else None
-        )
-        target_share = (
-            targets / team_targets[team] if team and team_targets.get(team) else None
-        )
-
+        carry_share = carries / team_carries[team] if team and team_carries.get(team) else None
+        target_share = targets / team_targets[team] if team and team_targets.get(team) else None
         record = {
             **context,
             "nfl_player_id": nfl_id or None,
@@ -370,7 +339,11 @@ def _build_flagship_stat_book(
             "inside_5_opportunities": usage_row.get("inside_5_opportunities"),
         }
         record["nfl_stat_line"] = _format_nfl_stat_line(record)
-        records.append(record)
+        rostered_records.append(record)
+        sleeper_id = str(context["sleeper_player_id"])
+        if sleeper_id in expected:
+            matched_starter_ids.add(sleeper_id)
+            starter_records.append(dict(record))
 
     missing = [
         {
@@ -381,29 +354,23 @@ def _build_flagship_stat_book(
             ),
         }
         for sleeper_id, context in expected.items()
-        if sleeper_id not in matched_sleeper_ids
+        if sleeper_id not in matched_starter_ids
     ]
-
-    records.sort(
-        key=lambda row: (
+    def sort_key(row: dict[str, Any]) -> tuple[str, str, str]:
+        return (
             str(row.get("fantasy_team") or "").casefold(),
             str(row.get("position") or ""),
             str(row.get("player") or "").casefold(),
         )
-    )
-    missing.sort(
-        key=lambda row: (
-            str(row.get("fantasy_team") or "").casefold(),
-            str(row.get("position") or ""),
-            str(row.get("player") or "").casefold(),
-        )
-    )
+    rostered_records.sort(key=sort_key)
+    starter_records.sort(key=sort_key)
+    missing.sort(key=sort_key)
     return {
         "status": "available",
-        "records": records,
+        "records": starter_records,
+        "rostered_records": rostered_records,
         "missing_starters": missing,
     }
-
 
 def _format_nfl_stat_line(row: dict[str, Any]) -> str:
     """Format actual NFL production and usage for magazine research."""

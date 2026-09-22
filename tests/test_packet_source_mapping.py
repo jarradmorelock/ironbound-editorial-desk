@@ -105,7 +105,9 @@ def test_packet_resolver_uses_established_weekly_dossier_paths():
 
     assert all(rows[feature]["status"] == "ready" for feature in features)
     assert rows["standings"]["data"] == _dossier()["rankings"]["official_standings"]
-    assert rows["ranking_movement"]["data"] == _dossier()["rankings"]
+    assert rows["ranking_movement"]["data"][0]["team"] == "One"
+    assert rows["ranking_movement"]["data"][0]["rank"] == 1
+    assert rows["ranking_movement"]["data"][0]["movement"] is None
     assert rows["division_metrics"]["data"] == _dossier()["divisions"]
     assert rows["record_watch"]["data"]["records"] == _dossier()["weekly_records"]
     assert set(rows["idp_position_metrics"]["data"]) == {"QB", "LB"}
@@ -115,7 +117,16 @@ def test_packet_resolver_uses_established_weekly_dossier_paths():
     assert honors["free_agent"] == _dossier()["weekly_features"]["free_agent_of_the_week"]
     assert honors["bad_beat"] == _dossier()["awards"]["bad_beat"]
     assert rows["dynasty_market_values"]["data"]["q1"]["trade_value"] == 9000
-    assert rows["next_matchups"]["data"] == _snapshot()["next_matchups"]["records"]
+    assert rows["next_matchups"]["data"] == [
+        {
+            "week": 2,
+            "matchup_id": 2,
+            "teams": [
+                {"roster_id": 1, "team": "One"},
+                {"roster_id": 2, "team": "Two"},
+            ],
+        }
+    ]
 
 
 class FakeSleeper:

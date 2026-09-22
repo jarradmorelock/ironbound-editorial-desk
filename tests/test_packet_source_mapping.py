@@ -105,7 +105,9 @@ def test_packet_resolver_uses_established_weekly_dossier_paths():
 
     assert all(rows[feature]["status"] == "ready" for feature in features)
     assert rows["standings"]["data"] == _dossier()["rankings"]["official_standings"]
-    assert rows["ranking_movement"]["data"] == _dossier()["rankings"]
+    assert rows["ranking_movement"]["data"][0]["team"] == "One"
+    assert rows["ranking_movement"]["data"][0]["rank"] == 1
+    assert rows["ranking_movement"]["data"][0]["movement"] is None
     assert rows["division_metrics"]["data"] == _dossier()["divisions"]
     assert rows["record_watch"]["data"]["records"] == _dossier()["weekly_records"]
     assert set(rows["idp_position_metrics"]["data"]) == {"QB", "LB"}

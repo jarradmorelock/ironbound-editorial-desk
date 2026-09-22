@@ -272,3 +272,29 @@ def test_divisional_mvp_email_cli_is_available():
     )
     assert args.command == "email-divisional-mvps"
     assert args.week == 2
+
+
+def test_build_dossier_email_attaches_authoritative_ranking_assets(tmp_path):
+    publication_root = _weekly_packet(tmp_path)
+    assets = publication_root / "publication-assets"
+    assets.mkdir()
+    (assets / "ironbound_weekly-power-rankings.png").write_bytes(b"rankings")
+    (assets / "ironbound_weekly-playoff-forecast.png").write_bytes(b"playoffs")
+
+    message = build_dossier_email(
+        tmp_path,
+        1,
+        "desk@example.com",
+        "reader@example.com",
+    )
+
+    attachments = list(message.iter_attachments())
+    filenames = [part.get_filename() for part in attachments]
+    assert filenames == [
+        "ironbound-week-01.md",
+        "ironbound_weekly-playoff-forecast.png",
+        "ironbound_weekly-power-rankings.png",
+    ]
+    assert "Use them unchanged" in message.get_body().get_content()
+    image_parts = attachments[1:]
+    assert all(part.get_content_type() == "image/png" for part in image_parts)

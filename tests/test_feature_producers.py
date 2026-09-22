@@ -150,9 +150,22 @@ def test_record_watch_carries_incomplete_chronicle_warning():
 
 
 def test_workload_stat_lines_uses_real_nfl_volume_not_fantasy_points():
-    result = workload_stat_lines(_snapshot())
+    snapshot = _snapshot()
+    snapshot["rosters"][0]["players"].extend(["r1", "w1"])
+    snapshot["players"]["r1"] = {
+        "full_name": "Runner",
+        "position": "RB",
+        "fantasy_positions": ["RB"],
+    }
+    snapshot["players"]["w1"] = {
+        "full_name": "Receiver",
+        "position": "WR",
+        "fantasy_positions": ["WR"],
+    }
+    result = workload_stat_lines(snapshot)
     assert result.status == "ready"
     assert result.data["passing_attempts"]["player_name"] == "Q Two"
     assert result.data["passing_yards"]["player_name"] == "Q One"
     assert result.data["rushing_attempts"]["player_name"] == "Runner"
     assert result.data["receptions"]["player_name"] == "Receiver"
+    assert result.data["rushing_attempts"]["fantasy_team"] == "One"

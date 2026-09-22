@@ -78,9 +78,18 @@ def build_dossier_email(
         packet_lines.append(
             f"- {league.get('publication')}: {league.get('configured_name')}"
         )
+    publication_assets = sorted(
+        output_root.glob(f"*/week-{week:02d}/*/publication-assets/*.png")
+    )
     archive_note = (
         "\nA validated Chronicle archive is attached as this month's recovery copy.\n"
         if archive_paths
+        else ""
+    )
+    asset_note = (
+        "\nThe exact Power Rankings / Playoff Forecast PNGs from the ranking "
+        "engine are also attached for magazine placement. Use them unchanged.\n"
+        if publication_assets
         else ""
     )
     message.set_content(
@@ -88,6 +97,7 @@ def build_dossier_email(
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
+        + asset_note
         + archive_note
     )
 
@@ -98,6 +108,13 @@ def build_dossier_email(
             content,
             subtype="markdown",
             filename=f"{league_key}-week-{week:02d}.md",
+        )
+    for path in publication_assets:
+        message.add_attachment(
+            path.read_bytes(),
+            maintype="image",
+            subtype="png",
+            filename=path.name,
         )
     for path in attachments:
         if path.suffix.lower() == ".zip":

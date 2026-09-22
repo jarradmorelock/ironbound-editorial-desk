@@ -319,6 +319,9 @@ def game_window_context(
         if isinstance(row, dict) and row.get("name")
     ]
     if not windows:
+        monday_rows = _monday_timing_context(dossier)
+        if monday_rows:
+            return ready("game_window_context", monday_rows)
         return ready_no_items(
             "game_window_context", reason="No identifiable final game window"
         )
@@ -427,6 +430,75 @@ def game_window_context(
     return ready(
         "game_window_context",
         sorted(rows, key=lambda row: (row["window"], row["roster_id"])),
+    )
+
+
+def _monday_timing_context(dossier: dict[str, Any]) -> list[dict[str, Any]]:
+    """Normalize the dossier's already-built Monday timing evidence for newspapers."""
+    monday = ((dossier.get("game_timing") or {}).get("monday") or {})
+    rows: list[dict[str, Any]] = []
+    for matchup in monday.get("matchups") or []:
+        if not matchup.get("completed") or not matchup.get("day_was_active"):
+            continue
+        winner_name = str(matchup.get("final_winner") or "")
+        loser_name = str(matchup.get("final_loser") or "")
+        sides = {
+            str(side.get("team") or ""): side
+            for side in matchup.get("teams") or []
+        }
+        winner = sides.get(winner_name) or {}
+        loser = sides.get(loser_name) or {}
+        if not winner_name or not loser_name:
+            continue
+        rows.append(
+            {
+                "window": "Monday",
+                "matchup_id": matchup.get("matchup_id"),
+                "team": winner_name,
+                "opponent": loser_name,
+                "provenance": "reconstructed_from_game_timing",
+                "pre_window_score": matchup.get("winner_score_before_day"),
+                "opponent_pre_window_score": matchup.get("loser_score_before_day"),
+                "remaining_players": [
+                    {
+                        "player_id": player.get("player_id"),
+                        "player": player.get("player"),
+                        "points": player.get("fantasy_points"),
+                        "nfl_stat_line": player.get("nfl_stat_line"),
+                    }
+                    for player in winner.get("players") or []
+                ],
+                "opponent_remaining_players": [
+                    {
+                        "player_id": player.get("player_id"),
+                        "player": player.get("player"),
+                        "points": player.get("fantasy_points"),
+                        "nfl_stat_line": player.get("nfl_stat_line"),
+                    }
+                    for player in loser.get("players") or []
+                ],
+                "window_points": winner.get("day_points"),
+                "opponent_window_points": loser.get("day_points"),
+                "final_score": winner.get("points"),
+                "opponent_final_score": loser.get("points"),
+                "final_margin": matchup.get("final_margin"),
+                "trailing_before_window": bool(
+                    (matchup.get("winner_score_before_day") or 0)
+                    < (matchup.get("loser_score_before_day") or 0)
+                ),
+                "final_result": "win",
+                "swung_result": bool(matchup.get("lead_changed_on_day")),
+                "tie_broken": bool(matchup.get("tie_broken_on_day")),
+                "margin_supplied_by_window": bool(matchup.get("margin_supplied_by_day")),
+            }
+        )
+    return sorted(
+        rows,
+        key=lambda row: (
+            not row.get("swung_result"),
+            float(row.get("final_margin") or 999999),
+            str(row.get("matchup_id") or ""),
+        ),
     )
 
 

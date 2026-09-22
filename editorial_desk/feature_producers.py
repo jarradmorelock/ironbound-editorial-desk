@@ -231,6 +231,7 @@ def record_watch(
 
 
 def workload_stat_lines(snapshot: dict[str, Any]) -> FeatureResult:
+    """Return real-NFL workload leaders from players actually rostered in this league."""
     source = ((snapshot.get("nfl_context") or {}).get("player_stats") or {})
     if source.get("status") != "available":
         return unavailable(
@@ -242,6 +243,37 @@ def workload_stat_lines(snapshot: dict[str, Any]) -> FeatureResult:
         return ready_no_items(
             "workload_stat_lines", reason="NFL player-stat source returned no records"
         )
+
+    roster_by_player: dict[str, int] = {}
+    for roster in snapshot.get("rosters") or []:
+        roster_id = _int(roster.get("roster_id"))
+        for player_id in roster.get("players") or []:
+            roster_by_player[str(player_id)] = roster_id
+
+    players = snapshot.get("players") or {}
+    gsis_to_sleeper = {
+        str(player.get("gsis_id")): str(player_id)
+        for player_id, player in players.items()
+        if player.get("gsis_id")
+    }
+    rostered_records: list[dict[str, Any]] = []
+    for row in records:
+        sleeper_id = gsis_to_sleeper.get(str(row.get("player_id") or ""))
+        if not sleeper_id or sleeper_id not in roster_by_player:
+            continue
+        rostered_records.append(
+            {
+                **row,
+                "sleeper_player_id": sleeper_id,
+                "fantasy_team": _team_name(snapshot, roster_by_player[sleeper_id]),
+            }
+        )
+    if not rostered_records:
+        return ready_no_items(
+            "workload_stat_lines",
+            reason="No rostered players matched the weekly NFL player-stat source",
+        )
+
     categories = {
         "passing_attempts": "attempts",
         "passing_yards": "passing_yards",
@@ -250,20 +282,25 @@ def workload_stat_lines(snapshot: dict[str, Any]) -> FeatureResult:
         "rushing_yards": "rushing_yards",
         "rushing_touchdowns": "rushing_tds",
         "receptions": "receptions",
+        "targets": "targets",
         "receiving_yards": "receiving_yards",
         "receiving_touchdowns": "receiving_tds",
     }
     leaders: dict[str, dict[str, Any]] = {}
     for label, field in categories.items():
-        candidates = [row for row in records if row.get(field) is not None]
+        candidates = [row for row in rostered_records if row.get(field) is not None]
         if candidates:
             leaders[label] = max(
                 candidates,
-                key=lambda row: (_number(row.get(field)), str(row.get("player_name") or "")),
+                key=lambda row: (
+                    _number(row.get(field)),
+                    str(row.get("player_display_name") or row.get("player_name") or ""),
+                ),
             )
     if not leaders:
         return ready_no_items(
-            "workload_stat_lines", reason="NFL player-stat records contained no workload fields"
+            "workload_stat_lines",
+            reason="Rostered NFL player-stat records contained no workload fields",
         )
     return ready("workload_stat_lines", leaders)
 

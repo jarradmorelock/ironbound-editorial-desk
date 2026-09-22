@@ -192,7 +192,7 @@ def build_newspaper_research_packet(
             "sections": list(publication_packet.get("departments") or []),
             "health": dossier.get("roster_health") or {},
             "source_status": _source_status(snapshot, dossier),
-            "input_division_leak": raw_division_leak,
+            "input_forbidden_group_leak": raw_division_leak,
         },
         publication_packet,
     )
@@ -229,7 +229,7 @@ def validate_newspaper_research_packet(packet: dict[str, Any]) -> dict[str, Any]
 
     if contract.get("forbid_divisions"):
         encoded = json.dumps(packet, sort_keys=True).casefold()
-        division_leak = bool(packet.get("input_division_leak")) or (
+        division_leak = bool(packet.get("input_forbidden_group_leak")) or (
             "division_metrics" in by_feature
             or "divisional_started_mvps" in by_feature
             or '"division_id"' in encoded

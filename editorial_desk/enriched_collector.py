@@ -17,6 +17,10 @@ from .flagship_research import (
 )
 from .publication_packets import build_publication_packet
 from .publication_render import write_publication_packet
+from .newspaper_research import (
+    build_newspaper_research_packet,
+    write_newspaper_research_packet,
+)
 from .rankings import RankingsClient
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
@@ -159,14 +163,17 @@ def _write_newspaper_packet(
     publication: PublicationConfig,
     *,
     phase: str = "weekly",
-) -> tuple[Path, Path]:
+) -> tuple[Path, ...]:
     packet = build_publication_packet(
         snapshot,
         dossier,
         publication,
         phase,
     )
-    return write_publication_packet(directory, packet)
+    generated = list(write_publication_packet(directory, packet))
+    research = build_newspaper_research_packet(snapshot, dossier, packet)
+    generated.extend(write_newspaper_research_packet(directory, research))
+    return tuple(generated)
 
 
 def _collect_deep_nfl_context(

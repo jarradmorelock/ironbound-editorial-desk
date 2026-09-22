@@ -310,3 +310,42 @@ def test_season_efficiency_reads_finalized_metric_events(tmp_path):
             "event_id": rows[0]["event_id"],
         }
     ]
+
+
+def test_season_matchup_finals_reads_raw_event_ledger_without_materialization(tmp_path):
+    from editorial_desk.chronicle_events import make_event
+    from editorial_desk.chronicle_store import ChronicleStore
+
+    store = ChronicleStore(tmp_path)
+    store.append_events(
+        [
+            make_event(
+                event_type="MATCHUP_FINAL",
+                source="sleeper_matchups",
+                source_ref="game:week1:1",
+                league_key="demo",
+                season="2026",
+                week=1,
+                provenance="source_exact",
+                entities={"matchup_id": 1},
+                evidence={
+                    "matchup_id": 1,
+                    "rosters": [
+                        {"roster_id": 1, "points": 167.15},
+                        {"roster_id": 2, "points": 99.4},
+                    ],
+                    "winner_roster_id": 1,
+                    "loser_roster_id": 2,
+                    "tie": False,
+                },
+                observed_at="2026-09-15T12:00:00+00:00",
+            )
+        ]
+    )
+
+    rows = ChronicleQueries(tmp_path).season_matchup_finals("demo", "2026")
+
+    assert [(row["week"], row["roster_id"], row["points"]) for row in rows] == [
+        (1, 1, 167.15),
+        (1, 2, 99.4),
+    ]

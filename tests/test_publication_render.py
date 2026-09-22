@@ -55,7 +55,12 @@ def test_writer_emits_json_and_markdown_without_mutating_packet(tmp_path):
     before = json.loads(json.dumps(packet))
     paths = write_publication_packet(tmp_path, packet)
 
-    assert {path.name for path in paths} == {"publication_packet.json", "publication_packet.md"}
+    assert {path.name for path in paths} == {
+        "publication_packet.json",
+        "publication_packet.md",
+        "newspaper_research_packet.json",
+        "newspaper_research_packet.md",
+    }
     assert json.loads((tmp_path / "publication_packet.json").read_text()) == packet
     assert "## Ward Report" in (tmp_path / "publication_packet.md").read_text()
     assert packet == before

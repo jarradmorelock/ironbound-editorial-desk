@@ -395,3 +395,33 @@ def _render_feature(feature: str, data: Any) -> list[str]:
         return lines
 
     return []
+
+
+def _compact_evidence(value: Any, limit: int = 12) -> list[str]:
+    """Human-readable last-resort rendering for structured newspaper evidence."""
+    rows: list[str] = []
+
+    def visit(item: Any, prefix: str = "") -> None:
+        if len(rows) >= limit:
+            return
+        if isinstance(item, list):
+            for child in item:
+                visit(child, prefix)
+        elif isinstance(item, dict):
+            scalar = {
+                str(key): child
+                for key, child in item.items()
+                if not isinstance(child, (dict, list)) and child not in (None, "")
+            }
+            if scalar:
+                text = ", ".join(
+                    f"{key.replace('_', ' ')}={child}"
+                    for key, child in list(scalar.items())[:8]
+                )
+                rows.append((prefix + text).strip())
+            for key, child in item.items():
+                if isinstance(child, (dict, list)):
+                    visit(child, prefix=f"{key.replace('_', ' ')}: ")
+
+    visit(value)
+    return rows[:limit]

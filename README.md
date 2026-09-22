@@ -300,6 +300,28 @@ Finalized Chronicle collection also stores one
 season-to-date efficiency board durable instead of depending on temporary
 GitHub Actions artifacts.
 
+## Actions: what to run
+
+For normal commissioner use, the only workflow to launch manually is
+**RUN THIS - Weekly Editorial Delivery**.
+
+- **Production** is the official path. It verifies that the requested NFL week
+  is fully complete, finalizes Chronicle, materializes history, loads the
+  rankings handoff when available, builds the packets, saves the Tuesday
+  baseline, and optionally emails them.
+- **Preview** is read-only. It builds research without finalizing Chronicle.
+- **Validate** checks configuration only.
+- **INTERNAL - Chronicle Collection** and **INTERNAL - Publication Tests** are
+  automation/infrastructure and should not be run manually.
+
+The obsolete Phase 4 verification workflow has been removed.
+
+The Tuesday ranking handoff is read from the public
+`jarradmorelock/Ironbound_power_ranks` repository when available. That
+handoff supplies official Power Rankings and playoff forecast rows by roster ID.
+Usage, WAR, and cWAR remain explicit awaiting inputs until a verified source is
+wired into the handoff; the Editorial Desk does not synthesize them.
+
 ## Newspaper research contracts
 
 The five newspaper-tier publications now generate a publication-specific

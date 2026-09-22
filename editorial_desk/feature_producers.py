@@ -258,7 +258,10 @@ def workload_stat_lines(snapshot: dict[str, Any]) -> FeatureResult:
     }
     rostered_records: list[dict[str, Any]] = []
     for row in records:
-        sleeper_id = gsis_to_sleeper.get(str(row.get("player_id") or ""))
+        raw_player_id = str(row.get("player_id") or "")
+        sleeper_id = gsis_to_sleeper.get(raw_player_id)
+        if sleeper_id is None and raw_player_id in roster_by_player:
+            sleeper_id = raw_player_id
         if not sleeper_id or sleeper_id not in roster_by_player:
             continue
         rostered_records.append(

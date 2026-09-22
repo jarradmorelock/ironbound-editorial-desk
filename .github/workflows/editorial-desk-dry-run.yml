@@ -288,6 +288,17 @@ jobs:
           fi
           "${args[@]}"
 
+      - name: Email divisional MVP Card Shop handoff
+        if: ${{ steps.plan.outputs.active == 'true' && ((steps.plan.outputs.job == 'primary' && (github.event_name != 'workflow_dispatch' || inputs.send_email)) || (steps.plan.outputs.job == 'preview' && inputs.send_email)) }}
+        working-directory: app
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: >-
+          python -m editorial_desk email-divisional-mvps
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir ../output/primary
+
       - name: Prune expired Chronicle diagnostics
         if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
         working-directory: app

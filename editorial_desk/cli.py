@@ -22,6 +22,7 @@ from .config import (
 )
 from .emailer import (
     EmailDeliveryError,
+    send_divisional_mvp_email,
     send_dossier_email,
     send_supplement_email,
 )
@@ -92,6 +93,10 @@ def parser() -> argparse.ArgumentParser:
     email.add_argument("--chronicle-archive", type=Path)
     email.add_argument("--monthly-receipt-root", type=Path)
     email.add_argument("--chronicle-revision")
+
+    mvp_email = subcommands.add_parser("email-divisional-mvps")
+    mvp_email.add_argument("--week", type=int, required=True)
+    mvp_email.add_argument("--output-dir", type=Path, required=True)
 
     subcommands.add_parser("completed-period")
 
@@ -186,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Supplement comparison complete: {len(generated) // 2} updates")
         return 0
 
-    if args.command in {"email", "email-supplement"}:
+    if args.command in {"email", "email-supplement", "email-divisional-mvps"}:
         if args.command == "email-supplement" and not list(
             args.output_dir.glob(f"*/week-{args.week:02d}/*/supplement.md")
         ):
@@ -213,6 +218,14 @@ def main(argv: list[str] | None = None) -> int:
                     monthly_receipt_root=args.monthly_receipt_root,
                     chronicle_revision=args.chronicle_revision,
                 )
+            elif args.command == "email-divisional-mvps":
+                attachment_count = send_divisional_mvp_email(
+                    args.output_dir,
+                    args.week,
+                    sender,
+                    app_password,
+                    recipient,
+                )
             else:
                 attachment_count = send_supplement_email(
                     args.output_dir,
@@ -227,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         print(
             f"Email delivered to {recipient} with "
             f"{attachment_count} "
-            f"{'supplements' if args.command == 'email-supplement' else 'publication dossiers'}"
+            f"{'supplements' if args.command == 'email-supplement' else 'divisional MVP handoff' if args.command == 'email-divisional-mvps' else 'publication dossiers'}"
         )
         return 0
 

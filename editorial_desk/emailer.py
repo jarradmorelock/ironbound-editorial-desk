@@ -181,6 +181,183 @@ def send_dossier_email(
     return sum(1 for _ in message.iter_attachments())
 
 
+FLAGSHIP_MVP_LEAGUES = (
+    "ironbound_sixteen",
+    "free_ironbound_sixteen",
+)
+
+
+def build_divisional_mvp_email(
+    output_root: Path,
+    week: int,
+    sender: str,
+    recipient: str,
+) -> EmailMessage:
+    """Build the separate Card Shop handoff for the two four-division flagships."""
+    payload = _divisional_mvp_payload(output_root, week)
+
+    message = EmailMessage()
+    message["From"] = sender
+    message["To"] = recipient
+    message["Subject"] = (
+        f"Ironbound Card Shop — {payload['season']} Week {week} divisional MVPs"
+    )
+
+    lines = [
+        "DIVISIONAL MVP CARD HANDOFF",
+        "",
+        "Rule: highest-scoring submitted STARTER in each division.",
+        "Gold foil: highest score among the four divisional MVPs in that league.",
+        "",
+    ]
+    for league in payload["leagues"]:
+        lines.append(str(league["league_name"]))
+        for row in league["mvps"]:
+            foil = "GOLD FOIL | " if row["gold_foil"] else ""
+            lines.append(
+                f"- {foil}{row['division_name']} | {row['player']} | "
+                f"{row['team']} | {row.get('position') or 'N/A'} | "
+                f"{float(row['points']):.2f} FP"
+            )
+        lines.append("")
+    lines.append(
+        "The attached JSON is a standalone Card Shop handoff and is intentionally "
+        "separate from the magazine/newspaper research packets."
+    )
+    message.set_content("\n".join(lines).rstrip() + "\n")
+
+    message.add_attachment(
+        json.dumps(payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        subtype="json",
+        filename=f"divisional-mvps-week-{week:02d}.json",
+    )
+    return message
+
+
+def send_divisional_mvp_email(
+    output_root: Path,
+    week: int,
+    sender: str,
+    app_password: str,
+    recipient: str | None = None,
+) -> int:
+    recipient = recipient or sender
+    message = build_divisional_mvp_email(
+        output_root,
+        week,
+        sender,
+        recipient,
+    )
+    _deliver(message, sender, app_password)
+    return sum(1 for _ in message.iter_attachments())
+
+
+def _divisional_mvp_payload(output_root: Path, week: int) -> dict[str, Any]:
+    dossiers: dict[str, dict[str, Any]] = {}
+    for path in output_root.glob(f"*/week-{week:02d}/*/dossier.json"):
+        try:
+            dossier = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EmailDeliveryError(
+                f"Cannot read divisional MVP source dossier {path}"
+            ) from exc
+        league = dossier.get("league") or {}
+        league_key = str(league.get("league_key") or "")
+        if league_key in FLAGSHIP_MVP_LEAGUES:
+            dossiers[league_key] = dossier
+
+    missing = [key for key in FLAGSHIP_MVP_LEAGUES if key not in dossiers]
+    if missing:
+        raise EmailDeliveryError(
+            "Divisional MVP email requires both flagship dossiers; missing "
+            + ", ".join(missing)
+        )
+
+    seasons = {
+        str(dossier.get("season") or "unknown")
+        for dossier in dossiers.values()
+    }
+    if len(seasons) != 1:
+        raise EmailDeliveryError("Divisional MVP email contains more than one season")
+    season = seasons.pop()
+
+    leagues: list[dict[str, Any]] = []
+    total_rows = 0
+    for league_key in FLAGSHIP_MVP_LEAGUES:
+        dossier = dossiers[league_key]
+        league = dossier.get("league") or {}
+        nominees = list(
+            ((dossier.get("weekly_features") or {}).get("divisional_mvp_nominees"))
+            or []
+        )
+        if len(nominees) != 4:
+            raise EmailDeliveryError(
+                f"{league_key} must have exactly four divisional MVPs; "
+                f"found {len(nominees)}"
+            )
+        division_ids = {str(row.get("division_id") or "") for row in nominees}
+        if "" in division_ids or len(division_ids) != 4:
+            raise EmailDeliveryError(
+                f"{league_key} divisional MVP rows must cover four unique divisions"
+            )
+        if any(str(row.get("status") or "") != "STARTED" for row in nominees):
+            raise EmailDeliveryError(
+                f"{league_key} divisional MVP candidates must all be submitted starters"
+            )
+        gold_rows = [row for row in nominees if row.get("gold_foil")]
+        if len(gold_rows) != 1:
+            raise EmailDeliveryError(
+                f"{league_key} must have exactly one gold-foil MVP; "
+                f"found {len(gold_rows)}"
+            )
+        expected_gold = max(
+            nominees,
+            key=lambda row: (
+                float(row.get("points") or 0),
+                str(row.get("player") or ""),
+            ),
+        )
+        if str(gold_rows[0].get("player_id") or "") != str(
+            expected_gold.get("player_id") or ""
+        ):
+            raise EmailDeliveryError(
+                f"{league_key} gold-foil MVP is not the highest-scoring divisional winner"
+            )
+
+        ordered = sorted(
+            (dict(row) for row in nominees),
+            key=lambda row: (
+                int(row.get("division_id"))
+                if str(row.get("division_id") or "").isdigit()
+                else 999,
+                str(row.get("division_name") or ""),
+            ),
+        )
+        leagues.append(
+            {
+                "league_key": league_key,
+                "league_name": league.get("configured_name") or league_key,
+                "publication": league.get("publication"),
+                "mvps": ordered,
+            }
+        )
+        total_rows += len(ordered)
+
+    if total_rows != 8:
+        raise EmailDeliveryError(
+            f"Divisional MVP email requires exactly eight MVP rows; found {total_rows}"
+        )
+
+    return {
+        "schema_version": 1,
+        "season": season,
+        "week": int(week),
+        "rule": "highest-scoring submitted starter in each division",
+        "gold_foil_rule": "highest score among the four divisional MVPs in each league",
+        "leagues": leagues,
+    }
+
+
 def build_supplement_email(
     output_root: Path,
     week: int,

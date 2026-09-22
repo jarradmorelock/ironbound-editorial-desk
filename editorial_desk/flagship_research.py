@@ -111,7 +111,6 @@ def build_flagship_research_packet(
                 snapshot,
             ),
             "rotating_award_candidates": _rotating_award_candidates(dossier),
-            "divisional_mvp_nominees": weekly.get("divisional_mvp_nominees") or [],
         },
         "power_board": {
             "writeup_inputs": _power_board_inputs(

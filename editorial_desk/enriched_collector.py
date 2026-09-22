@@ -166,8 +166,16 @@ def collect_all(
 def _materialize_publication_assets(
     external_inputs,
     directory: Path,
-) -> tuple[dict[str, dict[str, Any]], list[Path]]:
-    """Copy authoritative ranking-engine graphics into the publication package."""
+) -> tuple[dict[str, dict[str, Any]] | None, list[Path]]:
+    """Copy authoritative ranking-engine graphics into the publication package.
+
+    Handoffs created before the image contract existed have no publication_assets
+    field at all. Those legacy packets remain readable. Once the rankings engine
+    advertises publication assets, every advertised image becomes required.
+    """
+    if not external_inputs.publication_assets:
+        return None, []
+
     target_dir = Path(directory) / "publication-assets"
     manifest: dict[str, dict[str, Any]] = {}
     copied: list[Path] = []

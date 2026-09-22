@@ -271,16 +271,17 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
             awaiting.append(f"{label} from Tuesday power-rankings delivery.")
 
     source_metadata = (packet.get("tuesday_external_inputs") or {}).get("source_metadata") or {}
-    source_week = source_metadata.get("week")
-    if source_week is not None:
+    results_through_week = source_metadata.get("results_through_week")
+    if results_through_week is not None:
         try:
-            source_week_value = int(source_week)
+            results_week_value = int(results_through_week)
         except (TypeError, ValueError):
-            source_week_value = None
-        if source_week_value != int(packet.get("week") or 0):
+            results_week_value = None
+        if results_week_value != int(packet.get("week") or 0):
             awaiting.append(
-                f"Current-week Power Rankings handoff. Received Week {source_week!r} "
-                f"for Week {packet.get('week')} production."
+                "Current-cycle Power Rankings handoff. "
+                f"Ranking engine results are through Week {results_through_week!r}, "
+                f"but this packet covers Week {packet.get('week')}."
             )
 
     asset_section = packet.get("ranking_publication_assets") or {}

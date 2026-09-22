@@ -857,9 +857,15 @@ def _row_for_team(
 
 
 def _attach_stat_lines(value: Any, intelligence: dict[str, Any]) -> Any:
+    stat_book = intelligence.get("stat_book") or {}
+    source_rows = (
+        stat_book.get("rostered_records")
+        or stat_book.get("records")
+        or []
+    )
     by_sleeper = {
         str(row.get("sleeper_player_id")): row
-        for row in ((intelligence.get("stat_book") or {}).get("records") or [])
+        for row in source_rows
         if row.get("sleeper_player_id")
     }
 

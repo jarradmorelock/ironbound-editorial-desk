@@ -73,6 +73,8 @@
       ],
       "recurring_sections": [
         "Week Cardiogram",
+        "Median Line",
+        "Monday-Night Code Blue / Late Window",
         "Final Monitor",
         "Weekly Rounds",
         "Official Standings",
@@ -105,6 +107,16 @@
           {
             "feature": "weekly_results",
             "display_name": "Week Cardiogram",
+            "required_in_phase": true
+          },
+          {
+            "feature": "league_median",
+            "display_name": "Median Line",
+            "required_in_phase": true
+          },
+          {
+            "feature": "game_window_context",
+            "display_name": "Monday-Night Code Blue / Late Window",
             "required_in_phase": true
           },
           {
@@ -475,10 +487,11 @@
       ],
       "recurring_sections": [
         "Lead Story / Weekly Aftermath",
+        "Record Watch",
+        "Decision Desk / The Call That Won the Week",
         "Official Table",
         "Median Result",
         "Rankings Wire",
-        "Decision Desk / The Call That Won the Week",
         "Mountain MVP",
         "Manager of the Week",
         "Benchwarmer",
@@ -489,7 +502,7 @@
         "Escape Artist",
         "Waiver Star",
         "Bench Blast",
-        "Record Watch",
+        "Roster Health",
         "Next-Week Scouting"
       ],
       "brand_departments": [
@@ -515,6 +528,16 @@
             "required_in_phase": true
           },
           {
+            "feature": "record_watch",
+            "display_name": "Record Watch",
+            "required_in_phase": true
+          },
+          {
+            "feature": "manager_decision_evidence",
+            "display_name": "Decision Desk / The Call That Won the Week",
+            "required_in_phase": true
+          },
+          {
             "feature": "official_table",
             "display_name": "Official Table",
             "required_in_phase": true
@@ -527,11 +550,6 @@
           {
             "feature": "ranking_movement",
             "display_name": "Rankings Wire",
-            "required_in_phase": true
-          },
-          {
-            "feature": "manager_decision_evidence",
-            "display_name": "Decision Desk / The Call That Won the Week",
             "required_in_phase": true
           },
           {
@@ -585,9 +603,15 @@
             "required_in_phase": true
           },
           {
-            "feature": "record_watch",
-            "display_name": "Record Watch",
-            "required_in_phase": true
+            "feature": "health_status",
+            "display_name": "Roster Health",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
           },
           {
             "feature": "next_matchups",
@@ -653,9 +677,11 @@
         "Portal Film Room",
         "Portal Commitments",
         "Saturday Honors",
+        "Manager of the Week",
         "Position Board",
         "Saturday Desk",
         "Dynasty Market Board",
+        "Availability / Injury Wire",
         "Transfer Portal Dispatch",
         "Recruiting Desk",
         "Recruiting / Future Pick Ledger",
@@ -735,6 +761,11 @@
             "required_in_phase": true
           },
           {
+            "feature": "manager_of_week",
+            "display_name": "Manager of the Week",
+            "required_in_phase": true
+          },
+          {
             "feature": "idp_position_metrics",
             "display_name": "Position Board",
             "required_in_phase": true
@@ -756,24 +787,35 @@
             ]
           },
           {
+            "feature": "health_status",
+            "display_name": "Availability / Injury Wire",
+            "required_in_phase": true,
+            "dependencies": [
+              {
+                "source": "sleeper_health",
+                "strength": "required"
+              }
+            ]
+          },
+          {
             "feature": "transactions",
             "display_name": "Transfer Portal Dispatch",
-            "required_in_phase": true
+            "required_in_phase": false
           },
           {
             "feature": "rookie_draft",
             "display_name": "Recruiting Desk",
-            "required_in_phase": true
+            "required_in_phase": false
           },
           {
             "feature": "future_picks",
             "display_name": "Recruiting / Future Pick Ledger",
-            "required_in_phase": true
+            "required_in_phase": false
           },
           {
             "feature": "next_matchups",
             "display_name": "Next-Week Slate",
-            "required_in_phase": true
+            "required_in_phase": false
           }
         ],
         "preseason": [
@@ -860,11 +902,13 @@
       ],
       "recurring_sections": [
         "Box Office",
+        "Weekly Median",
         "Marquee / Official Standings",
         "Top Billing / First Cut",
         "Hollywood Board",
         "Monday Night / Late Show",
         "For Your Consideration",
+        "Position Leaders",
         "Cutting Room Floor",
         "Studio Efficiency",
         "Casting Call",
@@ -900,6 +944,11 @@
             "required_in_phase": true
           },
           {
+            "feature": "league_median",
+            "display_name": "Weekly Median",
+            "required_in_phase": true
+          },
+          {
             "feature": "standings",
             "display_name": "Marquee / Official Standings",
             "required_in_phase": true
@@ -922,6 +971,11 @@
           {
             "feature": "weekly_honors",
             "display_name": "For Your Consideration",
+            "required_in_phase": true
+          },
+          {
+            "feature": "player_position_leaders",
+            "display_name": "Position Leaders",
             "required_in_phase": true
           },
           {

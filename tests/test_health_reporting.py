@@ -105,7 +105,7 @@ def test_newspaper_health_report_includes_general_status_and_ir_only():
     assert "Questionable Player" in markdown
     assert "Reserve Player" in markdown
     assert "IR/RESERVE" in markdown
-    assert "Limited Participation" in markdown
+    assert "Limited Participation" not in markdown
     assert "2026-09-14" not in markdown
 
 

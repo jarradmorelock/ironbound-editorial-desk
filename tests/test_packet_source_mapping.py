@@ -117,7 +117,16 @@ def test_packet_resolver_uses_established_weekly_dossier_paths():
     assert honors["free_agent"] == _dossier()["weekly_features"]["free_agent_of_the_week"]
     assert honors["bad_beat"] == _dossier()["awards"]["bad_beat"]
     assert rows["dynasty_market_values"]["data"]["q1"]["trade_value"] == 9000
-    assert rows["next_matchups"]["data"] == _snapshot()["next_matchups"]["records"]
+    assert rows["next_matchups"]["data"] == [
+        {
+            "week": 2,
+            "matchup_id": 2,
+            "teams": [
+                {"roster_id": 1, "team": "One"},
+                {"roster_id": 2, "team": "Two"},
+            ],
+        }
+    ]
 
 
 class FakeSleeper:

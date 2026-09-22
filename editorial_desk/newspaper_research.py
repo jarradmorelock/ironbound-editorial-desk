@@ -297,7 +297,7 @@ def render_newspaper_research_packet(packet: dict[str, Any]) -> str:
             facts = fact_lines(data, 16)
             lines.extend(f"- {row}" for row in facts)
             if data not in (None, [], {}, ()) and not facts:
-                lines.append("- Structured evidence is present in newspaper_research_packet.json.")
+                lines.extend(f"- {row}" for row in _compact_evidence(data))
 
     lines.extend(
         [

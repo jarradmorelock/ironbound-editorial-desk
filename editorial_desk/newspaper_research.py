@@ -414,6 +414,9 @@ def _render_feature(feature: str, data: Any) -> list[str]:
     if feature == "record_watch" and isinstance(data, dict):
         lines = []
         for row in data.get("records") or []:
+            if not isinstance(row, dict):
+                lines.append(f"- {row}")
+                continue
             facts = fact_lines(row, 2)
             if facts:
                 lines.extend(f"- {fact}" for fact in facts)

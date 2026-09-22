@@ -96,7 +96,7 @@ def test_newspaper_health_report_includes_general_status_and_ir_only():
     assert questionable["injury_status"] == "Questionable"
     assert questionable["on_ir"] is False
     assert reserve["on_ir"] is True
-    assert "practice_participation" not in questionable
+    assert questionable["practice_participation"] == "Limited Participation"
     assert "injury_start_date" not in questionable
     assert "depth_chart_order" not in questionable
 
@@ -105,7 +105,7 @@ def test_newspaper_health_report_includes_general_status_and_ir_only():
     assert "Questionable Player" in markdown
     assert "Reserve Player" in markdown
     assert "IR/RESERVE" in markdown
-    assert "Limited Participation" not in markdown
+    assert "Limited Participation" in markdown
     assert "2026-09-14" not in markdown
 
 
@@ -204,6 +204,7 @@ def test_newspaper_uses_official_game_designation_without_expanded_injury_detail
     )
 
     assert row["injury_status"] == "Questionable"
+    assert row["injury"] == "Hamstring"
+    assert row["practice_participation"] == "Limited Participation"
     assert row["health_source"] == "nflverse+Sleeper"
     assert "report_primary_injury" not in row
-    assert "practice_participation" not in row

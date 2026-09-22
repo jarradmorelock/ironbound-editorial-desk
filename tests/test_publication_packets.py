@@ -202,3 +202,56 @@ def test_phase_filtering_does_not_pull_preseason_departments_into_weekly_packet(
     )
     packet = build_publication_packet(_snapshot(), _dossier(), publication, "weekly")
     assert [row["display_name"] for row in packet["departments"]] == ["Scoreboard"]
+
+
+def test_ranking_wire_uses_data_power_order_not_official_standings():
+    publication = _publication(
+        "paper",
+        "Paper",
+        [FeatureContractConfig("ranking_movement", "Rankings Wire", True)],
+    )
+    dossier = _dossier()
+    dossier["rankings"] = {
+        "official_standings": [
+            {"roster_id": 1, "team": "One", "rank": 1},
+            {"roster_id": 2, "team": "Two", "rank": 2},
+        ],
+        "data_power_ranking": {
+            "status": "calculated",
+            "rows": [
+                {"roster_id": 2, "team": "Two", "rank": 1},
+                {"roster_id": 1, "team": "One", "rank": 2},
+            ],
+        },
+        "prior_published_ranking": {"status": "awaiting_publication_archive", "rows": []},
+    }
+
+    packet = build_publication_packet(_snapshot(), dossier, publication, "weekly")
+    data = packet["departments"][0]["data"]
+
+    assert [row["team"] for row in data] == ["Two", "One"]
+    assert [row["rank"] for row in data] == [1, 2]
+    assert all(row["movement"] is None for row in data)
+
+
+def test_next_matchups_are_grouped_and_named_for_human_reading():
+    publication = _publication(
+        "paper",
+        "Paper",
+        [FeatureContractConfig("next_matchups", "Next Shift", True)],
+    )
+    snapshot = _snapshot()
+    snapshot["next_matchups"] = {
+        "status": "available",
+        "week": 2,
+        "records": [
+            {"matchup_id": 1, "roster_id": 1},
+            {"matchup_id": 1, "roster_id": 2},
+        ],
+    }
+
+    packet = build_publication_packet(snapshot, _dossier(), publication, "weekly")
+    game = packet["departments"][0]["data"][0]
+
+    assert game["week"] == 2
+    assert [row["team"] for row in game["teams"]] == ["One", "Two"]

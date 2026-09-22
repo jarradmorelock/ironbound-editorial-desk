@@ -897,7 +897,7 @@ def _attach_rookie_draft_context(
     rows: list[dict[str, Any]],
     snapshot: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    draft_source = snapshot.get("draft_context") or {}
+    draft_source = ((snapshot.get("flagship_sleeper") or {}).get("drafts") or {})
     current_names = _roster_team_names(snapshot)
     team_count = max(1, len(current_names))
     by_player: dict[str, dict[str, Any]] = {}

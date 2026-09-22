@@ -2,6 +2,7 @@ from editorial_desk.feature_producers import (
     bench_blast,
     bench_leader,
     divisional_started_mvps,
+    game_window_context,
     league_wide_started_mvp,
     position_leaders,
     record_watch,
@@ -169,3 +170,58 @@ def test_workload_stat_lines_uses_real_nfl_volume_not_fantasy_points():
     assert result.data["rushing_attempts"]["player_name"] == "Runner"
     assert result.data["receptions"]["player_name"] == "Receiver"
     assert result.data["rushing_attempts"]["fantasy_team"] == "One"
+
+
+def test_game_window_context_reuses_monday_timing_dossier_when_no_window_source():
+    snapshot = _snapshot()
+    dossier = _dossier()
+    dossier["game_timing"] = {
+        "monday": {
+            "matchups": [
+                {
+                    "matchup_id": 1,
+                    "completed": True,
+                    "day_was_active": True,
+                    "final_margin": 2,
+                    "final_winner": "One",
+                    "final_loser": "Two",
+                    "winner_score_before_day": 10,
+                    "loser_score_before_day": 25,
+                    "lead_changed_on_day": True,
+                    "tie_broken_on_day": False,
+                    "margin_supplied_by_day": True,
+                    "teams": [
+                        {
+                            "roster_id": 1,
+                            "team": "One",
+                            "points": 30,
+                            "day_points": 20,
+                            "players": [
+                                {
+                                    "player_id": "q1",
+                                    "player": "Q One",
+                                    "fantasy_points": 20,
+                                    "nfl_stat_line": "24/31 passing for 287 yards, 3 TD",
+                                }
+                            ],
+                        },
+                        {
+                            "roster_id": 2,
+                            "team": "Two",
+                            "points": 28,
+                            "day_points": 3,
+                            "players": [],
+                        },
+                    ],
+                }
+            ]
+        }
+    }
+
+    result = game_window_context(snapshot, dossier)
+
+    assert result.status == "ready"
+    assert result.data[0]["window"] == "Monday"
+    assert result.data[0]["swung_result"] is True
+    assert result.data[0]["remaining_players"][0]["player"] == "Q One"
+    assert "287 yards" in result.data[0]["remaining_players"][0]["nfl_stat_line"]

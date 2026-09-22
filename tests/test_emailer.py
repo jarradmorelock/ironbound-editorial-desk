@@ -6,6 +6,7 @@ from editorial_desk.chronicle_backup import create_chronicle_backup
 from editorial_desk.cli import parser
 from editorial_desk.emailer import (
     EmailDeliveryError,
+    build_divisional_mvp_email,
     build_dossier_email,
     build_supplement_email,
     send_supplement_email,
@@ -168,3 +169,106 @@ def test_supplement_delivery_sends_nothing_without_updates(tmp_path):
         )
         == 0
     )
+
+
+def _mvp_dossier(tmp_path, league_key, league_name, week=1, base_points=30.0):
+    root = tmp_path / "2026" / f"week-{week:02d}" / league_key
+    root.mkdir(parents=True, exist_ok=True)
+    mvps = []
+    for division_id, division_name in enumerate(
+        ("Hammer", "Anvil", "Crucible", "Forge"), start=1
+    ):
+        points = base_points + division_id
+        mvps.append(
+            {
+                "roster_id": division_id,
+                "team": f"{league_name} Team {division_id}",
+                "division_id": str(division_id),
+                "division_name": division_name,
+                "player_id": f"{league_key}-p{division_id}",
+                "player": f"Player {division_id}",
+                "position": "WR",
+                "points": points,
+                "status": "STARTED",
+                "gold_foil": division_id == 4,
+            }
+        )
+    (root / "dossier.json").write_text(
+        json.dumps(
+            {
+                "season": "2026",
+                "league": {
+                    "league_key": league_key,
+                    "configured_name": league_name,
+                    "publication": "Weekly",
+                },
+                "weekly_features": {"divisional_mvp_nominees": mvps},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "dossier.md").write_text("# dossier\n", encoding="utf-8")
+    return root
+
+
+def test_build_divisional_mvp_email_contains_exactly_eight_card_candidates(tmp_path):
+    _mvp_dossier(tmp_path, "ironbound_sixteen", "Ironbound Sixteen", base_points=30)
+    _mvp_dossier(
+        tmp_path,
+        "free_ironbound_sixteen",
+        "Free Ironbound Sixteen",
+        base_points=40,
+    )
+
+    message = build_divisional_mvp_email(
+        tmp_path, 1, "desk@example.com", "reader@example.com"
+    )
+
+    assert message["Subject"] == "Ironbound Card Shop — 2026 Week 1 divisional MVPs"
+    body = message.get_body().get_content()
+    assert body.count("GOLD FOIL") == 2
+    assert "Hammer" in body
+    assert "Forge" in body
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "divisional-mvps-week-01.json"
+    payload = json.loads(attachments[0].get_content())
+    assert len(payload["leagues"]) == 2
+    assert sum(len(league["mvps"]) for league in payload["leagues"]) == 8
+    assert all(
+        sum(1 for row in league["mvps"] if row["gold_foil"]) == 1
+        for league in payload["leagues"]
+    )
+
+
+def test_divisional_mvp_email_rejects_nonstarter_or_wrong_gold(tmp_path):
+    _mvp_dossier(tmp_path, "ironbound_sixteen", "Ironbound Sixteen", base_points=30)
+    root = _mvp_dossier(
+        tmp_path,
+        "free_ironbound_sixteen",
+        "Free Ironbound Sixteen",
+        base_points=40,
+    )
+    path = root / "dossier.json"
+    dossier = json.loads(path.read_text(encoding="utf-8"))
+    dossier["weekly_features"]["divisional_mvp_nominees"][0]["status"] = "BENCH"
+    path.write_text(json.dumps(dossier), encoding="utf-8")
+
+    with pytest.raises(EmailDeliveryError, match="submitted starters"):
+        build_divisional_mvp_email(
+            tmp_path, 1, "desk@example.com", "reader@example.com"
+        )
+
+
+def test_divisional_mvp_email_cli_is_available():
+    args = parser().parse_args(
+        [
+            "email-divisional-mvps",
+            "--week",
+            "2",
+            "--output-dir",
+            "output",
+        ]
+    )
+    assert args.command == "email-divisional-mvps"
+    assert args.week == 2

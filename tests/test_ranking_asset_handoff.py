@@ -133,11 +133,27 @@ def test_stale_power_rankings_handoff_blocks_current_week():
             },
         },
         "tuesday_external_inputs": {
-            "source_metadata": {"week": 1},
+            "source_metadata": {
+                "ranking_week": 2,
+                "results_through_week": 1,
+            },
         },
     }
 
     validation = validate_flagship_research_packet(packet)
 
     assert validation["research_complete"] is False
-    assert any("Received Week 1" in row for row in validation["awaiting_tuesday_input"])
+    assert any("through Week 1" in row for row in validation["awaiting_tuesday_input"])
+
+
+def test_legacy_ranking_handoff_without_asset_manifest_does_not_retroactively_fail(tmp_path):
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        publication_assets={},
+    )
+    manifest, copied = _materialize_publication_assets(
+        external,
+        tmp_path / "publication",
+    )
+    assert manifest is None
+    assert copied == []

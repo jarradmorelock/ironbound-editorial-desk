@@ -58,8 +58,6 @@ def test_writer_emits_json_and_markdown_without_mutating_packet(tmp_path):
     assert {path.name for path in paths} == {
         "publication_packet.json",
         "publication_packet.md",
-        "newspaper_research_packet.json",
-        "newspaper_research_packet.md",
     }
     assert json.loads((tmp_path / "publication_packet.json").read_text()) == packet
     assert "## Ward Report" in (tmp_path / "publication_packet.md").read_text()
@@ -92,7 +90,12 @@ def test_newspaper_integration_builds_and_writes_weekly_packet(tmp_path):
         phase="weekly",
     )
 
-    assert {path.name for path in paths} == {"publication_packet.json", "publication_packet.md"}
+    assert {path.name for path in paths} == {
+        "publication_packet.json",
+        "publication_packet.md",
+        "newspaper_research_packet.json",
+        "newspaper_research_packet.md",
+    }
     packet = json.loads((tmp_path / "publication_packet.json").read_text())
     assert packet["publication"] == "Paper"
     assert packet["departments"][0]["display_name"] == "Scoreboard"

@@ -91,6 +91,12 @@ def build_roster_health(snapshot: dict[str, Any]) -> dict[str, Any]:
                 "nfl_team": player.get("team") or official.get("team"),
                 "status": status or None,
                 "injury_status": injury_status,
+                "game_designation": report_status,
+                "injury": (
+                    official.get("report_primary_injury")
+                    or official.get("practice_primary_injury")
+                ),
+                "practice_participation": practice,
                 "on_ir": on_ir,
                 "health_source": (
                     "nflverse+Sleeper" if official else "Sleeper"

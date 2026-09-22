@@ -504,10 +504,20 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
 
     lines.extend(["", "## POWER BOARD — INDIVIDUAL WRITEUP INPUTS", ""])
     for row in (packet.get("power_board") or {}).get("writeup_inputs") or []:
+        previous = row.get("previous_rank")
+        movement = row.get("rank_movement")
+        movement_text = ""
+        if previous is not None and movement is not None:
+            if int(movement) > 0:
+                movement_text = f"; up {int(movement)} from #{int(previous)}"
+            elif int(movement) < 0:
+                movement_text = f"; down {abs(int(movement))} from #{int(previous)}"
+            else:
+                movement_text = f"; unchanged from #{int(previous)}"
         lines.append(
             f"- {row.get('team')}: {row.get('wins', 0)}-{row.get('losses', 0)}; "
-            f"{float(row.get('points_for') or 0):.2f} PF; official rank {row.get('official_rank', 'awaiting')}; "
-            f"efficiency {float(row.get('efficiency') or 0):.1%}."
+            f"{float(row.get('points_for') or 0):.2f} PF; official rank {row.get('official_rank', 'awaiting')}"
+            f"{movement_text}; efficiency {float(row.get('efficiency') or 0):.1%}."
         )
 
     lines.extend(["", "## POWER RANKINGS CHART INPUT", ""])

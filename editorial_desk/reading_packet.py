@@ -311,6 +311,9 @@ def reading_packet_from_artifacts(directory: Path, dossier: dict[str, Any]) -> s
     flagship_path = Path(directory) / "flagship_research_packet.md"
     if flagship_path.exists():
         return flagship_path.read_text(encoding="utf-8")
+    newspaper_path = Path(directory) / "newspaper_research_packet.md"
+    if newspaper_path.exists():
+        return newspaper_path.read_text(encoding="utf-8")
     return render_reading_packet(
         dossier,
         packet=read_optional_artifact(directory, "publication_packet.json"),

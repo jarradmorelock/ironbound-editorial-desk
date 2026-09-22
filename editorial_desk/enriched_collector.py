@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 import requests
@@ -126,6 +127,11 @@ def collect_all(
                     else None
                 )
                 external_inputs = load_external_inputs(external_path, profile.key)
+                publication_assets, copied_asset_paths = _materialize_publication_assets(
+                    external_inputs,
+                    directory,
+                )
+                generated.extend(copied_asset_paths)
                 story_path = directory / "story_desk.json"
                 story = (
                     json.loads(story_path.read_text(encoding="utf-8"))
@@ -143,6 +149,7 @@ def collect_all(
                         if chronicle_root is not None
                         else None
                     ),
+                    publication_assets=publication_assets,
                 )
                 if flagship_packet is not None:
                     generated.extend(
@@ -154,6 +161,50 @@ def collect_all(
         generated.append(reading_path)
 
     return generated
+
+
+def _materialize_publication_assets(
+    external_inputs,
+    directory: Path,
+) -> tuple[dict[str, dict[str, Any]], list[Path]]:
+    """Copy authoritative ranking-engine graphics into the publication package."""
+    target_dir = Path(directory) / "publication-assets"
+    manifest: dict[str, dict[str, Any]] = {}
+    copied: list[Path] = []
+
+    for key in ("power_rankings", "playoff_forecast"):
+        row = dict((external_inputs.publication_assets or {}).get(key) or {})
+        if not row:
+            manifest[key] = {
+                "status": "AWAITING_TUESDAY_INPUT",
+                "reason": "Ranking engine did not supply this publication asset.",
+            }
+            continue
+        source = Path(str(row.get("local_path") or ""))
+        if not row.get("available") or not source.is_file():
+            manifest[key] = {
+                **row,
+                "status": "AWAITING_TUESDAY_INPUT",
+                "reason": f"Publication asset file is unavailable: {row.get('filename')}",
+            }
+            continue
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        destination = target_dir / str(row["filename"])
+        shutil.copyfile(source, destination)
+        manifest[key] = {
+            **row,
+            "status": "READY",
+            "package_path": f"publication-assets/{destination.name}",
+            "placement_policy": row.get("placement_policy")
+            or "use supplied graphic unchanged",
+        }
+        # Do not expose the temporary editorial-input path in the durable packet.
+        manifest[key].pop("local_path", None)
+        manifest[key].pop("available", None)
+        copied.append(destination)
+
+    return manifest, copied
 
 
 def _write_newspaper_packet(

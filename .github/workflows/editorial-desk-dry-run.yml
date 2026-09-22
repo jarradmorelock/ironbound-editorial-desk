@@ -188,19 +188,31 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Fetch Tuesday rankings handoff when available
-        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job != 'validate' }}
         working-directory: app
         shell: bash
         run: |
-          mkdir -p editorial-inputs
+          mkdir -p editorial-inputs/assets
           for pair in "main:ironbound_weekly" "free:unbound_weekly"; do
             source_key="${pair%%:*}"
             publication_key="${pair##*:}"
-            url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/${source_key}.json"
-            if curl --fail --silent --show-error --location "$url" -o "editorial-inputs/${publication_key}.json"; then
+            json_url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/${source_key}.json"
+            if curl --fail --silent --show-error --location "$json_url" -o "editorial-inputs/${publication_key}.json"; then
               echo "Loaded ranking handoff for ${publication_key}."
+              for asset in power-rankings playoff-forecast; do
+                filename="${publication_key}-${asset}.png"
+                asset_url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/assets/${filename}"
+                if curl --fail --silent --show-error --location "$asset_url" -o "editorial-inputs/assets/${filename}"; then
+                  echo "Loaded authoritative ranking asset ${filename}."
+                else
+                  rm -f "editorial-inputs/assets/${filename}"
+                  echo "WARNING: Missing ranking asset ${filename}; flagship research will remain incomplete."
+                fi
+              done
             else
               rm -f "editorial-inputs/${publication_key}.json"
+              rm -f "editorial-inputs/assets/${publication_key}-power-rankings.png"
+              rm -f "editorial-inputs/assets/${publication_key}-playoff-forecast.png"
               echo "WARNING: No current ranking handoff for ${publication_key}; packet will mark those inputs awaiting."
             fi
           done

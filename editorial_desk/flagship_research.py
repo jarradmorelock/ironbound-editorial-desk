@@ -20,6 +20,7 @@ def build_flagship_research_packet(
     *,
     history_root: Path,
     chronicle: ChronicleQueries | None = None,
+    publication_assets: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -125,6 +126,9 @@ def build_flagship_research_packet(
         },
         "power_rankings_chart": {
             "status": _external_status(external.power_rankings_supplied),
+            "authority": "Ironbound_power_ranks",
+            "movement_policy": "Use previous_rank and movement supplied by the Power Rankings engine. Do not recalculate movement in Editorial Desk.",
+            "asset_key": "power_rankings",
             "rows": [
                 {
                     "franchise_key": row.franchise_key,
@@ -140,7 +144,15 @@ def build_flagship_research_packet(
         },
         "playoff_odds_chart": {
             "status": _external_status(external.playoff_odds_supplied),
+            "authority": "Ironbound_power_ranks",
+            "asset_key": "playoff_forecast",
             "rows": [dict(row) for row in external.playoff_odds],
+        },
+        "ranking_publication_assets": {
+            "authority": "Ironbound_power_ranks",
+            "required": publication_assets is not None,
+            "policy": "Use the supplied PNGs unchanged in the magazine. Do not redraw these charts.",
+            "assets": dict(publication_assets or {}),
         },
         "tuesday_external_inputs": {
             "usage": {
@@ -257,6 +269,37 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         section = packet.get(key) or {}
         if section.get("status") != "READY":
             awaiting.append(f"{label} from Tuesday power-rankings delivery.")
+
+    source_metadata = (packet.get("tuesday_external_inputs") or {}).get("source_metadata") or {}
+    source_week = source_metadata.get("week")
+    if source_week is not None:
+        try:
+            source_week_value = int(source_week)
+        except (TypeError, ValueError):
+            source_week_value = None
+        if source_week_value != int(packet.get("week") or 0):
+            awaiting.append(
+                f"Current-week Power Rankings handoff. Received Week {source_week!r} "
+                f"for Week {packet.get('week')} production."
+            )
+
+    asset_section = packet.get("ranking_publication_assets") or {}
+    assets = asset_section.get("assets") or {}
+    if asset_section.get("required"):
+        for asset_key, label in (
+            ("power_rankings", "Power Rankings graphic"),
+            ("playoff_forecast", "Playoff Forecast graphic"),
+        ):
+            asset = assets.get(asset_key) or {}
+            asset_ok = asset.get("status") == "READY" and bool(asset.get("package_path"))
+            _check(
+                checks,
+                f"asset_{asset_key}",
+                asset_ok,
+                str(asset.get("status") or "missing"),
+            )
+            if not asset_ok:
+                awaiting.append(f"{label} from the Power Rankings engine.")
 
     editorial.extend(
         [
@@ -461,18 +504,62 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
 
     lines.extend(["", "## POWER BOARD — INDIVIDUAL WRITEUP INPUTS", ""])
     for row in (packet.get("power_board") or {}).get("writeup_inputs") or []:
+        previous = row.get("previous_rank")
+        movement = row.get("rank_movement")
+        movement_text = ""
+        if previous is not None and movement is not None:
+            if int(movement) > 0:
+                movement_text = f"; up {int(movement)} from #{int(previous)}"
+            elif int(movement) < 0:
+                movement_text = f"; down {abs(int(movement))} from #{int(previous)}"
+            else:
+                movement_text = f"; unchanged from #{int(previous)}"
         lines.append(
             f"- {row.get('team')}: {row.get('wins', 0)}-{row.get('losses', 0)}; "
-            f"{float(row.get('points_for') or 0):.2f} PF; official rank {row.get('official_rank', 'awaiting')}; "
-            f"efficiency {float(row.get('efficiency') or 0):.1%}."
+            f"{float(row.get('points_for') or 0):.2f} PF; official rank {row.get('official_rank', 'awaiting')}"
+            f"{movement_text}; efficiency {float(row.get('efficiency') or 0):.1%}."
         )
 
     lines.extend(["", "## POWER RANKINGS CHART INPUT", ""])
     power = packet.get("power_rankings_chart") or {}
     lines.append(f"Status: {power.get('status')}")
+    lines.append(
+        "Authority: Ironbound_power_ranks. Movement below is imported from the "
+        "ranking engine's shared Saturday/Tuesday publication history and must not be recalculated."
+    )
     for row in sorted(power.get("rows") or [], key=lambda item: int(item.get("rank") or 999)):
         label = row.get("team") or row.get("franchise_key") or f"Roster {row.get('roster_id')}"
-        lines.append(f"- #{row.get('rank')} {label}")
+        previous = row.get("previous_rank")
+        movement = row.get("movement")
+        if previous is None or movement is None:
+            movement_text = "movement unavailable"
+        elif int(movement) > 0:
+            movement_text = f"up {int(movement)} from #{int(previous)}"
+        elif int(movement) < 0:
+            movement_text = f"down {abs(int(movement))} from #{int(previous)}"
+        else:
+            movement_text = f"unchanged from #{int(previous)}"
+        lines.append(
+            f"- #{row.get('rank')} {label} — {movement_text}; "
+            f"ranking score {float(row.get('score') or 0):.1f}"
+        )
+
+    lines.extend(["", "## RANKING PUBLICATION ASSETS", ""])
+    assets = packet.get("ranking_publication_assets") or {}
+    lines.append(str(assets.get("policy") or ""))
+    for asset_key, label in (
+        ("power_rankings", "Power Rankings"),
+        ("playoff_forecast", "Playoff Forecast"),
+    ):
+        asset = (assets.get("assets") or {}).get(asset_key) or {}
+        if asset.get("status") == "READY":
+            lines.append(
+                f"- {label}: {asset.get('package_path')} — "
+                f"SHA-256 {asset.get('sha256') or asset.get('actual_sha256') or 'not supplied'} — "
+                "PLACE THIS SUPPLIED GRAPHIC UNCHANGED."
+            )
+        else:
+            lines.append(f"- {label}: {asset.get('status') or 'MISSING'}")
 
     lines.extend(["", "## PLAYOFF ODDS CHART INPUT", ""])
     odds = packet.get("playoff_odds_chart") or {}

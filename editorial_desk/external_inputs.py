@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,7 @@ class ExternalEditorialInputs:
     cwar: tuple[dict[str, Any], ...] = ()
     usage: tuple[dict[str, Any], ...] = ()
     playoff_odds: tuple[dict[str, Any], ...] = ()
+    publication_assets: dict[str, dict[str, Any]] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -173,6 +175,42 @@ def load_external_inputs(
     playoff_odds_raw = raw.get("playoff_odds") or []
     if not isinstance(playoff_odds_raw, list) or any(not isinstance(row, dict) for row in playoff_odds_raw):
         raise ExternalInputError("playoff_odds must be a list of objects")
+    assets_raw = raw.get("publication_assets") or {}
+    if not isinstance(assets_raw, dict):
+        raise ExternalInputError("publication_assets must be an object")
+    publication_assets: dict[str, dict[str, Any]] = {}
+    for key, row in assets_raw.items():
+        if not isinstance(row, dict):
+            raise ExternalInputError(f"publication_assets.{key} must be an object")
+        filename = str(row.get("filename") or "").strip()
+        if not filename or Path(filename).name != filename:
+            raise ExternalInputError(
+                f"publication_assets.{key}.filename must be a basename"
+            )
+        media_type = str(row.get("media_type") or "").strip()
+        if media_type != "image/png":
+            raise ExternalInputError(
+                f"publication_assets.{key}.media_type must be image/png"
+            )
+        local_path = source_path.parent / "assets" / filename
+        available = local_path.is_file()
+        expected_sha = str(row.get("sha256") or "").strip().lower()
+        actual_sha = None
+        if available:
+            actual_sha = hashlib.sha256(local_path.read_bytes()).hexdigest()
+            if expected_sha and expected_sha != actual_sha:
+                raise ExternalInputError(
+                    f"publication asset checksum mismatch for {filename}"
+                )
+        publication_assets[str(key)] = {
+            **dict(row),
+            "filename": filename,
+            "media_type": media_type,
+            "local_path": str(local_path),
+            "available": available,
+            "actual_sha256": actual_sha,
+        }
+
     notes_raw = raw.get("notes") or []
     if not isinstance(notes_raw, list) or any(not isinstance(note, str) for note in notes_raw):
         raise ExternalInputError("notes must be a list of strings")
@@ -187,6 +225,7 @@ def load_external_inputs(
         cwar=tuple(dict(row) for row in cwar_raw),
         usage=tuple(dict(row) for row in usage_raw),
         playoff_odds=tuple(dict(row) for row in playoff_odds_raw),
+        publication_assets=publication_assets,
         notes=tuple(str(note) for note in notes_raw),
         source_metadata=dict(source_metadata),
     )

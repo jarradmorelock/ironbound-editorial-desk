@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -164,3 +165,63 @@ def test_ranking_handoff_accepts_roster_and_team_keys(tmp_path):
     assert row.score == 91.2
     assert result.ranking_for_roster(7).rank == 1
     assert result.ranking_for_roster(99, team="San Carlos FC").rank == 1
+
+
+def test_external_input_loads_and_verifies_publication_assets(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    rankings = assets / "ironbound_weekly-power-rankings.png"
+    playoffs = assets / "ironbound_weekly-playoff-forecast.png"
+    rankings.write_bytes(b"rankings-png")
+    playoffs.write_bytes(b"playoffs-png")
+
+    path = _write(
+        tmp_path / "ironbound_weekly.json",
+        {
+            "publication_key": "ironbound_weekly",
+            "publication_assets": {
+                "power_rankings": {
+                    "filename": rankings.name,
+                    "media_type": "image/png",
+                    "sha256": hashlib.sha256(rankings.read_bytes()).hexdigest(),
+                },
+                "playoff_forecast": {
+                    "filename": playoffs.name,
+                    "media_type": "image/png",
+                    "sha256": hashlib.sha256(playoffs.read_bytes()).hexdigest(),
+                },
+            },
+        },
+    )
+
+    result = load_external_inputs(path, "ironbound_weekly")
+
+    assert result.publication_assets["power_rankings"]["available"] is True
+    assert result.publication_assets["playoff_forecast"]["available"] is True
+    assert result.publication_assets["power_rankings"]["actual_sha256"] == hashlib.sha256(
+        rankings.read_bytes()
+    ).hexdigest()
+
+
+def test_external_input_rejects_publication_asset_checksum_mismatch(tmp_path):
+    assets = tmp_path / "assets"
+    assets.mkdir()
+    rankings = assets / "ironbound_weekly-power-rankings.png"
+    rankings.write_bytes(b"rankings-png")
+
+    path = _write(
+        tmp_path / "ironbound_weekly.json",
+        {
+            "publication_key": "ironbound_weekly",
+            "publication_assets": {
+                "power_rankings": {
+                    "filename": rankings.name,
+                    "media_type": "image/png",
+                    "sha256": "0" * 64,
+                }
+            },
+        },
+    )
+
+    with pytest.raises(ExternalInputError, match="checksum mismatch"):
+        load_external_inputs(path, "ironbound_weekly")

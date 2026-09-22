@@ -128,7 +128,7 @@ def _resolve_feature(
             standings = (dossier.get("rankings") or {}).get("official_standings")
         return _value_result(feature, standings)
     if feature == "ranking_movement":
-        return _value_result(feature, dossier.get("ranking_movement") or dossier.get("rankings"))
+        return _ranking_wire(dossier)
     if feature == "division_metrics":
         return _value_result(feature, dossier.get("division_metrics") or dossier.get("divisions"))
     if feature == "lineup_efficiency":
@@ -193,7 +193,7 @@ def _resolve_feature(
     if feature == "free_agent_of_week":
         return _single_result(feature, (dossier.get("weekly_features") or {}).get("free_agent_of_the_week"))
     if feature == "transactions":
-        return _list_result(feature, snapshot.get("transactions") or [])
+        return _list_result(feature, _newspaper_transactions(snapshot))
     if feature == "draft_results" or feature == "draft_board":
         result = draft_results(snapshot)
         return _rename_result(result, feature)
@@ -320,41 +320,69 @@ def _weekly_briefs(
     dossier: dict[str, Any],
     chronicle_events: list[dict[str, Any]] | None,
 ) -> FeatureResult:
-    transactions = [
-        row
-        for row in (snapshot.get("transactions") or [])
-        if str(row.get("status") or "complete").casefold() in {"complete", "completed"}
-    ]
-    health_source = dossier.get("roster_health") or build_roster_health(snapshot)
-    health_available = health_source.get("status") == "available"
-    health = list(health_source.get("players") or []) if health_available else []
-    events = list(chronicle_events or [])
-    bundle = {
-        "transactions": transactions,
-        "health": health,
-        "chronicle_events": events,
+    """Build compact team dailies instead of duplicating the health department."""
+    efficiency = {
+        int(row.get("roster_id") or 0): row
+        for row in dossier.get("lineup_efficiency") or []
     }
-    if not transactions and not health and not events:
-        if health_available:
-            return ready_no_items(
-                "weekly_briefs",
-                reason="No transaction, roster-health, or Chronicle brief candidates qualified",
+    health_source = dossier.get("roster_health") or build_roster_health(snapshot)
+    health_by_roster: dict[int, list[str]] = {}
+    if health_source.get("status") == "available":
+        for row in health_source.get("players") or []:
+            if not _meaningful_health_row(row):
+                continue
+            health_by_roster.setdefault(int(row.get("roster_id") or 0), []).append(
+                str(row.get("player") or row.get("player_id") or "")
             )
-        return ready(
-            "weekly_briefs",
-            bundle,
-            reason=str(health_source.get("error") or "Roster health source unavailable"),
-            degraded=True,
-        )
+    transactions = _newspaper_transactions(snapshot)
+    tx_by_roster: dict[int, int] = {}
+    for row in transactions:
+        for roster_id in row.get("roster_ids") or []:
+            tx_by_roster[int(roster_id)] = tx_by_roster.get(int(roster_id), 0) + 1
+
+    rows: list[dict[str, Any]] = []
+    for game in dossier.get("scoreboard") or []:
+        teams = game.get("teams") or []
+        if len(teams) != 2:
+            continue
+        for side in teams:
+            roster_id = int(side.get("roster_id") or 0)
+            opponent = next(
+                (row for row in teams if int(row.get("roster_id") or 0) != roster_id),
+                {},
+            )
+            eff = efficiency.get(roster_id) or {}
+            winner = game.get("winner") or {}
+            rows.append(
+                {
+                    "roster_id": roster_id,
+                    "team": side.get("team"),
+                    "opponent": opponent.get("team"),
+                    "result": (
+                        "W"
+                        if int(winner.get("roster_id") or 0) == roster_id
+                        else "L"
+                        if winner
+                        else "T"
+                    ),
+                    "score": side.get("points"),
+                    "opponent_score": opponent.get("points"),
+                    "efficiency": eff.get("efficiency"),
+                    "transactions": tx_by_roster.get(roster_id, 0),
+                    "health_flags": health_by_roster.get(roster_id, []),
+                }
+            )
+    if not rows:
+        return ready_no_items("weekly_briefs", reason="No completed team dailies qualified")
     return ready(
         "weekly_briefs",
-        bundle,
+        sorted(rows, key=lambda row: str(row.get("team") or "").casefold()),
+        degraded=health_source.get("status") != "available",
         reason=(
             None
-            if health_available
+            if health_source.get("status") == "available"
             else str(health_source.get("error") or "Roster health source unavailable")
         ),
-        degraded=not health_available,
     )
 
 
@@ -383,12 +411,155 @@ def _next_matchups_result(snapshot: dict[str, Any]) -> FeatureResult:
                 str(source.get("reason") or source.get("error") or "Next-week matchups unavailable"),
             )
         records = list(source.get("records") or [])
-        if not records:
-            return ready_no_items("next_matchups", reason="No next-week matchups returned")
-        return ready("next_matchups", records)
-    if isinstance(source, list):
-        return _list_result("next_matchups", source)
-    return unavailable("next_matchups", "Next-week matchup source had an unsupported shape")
+        next_week = source.get("week")
+    elif isinstance(source, list):
+        records = list(source)
+        next_week = None
+    else:
+        return unavailable("next_matchups", "Next-week matchup source had an unsupported shape")
+    if not records:
+        return ready_no_items("next_matchups", reason="No next-week matchups returned")
+
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in records:
+        matchup_id = row.get("matchup_id")
+        if matchup_id is None:
+            continue
+        grouped.setdefault(str(matchup_id), []).append(row)
+    games = []
+    for matchup_id, sides in sorted(grouped.items()):
+        if len(sides) != 2:
+            continue
+        ordered = sorted(sides, key=lambda row: int(row.get("roster_id") or 0))
+        games.append(
+            {
+                "week": next_week,
+                "matchup_id": int(matchup_id) if matchup_id.isdigit() else matchup_id,
+                "teams": [
+                    {
+                        "roster_id": int(side.get("roster_id") or 0),
+                        "team": _fantasy_team_name(snapshot, int(side.get("roster_id") or 0)),
+                    }
+                    for side in ordered
+                ],
+            }
+        )
+    if not games:
+        return ready_no_items("next_matchups", reason="No complete next-week matchup pairs returned")
+    return ready("next_matchups", games)
+
+
+def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
+    rankings = dossier.get("rankings") or {}
+    power = rankings.get("data_power_ranking") or {}
+    rows = list(power.get("rows") or [])
+    if not rows:
+        return unavailable(
+            "ranking_movement",
+            str(power.get("status") or "Data Power ranking inputs unavailable"),
+        )
+    previous = {
+        int(row.get("roster_id") or 0): row
+        for row in ((rankings.get("prior_published_ranking") or {}).get("rows") or [])
+        if row.get("roster_id") is not None
+    }
+    rendered = []
+    for index, row in enumerate(rows, start=1):
+        roster_id = int(row.get("roster_id") or 0)
+        current_rank = int(row.get("rank") or index)
+        prior = previous.get(roster_id) or {}
+        previous_rank = prior.get("rank")
+        movement = (
+            int(previous_rank) - current_rank
+            if previous_rank is not None
+            else None
+        )
+        rendered.append(
+            {
+                "roster_id": roster_id,
+                "team": row.get("team"),
+                "rank": current_rank,
+                "previous_rank": previous_rank,
+                "movement": movement,
+                "movement_status": (
+                    "available" if previous_rank is not None else "prior_publication_unavailable"
+                ),
+                "consensus_rank_average": row.get("consensus_rank_average"),
+                "starter_strength_rank": row.get("dynasty_starter_strength_rank"),
+                "projection_rank": row.get("optimal_starting_lineup_projection_rank"),
+            }
+        )
+    return ready(
+        "ranking_movement",
+        rendered,
+        reason=(
+            None
+            if previous
+            else "Current Data Power order is available; prior published ranking baseline is not yet archived, so movement is not claimed."
+        ),
+    )
+
+
+def _newspaper_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    players = snapshot.get("players") or {}
+    rows = []
+    for transaction in snapshot.get("transactions") or []:
+        if str(transaction.get("status") or "").casefold() not in {"complete", "completed"}:
+            continue
+        adds = transaction.get("adds") or {}
+        drops = transaction.get("drops") or {}
+        moves = []
+        for player_id in sorted(set(adds) | set(drops)):
+            moves.append(
+                {
+                    "player_id": str(player_id),
+                    "player": str((players.get(str(player_id)) or {}).get("full_name") or player_id),
+                    "from_roster_id": drops.get(player_id),
+                    "from_team": (
+                        _fantasy_team_name(snapshot, int(drops[player_id]))
+                        if player_id in drops
+                        else "Free agency"
+                    ),
+                    "to_roster_id": adds.get(player_id),
+                    "to_team": (
+                        _fantasy_team_name(snapshot, int(adds[player_id]))
+                        if player_id in adds
+                        else "Free agency"
+                    ),
+                }
+            )
+        rows.append(
+            {
+                "transaction_id": transaction.get("transaction_id"),
+                "type": transaction.get("type"),
+                "roster_ids": [int(value) for value in transaction.get("roster_ids") or []],
+                "moves": moves,
+                "faab": (transaction.get("settings") or {}).get("waiver_bid"),
+                "draft_picks": transaction.get("draft_picks") or [],
+            }
+        )
+    return rows
+
+
+def _fantasy_team_name(snapshot: dict[str, Any], roster_id: int) -> str:
+    users = {str(row.get("user_id")): row for row in snapshot.get("users") or []}
+    roster = next(
+        (row for row in snapshot.get("rosters") or [] if int(row.get("roster_id") or 0) == int(roster_id)),
+        {},
+    )
+    owner = users.get(str(roster.get("owner_id"))) or {}
+    metadata = owner.get("metadata") or {}
+    return str(metadata.get("team_name") or owner.get("display_name") or f"Roster {roster_id}")
+
+
+def _meaningful_health_row(row: dict[str, Any]) -> bool:
+    return bool(
+        row.get("on_ir")
+        or row.get("injury_status")
+        or row.get("injury")
+        or row.get("report_status")
+        or row.get("practice_participation")
+    )
 
 
 def _health_result(snapshot: dict[str, Any]) -> FeatureResult:

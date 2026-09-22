@@ -507,9 +507,10 @@ def _render_feature(feature: str, data: Any) -> list[str]:
             lines.append(f"- {row.get('team')}: {row.get('player')} ({row.get('position') or 'N/A'}, {row.get('nfl_team') or 'FA'}) — " + ", ".join(details) + ".")
         return lines
 
-    if feature == "weekly_briefs" and isinstance(data, list):
+    if feature == "weekly_briefs" and isinstance(data, (list, dict)):
         lines = []
-        for row in data:
+        team_rows = data.get("teams") or [] if isinstance(data, dict) else data
+        for row in team_rows:
             detail = f"{row.get('result')} vs {row.get('opponent')}, {float(row.get('score') or 0):.2f}-{float(row.get('opponent_score') or 0):.2f}"
             if row.get("efficiency") is not None:
                 detail += f"; {float(row.get('efficiency')):.1%} lineup efficiency"

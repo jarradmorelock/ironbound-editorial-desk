@@ -188,6 +188,40 @@ class ChronicleQueries:
         )
         return [dict(row) for row in document.get("matchups") or []]
 
+    def season_matchup_finals(
+        self, league_key: str, season: str
+    ) -> list[dict[str, Any]]:
+        """Return finalized matchup score rows directly from the durable event ledger."""
+        wanted = str(season)
+        rows: list[dict[str, Any]] = []
+        for event in self.league_events(league_key, {"MATCHUP_FINAL"}):
+            if str(event.get("season") or "") != wanted:
+                continue
+            evidence = dict(event.get("evidence") or {})
+            matchup_id = evidence.get("matchup_id")
+            week = int(event.get("week") or 0)
+            for side in evidence.get("rosters") or []:
+                if not isinstance(side, dict):
+                    continue
+                rows.append(
+                    {
+                        "season": wanted,
+                        "week": week,
+                        "matchup_id": matchup_id,
+                        "roster_id": int(side.get("roster_id") or 0),
+                        "points": float(side.get("points") or 0),
+                        "event_id": event.get("event_id"),
+                    }
+                )
+        rows.sort(
+            key=lambda row: (
+                row["week"],
+                str(row.get("matchup_id") or ""),
+                row["roster_id"],
+            )
+        )
+        return rows
+
     def season_efficiency(
         self, league_key: str, season: str
     ) -> list[dict[str, Any]]:

@@ -25,6 +25,8 @@ def _features(contracts):
 def test_ballad_weekly_contract_is_locked():
     assert _names(_weekly("ballad_crier")) == [
         "Week Cardiogram",
+        "Median Line",
+        "Monday-Night Code Blue / Late Window",
         "Final Monitor",
         "Weekly Rounds",
         "Official Standings",
@@ -52,10 +54,11 @@ def test_volunteer_weekly_contract_has_no_division_assumptions():
     contracts = _weekly("volunteer_voice")
     assert _names(contracts) == [
         "Lead Story / Weekly Aftermath",
+        "Record Watch",
+        "Decision Desk / The Call That Won the Week",
         "Official Table",
         "Median Result",
         "Rankings Wire",
-        "Decision Desk / The Call That Won the Week",
         "Mountain MVP",
         "Manager of the Week",
         "Benchwarmer",
@@ -66,7 +69,7 @@ def test_volunteer_weekly_contract_has_no_division_assumptions():
         "Escape Artist",
         "Waiver Star",
         "Bench Blast",
-        "Record Watch",
+        "Roster Health",
         "Next-Week Scouting",
     ]
     combined = " ".join(_features(contracts) + _names(contracts)).casefold()
@@ -97,11 +100,13 @@ def test_saturday_weekly_contract_retains_divisions_idp_and_recruiting():
 def test_hollywood_weekly_contract_is_complete_not_placeholder():
     assert _names(_weekly("hollywood_beat")) == [
         "Box Office",
+        "Weekly Median",
         "Marquee / Official Standings",
         "Top Billing / First Cut",
         "Hollywood Board",
         "Monday Night / Late Show",
         "For Your Consideration",
+        "Position Leaders",
         "Cutting Room Floor",
         "Studio Efficiency",
         "Casting Call",

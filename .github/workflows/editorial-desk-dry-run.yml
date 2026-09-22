@@ -122,8 +122,15 @@ jobs:
             python -m editorial_desk completed-period >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Refuse unsafe manual Production
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'production' && steps.plan.outputs.active != 'true' }}
+        run: |
+          echo "${{ steps.plan.outputs.reason }}"
+          echo "Production was not run because the requested week is not verified fully complete."
+          exit 1
+
       - name: Explain a scheduled no-op
-        if: ${{ steps.plan.outputs.active != 'true' }}
+        if: ${{ github.event_name != 'workflow_dispatch' && steps.plan.outputs.active != 'true' }}
         run: echo "${{ steps.plan.outputs.reason }}; no packet will be sent."
 
       - name: Validate configuration

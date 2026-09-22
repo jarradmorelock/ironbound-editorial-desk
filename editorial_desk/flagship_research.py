@@ -150,6 +150,7 @@ def build_flagship_research_packet(
         },
         "ranking_publication_assets": {
             "authority": "Ironbound_power_ranks",
+            "required": publication_assets is not None,
             "policy": "Use the supplied PNGs unchanged in the magazine. Do not redraw these charts.",
             "assets": dict(publication_assets or {}),
         },
@@ -282,21 +283,23 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
                 f"for Week {packet.get('week')} production."
             )
 
-    assets = (packet.get("ranking_publication_assets") or {}).get("assets") or {}
-    for asset_key, label in (
-        ("power_rankings", "Power Rankings graphic"),
-        ("playoff_forecast", "Playoff Forecast graphic"),
-    ):
-        asset = assets.get(asset_key) or {}
-        asset_ok = asset.get("status") == "READY" and bool(asset.get("package_path"))
-        _check(
-            checks,
-            f"asset_{asset_key}",
-            asset_ok,
-            str(asset.get("status") or "missing"),
-        )
-        if not asset_ok:
-            awaiting.append(f"{label} from the Power Rankings engine.")
+    asset_section = packet.get("ranking_publication_assets") or {}
+    assets = asset_section.get("assets") or {}
+    if asset_section.get("required"):
+        for asset_key, label in (
+            ("power_rankings", "Power Rankings graphic"),
+            ("playoff_forecast", "Playoff Forecast graphic"),
+        ):
+            asset = assets.get(asset_key) or {}
+            asset_ok = asset.get("status") == "READY" and bool(asset.get("package_path"))
+            _check(
+                checks,
+                f"asset_{asset_key}",
+                asset_ok,
+                str(asset.get("status") or "missing"),
+            )
+            if not asset_ok:
+                awaiting.append(f"{label} from the Power Rankings engine.")
 
     editorial.extend(
         [

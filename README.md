@@ -360,6 +360,20 @@ Newspaper packets expose contract readiness and manual-verification gaps, then
 the exact rendered research Markdown is used for email delivery. Flagship
 Ironbound/Unbound research remains on the separate production-v0.4 contract.
 
+## Divisional MVP Card Shop handoff
+
+Ironbound Sixteen and Free Ironbound Sixteen keep divisional MVP research
+separate from the magazine research contract. After a successful weekly
+collection, Editorial Desk sends a second **Card Shop** email containing exactly
+eight MVPs: one highest-scoring submitted starter from each of the four
+divisions in each league. Each league receives exactly one gold-foil flag,
+assigned to the highest scorer among its four divisional winners.
+
+The email body is human-readable and carries division, player, fantasy team,
+position, and fantasy points. A JSON attachment preserves player/roster IDs and
+the gold-foil flag for deterministic trading-card production. These MVP rows do
+not appear in the flagship magazine research packet.
+
 ## Weekly reading packets
 
 Each publication now has a `reading_packet.md` and one email attachment in this order:

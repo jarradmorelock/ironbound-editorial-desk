@@ -79,6 +79,7 @@ def build_flagship_research_packet(
             "story_signals": intelligence.get("story_signals") or [],
             "actual_nfl_stat_book": intelligence.get("stat_book") or {},
         },
+        "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
@@ -144,15 +145,16 @@ def build_flagship_research_packet(
         },
         "tuesday_external_inputs": {
             "usage": {
-                "status": _external_status(external.usage_supplied),
+                "status": _optional_external_status(external.usage_supplied),
                 "rows": [dict(row) for row in external.usage],
+                "note": "Optional legacy/external usage input. Weekly magazine usage is sourced from nflverse inside Editorial Desk.",
             },
             "war": {
-                "status": _external_status(external.war_supplied),
+                "status": _optional_external_status(external.war_supplied),
                 "rows": [dict(row) for row in external.war],
             },
             "cwar": {
-                "status": _external_status(external.cwar_supplied),
+                "status": _optional_external_status(external.cwar_supplied),
                 "rows": [dict(row) for row in external.cwar],
             },
             "source_metadata": dict(external.source_metadata),
@@ -192,6 +194,20 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
             manual.append(
                 f"Matchup {game.get('matchup_id')}: no submitted-starter NFL stat lines matched."
             )
+
+    usage = packet.get("usage_desk") or {}
+    usage_ok = usage.get("status") == "READY"
+    _check(
+        checks,
+        "weekly_usage",
+        usage_ok,
+        str(usage.get("status") or "missing"),
+    )
+    if not usage_ok:
+        manual.append(
+            "Usage Desk evidence is incomplete. Weekly player usage from nflverse "
+            "player stats must be available before flagship production."
+        )
 
     health = packet.get("injury_roster_health") or {}
     health_ok = health.get("status") == "available"
@@ -242,11 +258,6 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         section = packet.get(key) or {}
         if section.get("status") != "READY":
             awaiting.append(f"{label} from Tuesday power-rankings delivery.")
-
-    external = packet.get("tuesday_external_inputs") or {}
-    for key, label in (("usage", "Dynasty Daddy usage"), ("war", "WAR"), ("cwar", "cWAR")):
-        if (external.get(key) or {}).get("status") != "READY":
-            awaiting.append(f"{label} from Tuesday external input.")
 
     editorial.extend(
         [
@@ -318,6 +329,45 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             )
         for note in game.get("context_signals") or []:
             lines.append(f"- Context: {note}")
+
+    usage = packet.get("usage_desk") or {}
+    lines.extend(["", "## USAGE DESK INPUT", ""])
+    lines.append(f"Status: {usage.get('status', 'UNKNOWN')}")
+    enrichment = usage.get("enrichment_status") or {}
+    lines.append(
+        "- Source coverage: "
+        + ", ".join(
+            f"{key.replace('_', ' ')}={value}"
+            for key, value in enrichment.items()
+        )
+    )
+    leaders = usage.get("leaders") or {}
+    for label, rows in leaders.items():
+        lines.extend(["", f"### {label.replace('_', ' ').title()}"])
+        for row in rows:
+            parts = [
+                f"{row.get('player')} — {row.get('fantasy_team') or 'unmapped'}",
+            ]
+            if row.get("carries") is not None:
+                parts.append(f"{int(float(row.get('carries') or 0))} carries")
+            if row.get("carry_share") is not None:
+                parts.append(f"{float(row.get('carry_share')):.1%} team carries")
+            if row.get("targets") is not None:
+                parts.append(f"{int(float(row.get('targets') or 0))} targets")
+            if row.get("target_share") is not None:
+                parts.append(f"{float(row.get('target_share')):.1%} team targets")
+            if row.get("snap_share") is not None:
+                parts.append(f"{float(row.get('snap_share')):.1%} snaps")
+            if row.get("red_zone_opportunities") is not None:
+                parts.append(f"{int(float(row.get('red_zone_opportunities') or 0))} red-zone opps")
+            lines.append("- " + "; ".join(parts))
+    if usage.get("story_signals"):
+        lines.extend(["", "### Usage Story Signals"])
+        for row in usage.get("story_signals") or []:
+            lines.append(
+                f"- {row.get('signal_type') or row.get('type') or 'signal'}: "
+                f"{row.get('explanation') or row.get('statement') or _compact(row)}"
+            )
 
     lines.extend(["", "## INJURY & ROSTER HEALTH", ""])
     health = packet.get("injury_roster_health") or {}
@@ -422,7 +472,8 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     power = packet.get("power_rankings_chart") or {}
     lines.append(f"Status: {power.get('status')}")
     for row in sorted(power.get("rows") or [], key=lambda item: int(item.get("rank") or 999)):
-        lines.append(f"- #{row.get('rank')} {row.get('franchise_key')}")
+        label = row.get("team") or row.get("franchise_key") or f"Roster {row.get('roster_id')}"
+        lines.append(f"- #{row.get('rank')} {label}")
 
     lines.extend(["", "## PLAYOFF ODDS CHART INPUT", ""])
     odds = packet.get("playoff_odds_chart") or {}
@@ -430,9 +481,13 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for row in odds.get("rows") or []:
         lines.append("- " + _compact(row))
 
-    lines.extend(["", "## TUESDAY DYNASTY INPUTS", ""])
+    lines.extend(["", "## OPTIONAL SUPPLEMENTAL ANALYTICS", ""])
     ext = packet.get("tuesday_external_inputs") or {}
-    for key, label in (("usage", "Usage"), ("war", "WAR"), ("cwar", "cWAR")):
+    lines.append(
+        "Weekly usage is already supplied by the internal nflverse Usage Desk above. "
+        "WAR and cWAR are optional feature-story enrichment and do not affect research completeness."
+    )
+    for key, label in (("war", "WAR"), ("cwar", "cWAR")):
         section = ext.get(key) or {}
         lines.extend(["", f"### {label} — {section.get('status')}"])
         for row in section.get("rows") or []:
@@ -958,6 +1013,62 @@ def _safe_int(value: Any) -> int | None:
         return None
 
 
+def _usage_desk(intelligence: dict[str, Any]) -> dict[str, Any]:
+    """Create a weekly magazine usage desk from internally collected NFL data."""
+    source_status = intelligence.get("source_status") or {}
+    stat_book = intelligence.get("stat_book") or {}
+    rows = list(stat_book.get("rostered_records") or stat_book.get("records") or [])
+    player_stats_ready = (
+        str(source_status.get("player_stats") or "").casefold() == "available"
+        and str(stat_book.get("status") or "").casefold() == "available"
+        and bool(rows)
+    )
+
+    active = [
+        dict(row)
+        for row in rows
+        if any(
+            float(row.get(key) or 0) > 0
+            for key in (
+                "carries",
+                "targets",
+                "offense_snaps",
+                "red_zone_opportunities",
+                "inside_10_opportunities",
+                "inside_5_opportunities",
+            )
+        )
+    ]
+
+    def top(field: str, limit: int = 8) -> list[dict[str, Any]]:
+        candidates = [row for row in active if row.get(field) is not None]
+        candidates.sort(
+            key=lambda row: (
+                -float(row.get(field) or 0),
+                str(row.get("player") or "").casefold(),
+            )
+        )
+        return candidates[:limit]
+
+    return {
+        "status": "READY" if player_stats_ready else "MANUAL_VERIFY",
+        "required_source": "nflverse weekly player stats",
+        "enrichment_status": {
+            "player_stats": source_status.get("player_stats") or "unavailable",
+            "snap_counts": source_status.get("snap_counts") or "unavailable",
+            "play_by_play": source_status.get("play_by_play") or "unavailable",
+        },
+        "rostered_player_rows": rows,
+        "leaders": {
+            "targets": top("targets"),
+            "carries": top("carries"),
+            "snap_share": top("snap_share"),
+            "red_zone_opportunities": top("red_zone_opportunities"),
+        },
+        "story_signals": list(intelligence.get("story_signals") or []),
+    }
+
+
 def _roster_team_names(snapshot: dict[str, Any]) -> dict[int, str]:
     users = {
         str(row.get("user_id")): row for row in snapshot.get("users") or []
@@ -973,6 +1084,10 @@ def _roster_team_names(snapshot: dict[str, Any]) -> dict[int, str]:
             or f"Roster {roster_id}"
         )
     return names
+
+
+def _optional_external_status(supplied: bool) -> str:
+    return "READY" if supplied else "OPTIONAL_NOT_SUPPLIED"
 
 
 def _external_status(supplied: bool) -> str:

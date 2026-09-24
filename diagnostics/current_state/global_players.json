@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-09-24T15:03:27.291518+00:00",
+  "observed_at": "2026-09-24T19:59:32.613943+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -161,6 +161,10 @@
       "injury_status": null,
       "status": "Active"
     },
+    "11433": {
+      "injury_status": null,
+      "status": "Active"
+    },
     "11435": {
       "injury_status": null,
       "status": "Active"
@@ -286,7 +290,7 @@
       "status": "Active"
     },
     "11626": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "11627": {
@@ -1805,6 +1809,10 @@
       "injury_status": null,
       "status": "Active"
     },
+    "6828": {
+      "injury_status": null,
+      "status": "Active"
+    },
     "6836": {
       "injury_status": "IR",
       "status": "Inactive"
@@ -1974,7 +1982,7 @@
       "status": "Active"
     },
     "7635": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "7640": {
@@ -2409,6 +2417,10 @@
       "injury_status": null,
       "status": "Active"
     },
+    "954": {
+      "injury_status": null,
+      "status": "Active"
+    },
     "96": {
       "injury_status": null,
       "status": "Active"
@@ -2486,6 +2498,10 @@
       "status": null
     },
     "NE": {
+      "injury_status": null,
+      "status": null
+    },
+    "NYG": {
       "injury_status": null,
       "status": null
     },

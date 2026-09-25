@@ -1,0 +1,49 @@
+{
+  "event_counts": {
+    "added": 28,
+    "skipped": 52
+  },
+  "finalize_matchups": false,
+  "leagues": {
+    "ballad_of_broken_hearts": {
+      "error": null,
+      "status": "fresh"
+    },
+    "best_characters_dynasty": {
+      "error": null,
+      "status": "fresh"
+    },
+    "dont_tell_my_wife": {
+      "error": null,
+      "status": "fresh"
+    },
+    "free_ironbound_sixteen": {
+      "error": null,
+      "status": "fresh"
+    },
+    "ironbound_sixteen": {
+      "error": null,
+      "status": "fresh"
+    },
+    "nine_five": {
+      "error": null,
+      "status": "fresh"
+    },
+    "rocky_top_rumble": {
+      "error": null,
+      "status": "fresh"
+    },
+    "sec_dynasty": {
+      "error": null,
+      "status": "fresh"
+    }
+  },
+  "observed_at": "2026-09-25T23:56:18.142046+00:00",
+  "run_id": "b213c35886e74fa5",
+  "season": "2026",
+  "source_freshness": {
+    "player_health": "fresh"
+  },
+  "warnings": [],
+  "week": 3
+}

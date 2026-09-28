@@ -7,6 +7,7 @@ from typing import Any
 
 import requests
 
+from .beat_news import build_beat_report, load_news_ledger
 from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
@@ -40,6 +41,8 @@ def collect_all(
     chronicle_root: Path | None = None,
     external_inputs_dir: Path | None = None,
     chronicle_revision: str | None = None,
+    beat_ledger_path: Path | None = None,
+    beat_ledger_revision: str | None = None,
 ) -> list[Path]:
     """Run the existing collector, then enrich publication dossiers for review."""
     sleeper = client or SleeperClient()
@@ -71,6 +74,10 @@ def collect_all(
     )
     shared = _collect_deep_nfl_context(nflverse, season, week)
     player_directory = sleeper.players()
+    beat_source = load_news_ledger(
+        beat_ledger_path,
+        revision=beat_ledger_revision,
+    )
 
     for config in publication_configs:
         snapshot_path = snapshot_paths.get(config.key)
@@ -150,6 +157,7 @@ def collect_all(
                         else None
                     ),
                     publication_assets=publication_assets,
+                    beat_report=build_beat_report(snapshot, beat_source),
                 )
                 if flagship_packet is not None:
                     generated.extend(

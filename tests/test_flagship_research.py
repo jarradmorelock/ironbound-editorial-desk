@@ -617,18 +617,19 @@ def test_v06_contract_exposes_shared_flagship_spine_and_authoritative_forward_mo
             }
             for rank in range(1, 17)
         ),
-        weekly_matchup_forecast=(
+        weekly_matchup_forecast=tuple(
             {
                 "week": 5,
-                "matchup_id": 1,
-                "roster_one": 1,
-                "team_one": "Team 1",
-                "roster_two": 2,
-                "team_two": "Team 2",
+                "matchup_id": matchup_id,
+                "roster_one": matchup_id * 2 - 1,
+                "team_one": f"Team {matchup_id * 2 - 1}",
+                "roster_two": matchup_id * 2,
+                "team_two": f"Team {matchup_id * 2}",
                 "spread": 3.5,
                 "over_under": 245.5,
                 "simulations": 10000,
-            },
+            }
+            for matchup_id in range(1, 9)
         ),
         source_metadata={"ranking_week": 5, "results_through_week": 4},
     )

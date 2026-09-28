@@ -70,6 +70,15 @@ def _snapshot(team_name="Blue Moose"):
                             "drops": {},
                         }
                     ],
+                    "2": [
+                        {
+                            "transaction_id": "tx-repeat",
+                            "type": "free_agent",
+                            "status": "complete",
+                            "adds": {"p1": 1},
+                            "drops": {},
+                        }
+                    ],
                     "3": [
                         {
                             "transaction_id": "tx-current",

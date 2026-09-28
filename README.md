@@ -452,3 +452,40 @@ and add these repository secrets:
 For the current setup, `IRONBOUND_GMAIL_ADDRESS` should be
 `the.ironbound.ffl@gmail.com`. Never place the app password in a configuration
 file, commit, issue, or chat message.
+
+## Beat/news reporting handoff
+
+Ironbound Weekly and Unbound Weekly consume player-news context from the separate
+`jarradmorelock/Ironbound-Forum-Feed-Poster` system. That repository remains
+the authority for feed collection, player/team resolution, Discord tags,
+duplicate suppression, and meaningful same-player follow-ups.
+
+Editorial Desk does **not** scrape Discord and does **not** fetch the same RSS
+feeds again. Production pins the current `news-data` revision, downloads its
+append-only `ledger/events.jsonl`, and maps accepted stories to the current
+Ironbound and Unbound rosters by NFLverse/GSIS player ID.
+
+The flagship beat report uses a deterministic Tuesday-through-Tuesday window
+derived from that NFL week's nflverse schedule. Re-running an old week later
+therefore does not silently pull newer news into an older magazine. Each
+league-relevant event retains its source URL, feed-provided summary, normalized
+headline, tags, Discord action/thread ID, and mapped fantasy team.
+
+Events are routed into deterministic editorial lanes:
+
+- **Since We Last Printed** for meaningful moves, contracts, depth-chart,
+  coaching/scheme, legal, retirement, rookie/prospect, and breaking items.
+- **Health context** for injuries, practice reports, and game status.
+- **Usage context** for role/depth/scheme/fantasy-impact and availability news.
+- **Preview context** for game status, practice, weather, and start/sit signals.
+
+The same beat events are also cross-linked directly to the weekly fantasy
+matchup dossiers when a mapped player belongs to either team in that game. The
+publishing AI may use the supplied evidence and attribution, but it must not
+promote feed commentary into unattributed fact or invent details absent from
+the handoff.
+
+A production run with a configured beat ledger treats that source as required:
+an unavailable ledger or unverifiable reporting window prevents
+`Research complete: YES`.
+

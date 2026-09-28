@@ -428,6 +428,92 @@ def test_power_rankings_chart_uses_team_name_when_franchise_key_is_absent(tmp_pa
     assert "#1 None" not in text
 
 
+def test_required_beat_news_source_blocks_completeness_when_unavailable(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+        beat_report={
+            "required": True,
+            "status": "MANUAL_VERIFY",
+            "error": "ledger unavailable",
+            "items": [],
+        },
+    )
+
+    assert packet["validation"]["research_complete"] is False
+    assert any(
+        "Beat/news ledger" in row
+        for row in packet["validation"]["manual_verify"]
+    )
+
+
+def test_ready_beat_news_is_rendered_with_source_attribution(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+        beat_report={
+            "required": True,
+            "status": "READY",
+            "source_revision": "abc123",
+            "source_repository": "jarradmorelock/Ironbound-Forum-Feed-Poster",
+            "source_branch": "news-data",
+            "reporting_window": {
+                "start": "2026-09-15T00:00:00-04:00",
+                "end": "2026-09-22T23:59:59-04:00",
+            },
+            "relevant_event_count": 1,
+            "items": [
+                {
+                    "published_at": "2026-09-18T12:00:00+00:00",
+                    "headline": "Player 1 earns lead role",
+                    "source": "RotoWire",
+                    "source_url": "https://example.com/story",
+                    "feed_summary": "The coaching staff expects an expanded role.",
+                    "tags": ["Depth Chart"],
+                    "league_players": [
+                        {
+                            "player": "Player 1",
+                            "fantasy_team": "Team 1",
+                        }
+                    ],
+                    "editorial_lanes": {
+                        "since_we_last_printed": True,
+                        "usage_context": True,
+                    },
+                }
+            ],
+        },
+    )
+
+    assert packet["validation"]["research_complete"] is True
+    assert any(
+        game.get("beat_context")
+        for game in packet["game_coverage"]["games"]
+        if any(
+            str(team.get("team") or "") == "Team 1"
+            for team in game.get("teams") or []
+        )
+    )
+    text = render_flagship_research_packet(packet)
+    assert "## BEAT / NEWS WIRE" in text
+    assert "Player 1 earns lead role" in text
+    assert "RotoWire" in text
+    assert "https://example.com/story" in text
+    assert "usage context" in text
+
+
 def test_rookie_watch_keeps_current_team_and_adds_ironbound_draft_context(tmp_path):
     snapshot, dossier = _fixture()
     _write_history(tmp_path, dossier)

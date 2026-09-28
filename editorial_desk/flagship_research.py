@@ -21,6 +21,7 @@ def build_flagship_research_packet(
     history_root: Path,
     chronicle: ChronicleQueries | None = None,
     publication_assets: dict[str, dict[str, Any]] | None = None,
+    beat_report: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -45,6 +46,8 @@ def build_flagship_research_packet(
     history = _season_dossiers(history_root, season, league_key, week)
 
     games = _game_research(snapshot, dossier)
+    if beat_report is not None:
+        games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
     awards = dossier.get("awards") or {}
     health = dossier.get("roster_health") or {}
@@ -52,7 +55,7 @@ def build_flagship_research_packet(
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.4",
+        "contract_version": "ironbound-production-v0.5",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
@@ -82,6 +85,7 @@ def build_flagship_research_packet(
         },
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
+        "beat_report": beat_report,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
@@ -225,6 +229,21 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     _check(checks, "injury_health", health_ok, str(health.get("status") or "missing"))
     if not health_ok:
         manual.append("Injury / roster-health source is unavailable.")
+
+    beat = packet.get("beat_report")
+    if beat is not None and beat.get("required"):
+        beat_ok = beat.get("status") == "READY"
+        _check(
+            checks,
+            "beat_news",
+            beat_ok,
+            str(beat.get("status") or "missing"),
+        )
+        if not beat_ok:
+            manual.append(
+                "Beat/news ledger is unavailable or its weekly reporting window "
+                "could not be verified."
+            )
 
     honors = packet.get("weekly_honors") or {}
     for key in (
@@ -372,6 +391,11 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             )
         for note in game.get("context_signals") or []:
             lines.append(f"- Context: {note}")
+        for beat in game.get("beat_context") or []:
+            lines.append(
+                f"- Beat context: {beat.get('headline') or beat.get('original_title')} "
+                f"— {beat.get('source')}"
+            )
 
     usage = packet.get("usage_desk") or {}
     lines.extend(["", "## USAGE DESK INPUT", ""])
@@ -427,6 +451,46 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             if value
         ]
         lines.append(f"- {row.get('team')}: {row.get('player')} — {', '.join(details) or 'flagged'}")
+
+    beat = packet.get("beat_report")
+    if beat is not None:
+        lines.extend(["", "## BEAT / NEWS WIRE", ""])
+        lines.append(f"Status: {beat.get('status', 'UNKNOWN')}")
+        if beat.get("source_revision"):
+            lines.append(
+                f"Source revision: {beat.get('source_revision')} "
+                f"({beat.get('source_repository')}:{beat.get('source_branch')})"
+            )
+        window = beat.get("reporting_window") or {}
+        if window:
+            lines.append(
+                f"Reporting window: {window.get('start')} through {window.get('end')}."
+            )
+        lines.append(
+            f"League-relevant accepted stories: {int(beat.get('relevant_event_count') or 0)}."
+        )
+        for row in beat.get("items") or []:
+            players = ", ".join(
+                f"{player.get('player')} ({player.get('fantasy_team')})"
+                for player in row.get("league_players") or []
+            )
+            tags = ", ".join(row.get("tags") or [])
+            lines.append(
+                f"- {row.get('published_at')} — {row.get('headline') or row.get('original_title')} "
+                f"— {row.get('source')} — {players or 'league relevance mapped'}"
+                + (f" — tags: {tags}" if tags else "")
+            )
+            if row.get("feed_summary"):
+                lines.append(f"  Evidence summary: {row.get('feed_summary')}")
+            if row.get("source_url"):
+                lines.append(f"  Source: {row.get('source_url')}")
+            lanes = [
+                key.replace("_", " ")
+                for key, enabled in (row.get("editorial_lanes") or {}).items()
+                if enabled
+            ]
+            if lanes:
+                lines.append("  Editorial lanes: " + ", ".join(lanes))
 
     honors = packet.get("weekly_honors") or {}
     lines.extend(["", "## WEEKLY HONORS & ROOKIE WATCH", "", "### Started Position Leaders"])
@@ -656,6 +720,42 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
             }
         )
     return games
+
+
+def _attach_beat_context_to_games(
+    games: list[dict[str, Any]],
+    beat_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Cross-link accepted beat items to fantasy matchups without editorial inference."""
+    items = beat_report.get("items") or []
+    enriched: list[dict[str, Any]] = []
+    for game in games:
+        row = dict(game)
+        team_names = {
+            str(team.get("team") or "")
+            for team in row.get("teams") or []
+            if team.get("team")
+        }
+        row["beat_context"] = [
+            {
+                "event_id": item.get("event_id"),
+                "published_at": item.get("published_at"),
+                "headline": item.get("headline"),
+                "original_title": item.get("original_title"),
+                "source": item.get("source"),
+                "source_url": item.get("source_url"),
+                "tags": item.get("tags") or [],
+                "league_players": item.get("league_players") or [],
+                "editorial_lanes": item.get("editorial_lanes") or {},
+            }
+            for item in items
+            if team_names.intersection(
+                str(player.get("fantasy_team") or "")
+                for player in item.get("league_players") or []
+            )
+        ]
+        enriched.append(row)
+    return enriched
 
 
 def _cover_candidates(games: list[dict[str, Any]], dossier: dict[str, Any]) -> list[dict[str, Any]]:

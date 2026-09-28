@@ -46,6 +46,8 @@ def build_flagship_research_packet(
     history = _season_dossiers(history_root, season, league_key, week)
 
     games = _game_research(snapshot, dossier)
+    if beat_report is not None:
+        games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
     awards = dossier.get("awards") or {}
     health = dossier.get("roster_health") or {}
@@ -429,6 +431,11 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             )
         for note in game.get("context_signals") or []:
             lines.append(f"- Context: {note}")
+        for beat in game.get("beat_context") or []:
+            lines.append(
+                f"- Beat context: {beat.get('headline') or beat.get('original_title')} "
+                f"— {beat.get('source')}"
+            )
 
     usage = packet.get("usage_desk") or {}
     lines.extend(["", "## USAGE DESK INPUT", ""])
@@ -713,6 +720,42 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
             }
         )
     return games
+
+
+def _attach_beat_context_to_games(
+    games: list[dict[str, Any]],
+    beat_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Cross-link accepted beat items to fantasy matchups without editorial inference."""
+    items = beat_report.get("items") or []
+    enriched: list[dict[str, Any]] = []
+    for game in games:
+        row = dict(game)
+        team_names = {
+            str(team.get("team") or "")
+            for team in row.get("teams") or []
+            if team.get("team")
+        }
+        row["beat_context"] = [
+            {
+                "event_id": item.get("event_id"),
+                "published_at": item.get("published_at"),
+                "headline": item.get("headline"),
+                "original_title": item.get("original_title"),
+                "source": item.get("source"),
+                "source_url": item.get("source_url"),
+                "tags": item.get("tags") or [],
+                "league_players": item.get("league_players") or [],
+                "editorial_lanes": item.get("editorial_lanes") or {},
+            }
+            for item in items
+            if team_names.intersection(
+                str(player.get("fantasy_team") or "")
+                for player in item.get("league_players") or []
+            )
+        ]
+        enriched.append(row)
+    return enriched
 
 
 def _cover_candidates(games: list[dict[str, Any]], dossier: dict[str, Any]) -> list[dict[str, Any]]:

@@ -6,6 +6,8 @@ from typing import Any
 
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
+from .flagship_spine import flagship_spine
+from .roster_market import build_roster_market
 
 
 FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -22,6 +24,7 @@ def build_flagship_research_packet(
     chronicle: ChronicleQueries | None = None,
     publication_assets: dict[str, dict[str, Any]] | None = None,
     beat_report: dict[str, Any] | None = None,
+    network_market_context: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -52,15 +55,23 @@ def build_flagship_research_packet(
     awards = dossier.get("awards") or {}
     health = dossier.get("roster_health") or {}
     intelligence = dossier.get("nfl_game_intelligence") or {}
+    roster_market = build_roster_market(
+        snapshot,
+        dossier,
+        beat_report=beat_report,
+        network_market=network_market_context,
+    )
+    context_events = _context_event_index(beat_report)
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.5",
+        "contract_version": "ironbound-production-v0.6",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
         "week": week,
         "information_current_through": dossier.get("information_current_through"),
+        "publication_spine": flagship_spine(publication_key),
         "contract_principles": {
             "deterministic_facts_first": True,
             "ai_role": "editorial selection and prose only",
@@ -68,6 +79,17 @@ def build_flagship_research_packet(
                 "Use fantasy points for matchup totals, awards, records, and "
                 "result-changing lineup decisions. Use actual NFL statistics "
                 "as the default description of player performance."
+            ),
+            "analytical_writing_policy": (
+                "Statistics support an editorial thesis rather than becoming chart-in-prose. "
+                "Distinguish result from process, role from efficiency, expectation from reality, "
+                "and short-term outcome from sustainable opportunity. State uncertainty and the "
+                "fantasy consequence when evidence supports it."
+            ),
+            "news_context_policy": (
+                "Beat/news events are reusable evidence for game stories, health, market, usage, "
+                "and previews. Preserve source attribution and do not isolate useful news into a "
+                "single mandatory magazine department."
             ),
         },
         "game_coverage": {
@@ -86,11 +108,15 @@ def build_flagship_research_packet(
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
         "beat_report": beat_report,
+        "context_events": context_events,
+        "roster_market": roster_market,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
             ),
             "manager_of_the_week": awards.get("manager_of_the_week"),
+            "bad_beat": awards.get("bad_beat"),
+            "escape_artist": awards.get("escape_artist"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
             "season_efficiency_top_three": _season_efficiency_top_three(
                 history,
@@ -142,6 +168,7 @@ def build_flagship_research_packet(
                     "previous_rank": row.previous_rank,
                     "movement": row.movement,
                     "score": row.score,
+                    "components": dict(row.components or {}),
                 }
                 for row in external.official_power_rankings
             ],
@@ -151,6 +178,30 @@ def build_flagship_research_packet(
             "authority": "Ironbound_power_ranks",
             "asset_key": "playoff_forecast",
             "rows": [dict(row) for row in external.playoff_odds],
+        },
+        "remaining_schedule_strength": {
+            "status": (
+                "READY"
+                if external.remaining_schedule_strength
+                else "AWAITING_TUESDAY_INPUT"
+                if external.handoff_schema_version >= 3
+                else "LEGACY_NOT_SUPPLIED"
+            ),
+            "authority": "Ironbound_power_ranks",
+            "policy": "Use the supplied current-Power-Board opponent index trail; do not recalculate schedule difficulty in Editorial Desk.",
+            "rows": [dict(row) for row in external.remaining_schedule_strength],
+        },
+        "weekly_matchup_forecast": {
+            "status": (
+                "READY"
+                if external.weekly_matchup_forecast
+                else "AWAITING_TUESDAY_INPUT"
+                if external.handoff_schema_version >= 3
+                else "LEGACY_NOT_SUPPLIED"
+            ),
+            "authority": "Ironbound_power_ranks",
+            "policy": "Use projected-optimal legal lineups and the simulation-derived spread/total supplied by the Power Rankings engine. Do not use submitted current starters to set the line.",
+            "rows": [dict(row) for row in external.weekly_matchup_forecast],
         },
         "ranking_publication_assets": {
             "authority": "Ironbound_power_ranks",

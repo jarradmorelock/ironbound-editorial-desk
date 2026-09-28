@@ -223,7 +223,10 @@ def build_flagship_research_packet(
                 "status": _optional_external_status(external.cwar_supplied),
                 "rows": [dict(row) for row in external.cwar],
             },
-            "source_metadata": dict(external.source_metadata),
+            "source_metadata": {
+                **dict(external.source_metadata),
+                "handoff_schema_version": external.handoff_schema_version,
+            },
             "notes": list(external.notes),
         },
         "story_desk": {
@@ -280,6 +283,14 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     _check(checks, "injury_health", health_ok, str(health.get("status") or "missing"))
     if not health_ok:
         manual.append("Injury / roster-health source is unavailable.")
+
+    roster_market = packet.get("roster_market") or {}
+    market_ok = roster_market.get("status") == "READY"
+    _check(checks, "roster_market", market_ok, str(roster_market.get("status") or "missing"))
+    if not market_ok:
+        manual.append(
+            "Roster & Market research is incomplete; verify full Sleeper schedule/transaction history."
+        )
 
     beat = packet.get("beat_report")
     if beat is not None and beat.get("required"):
@@ -353,6 +364,18 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
                 f"Ranking engine results are through Week {results_through_week!r}, "
                 f"but this packet covers Week {packet.get('week')}."
             )
+
+    source_metadata = (packet.get("tuesday_external_inputs") or {}).get("source_metadata") or {}
+    handoff_schema = int(source_metadata.get("handoff_schema_version") or 0)
+    # New v3 handoffs own schedule strength and weekly matchup lines. Legacy
+    # historical handoffs remain readable without retroactively failing old issues.
+    for key, label in (
+        ("remaining_schedule_strength", "Remaining schedule strength"),
+        ("weekly_matchup_forecast", "Weekly matchup forecast"),
+    ):
+        section = packet.get(key) or {}
+        if section.get("status") == "AWAITING_TUESDAY_INPUT":
+            awaiting.append(f"{label} from Power Rankings handoff v3.")
 
     asset_section = packet.get("ranking_publication_assets") or {}
     assets = asset_section.get("assets") or {}
@@ -725,6 +748,61 @@ def write_flagship_research_packet(directory: Path, packet: dict[str, Any]) -> t
     json_path.write_text(json.dumps(packet, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     markdown_path.write_text(render_flagship_research_packet(packet), encoding="utf-8")
     return json_path, markdown_path
+
+
+def _context_event_index(
+    beat_report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Index source-attributed beat events for reuse across magazine departments."""
+    by_player: dict[str, list[dict[str, Any]]] = {}
+    by_team: dict[str, list[dict[str, Any]]] = {}
+    lanes: dict[str, list[dict[str, Any]]] = {
+        "game_story": [],
+        "health": [],
+        "market": [],
+        "usage": [],
+        "preview": [],
+        "since_we_last_printed": [],
+    }
+    for item in (beat_report or {}).get("items") or []:
+        compact = {
+            "event_id": item.get("event_id"),
+            "published_at": item.get("published_at"),
+            "headline": item.get("headline") or item.get("original_title"),
+            "source": item.get("source"),
+            "source_url": item.get("source_url"),
+            "feed_summary": item.get("feed_summary"),
+            "tags": list(item.get("tags") or []),
+            "league_players": [dict(row) for row in item.get("league_players") or []],
+        }
+        for player in compact["league_players"]:
+            player_id = str(player.get("sleeper_player_id") or "")
+            if player_id:
+                by_player.setdefault(player_id, []).append(compact)
+            team = str(player.get("fantasy_team") or "")
+            if team:
+                by_team.setdefault(team, []).append(compact)
+        event_lanes = item.get("editorial_lanes") or {}
+        if event_lanes.get("health_context"):
+            lanes["health"].append(compact)
+        if event_lanes.get("usage_context"):
+            lanes["usage"].append(compact)
+        if event_lanes.get("preview_context"):
+            lanes["preview"].append(compact)
+        if event_lanes.get("since_we_last_printed"):
+            lanes["since_we_last_printed"].append(compact)
+            lanes["market"].append(compact)
+        # Any league-relevant event may help explain a game when tied to a rostered player.
+        if compact["league_players"]:
+            lanes["game_story"].append(compact)
+    return {
+        "authority": "Ironbound-Forum-Feed-Poster",
+        "source_revision": (beat_report or {}).get("source_revision"),
+        "by_player": by_player,
+        "by_team": by_team,
+        "lanes": lanes,
+        "policy": "Reuse source-attributed events wherever they materially explain the football/fantasy story; do not force a standalone news page.",
+    }
 
 
 def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1107,6 +1185,7 @@ def _power_board_inputs(
                 "previous_rank": ranking.previous_rank if ranking else None,
                 "rank_movement": ranking.movement if ranking else None,
                 "ranking_score": ranking.score if ranking else None,
+                "ranking_components": dict(ranking.components or {}) if ranking else {},
                 "playoff_odds": _row_for_team(
                     external.playoff_odds, rid, franchise_key, team
                 ),

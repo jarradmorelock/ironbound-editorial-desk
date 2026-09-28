@@ -173,6 +173,8 @@ def build_flagship_research_packet(
                 weekly.get("started_position_leaders") or {}, intelligence
             ),
             "manager_of_the_week": awards.get("manager_of_the_week"),
+            "bad_beat": awards.get("bad_beat"),
+            "escape_artist": awards.get("escape_artist"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
             "season_efficiency_top_three": _season_efficiency_top_three(
                 history,
@@ -368,6 +370,8 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     for key in (
         "started_position_leaders",
         "manager_of_the_week",
+        "bad_beat",
+        "escape_artist",
         "season_efficiency_top_three",
         "season_team_score_top_three",
         "benchwarmer_of_the_week",
@@ -734,6 +738,24 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
         lines.append(
             f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('week')} |"
         )
+
+    lines.extend(["", "### Bad Beat"])
+    bad_beat = honors.get("bad_beat")
+    if bad_beat:
+        lines.append(
+            f"- {bad_beat.get('team')}: {float(bad_beat.get('points') or 0):.2f} points in a loss."
+        )
+    else:
+        lines.append("- No eligible bad beat.")
+
+    lines.extend(["", "### Escape Artist"])
+    escape = honors.get("escape_artist")
+    if escape:
+        lines.append(
+            f"- {escape.get('team')}: {float(escape.get('points') or 0):.2f} points in a win."
+        )
+    else:
+        lines.append("- No eligible escape artist.")
 
     lines.extend(["", "### Benchwarmer of the Week"])
     bench = honors.get("benchwarmer_of_the_week")

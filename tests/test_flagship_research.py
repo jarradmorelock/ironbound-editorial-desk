@@ -204,6 +204,16 @@ def _fixture():
                 "actual_points": 102,
                 "efficiency": 0.99,
             },
+            "bad_beat": {
+                "team": "Team 15",
+                "roster_id": 15,
+                "points": 115,
+            },
+            "escape_artist": {
+                "team": "Team 2",
+                "roster_id": 2,
+                "points": 102,
+            },
             "waiver_star_candidates": [
                 {
                     "team": "Team 2",
@@ -285,6 +295,8 @@ def test_flagship_contract_covers_all_eight_games_and_required_honors(tmp_path):
     assert len(packet["weekly_honors"]["season_team_score_top_three"]) == 3
     assert len(packet["weekly_honors"]["season_efficiency_top_three"]) == 3
     assert packet["weekly_honors"]["benchwarmer_of_the_week"]["player"] == "Bench Star"
+    assert packet["weekly_honors"]["bad_beat"]["team"] == "Team 15"
+    assert packet["weekly_honors"]["escape_artist"]["team"] == "Team 2"
 
 
 def test_power_board_writeups_precede_rankings_and_playoff_charts(tmp_path):

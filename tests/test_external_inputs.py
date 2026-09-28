@@ -225,3 +225,77 @@ def test_external_input_rejects_publication_asset_checksum_mismatch(tmp_path):
 
     with pytest.raises(ExternalInputError, match="checksum mismatch"):
         load_external_inputs(path, "ironbound_weekly")
+
+
+def test_v3_ranking_handoff_preserves_components_schedule_and_weekly_forecast(tmp_path):
+    path = _write(
+        tmp_path / "v3.json",
+        {
+            "schema_version": 3,
+            "publication_key": "ironbound_weekly",
+            "official_power_rankings": [
+                {
+                    "roster_id": 1,
+                    "team": "Team 1",
+                    "rank": 1,
+                    "previous_rank": 3,
+                    "movement": 2,
+                    "score": 81.4,
+                    "components": {
+                        "market_percentile": 91.0,
+                        "ros_starters_percentile": 88.0,
+                        "season_results_percentile": 70.0,
+                        "market_points": 31.9,
+                        "ros_starters_points": 39.6,
+                        "season_results_points": 14.0,
+                        "weights": {
+                            "market": 0.35,
+                            "ros_starters": 0.45,
+                            "season_results": 0.20,
+                        },
+                    },
+                }
+            ],
+            "playoff_odds": [{"roster_id": 1, "playoff": 88.0}],
+            "remaining_schedule_strength": [
+                {
+                    "roster_id": 1,
+                    "team": "Team 1",
+                    "remaining_opponents": [2, 3],
+                    "average_opponent_index": 58.4,
+                    "difficulty_rank": 1,
+                    "grade": "F",
+                }
+            ],
+            "weekly_matchup_forecast": [
+                {
+                    "week": 5,
+                    "matchup_id": 1,
+                    "roster_one": 1,
+                    "team_one": "Team 1",
+                    "roster_two": 2,
+                    "team_two": "Team 2",
+                    "projected_score_one": 128.4,
+                    "projected_score_two": 124.1,
+                    "spread": 4.5,
+                    "over_under": 252.5,
+                    "win_probability_one": 58.0,
+                    "simulations": 10000,
+                    "model": "Sleeper projected-optimal legal lineup Monte Carlo",
+                }
+            ],
+            "source_metadata": {
+                "ranking_week": 5,
+                "results_through_week": 4,
+            },
+        },
+    )
+
+    result = load_external_inputs(path, "ironbound_weekly")
+
+    ranking = result.official_power_rankings[0]
+    assert ranking.components["market_percentile"] == 91.0
+    assert ranking.components["weights"]["ros_starters"] == 0.45
+    assert result.remaining_schedule_strength[0]["grade"] == "F"
+    assert result.weekly_matchup_forecast[0]["spread"] == 4.5
+    assert result.handoff_schema_version == 3

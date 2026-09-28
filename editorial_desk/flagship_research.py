@@ -795,6 +795,79 @@ def _attach_beat_context_to_games(
     return enriched
 
 
+def _issue_manifest(publication_key: str) -> dict[str, Any]:
+    brand_titles = {
+        "ironbound_weekly": {
+            "ROSTER_HEALTH": "ROSTER HEALTH",
+            "MARKET_DESK": "THE TRANSACTION DESK",
+            "PRESSURE_POINTS": "WEEK AHEAD: PRESSURE POINTS",
+            "DIVISION_ROAD_AHEAD": "DIVISION OF DEATH",
+        },
+        "unbound_weekly": {
+            "ROSTER_HEALTH": "AVAILABILITY WATCH",
+            "MARKET_DESK": "MARKET MOVES",
+            "PRESSURE_POINTS": "THE PRESSURE POINTS",
+            "DIVISION_ROAD_AHEAD": "UNDER TENSION",
+        },
+    }
+    titles = brand_titles.get(publication_key, {})
+    modules = [
+        ("COVER", "COVER"),
+        ("CONTENTS", "INSIDE THE ISSUE"),
+        ("LEAD_FEATURE_OPENER", "LEAD FEATURE"),
+        ("LEAD_FEATURE_CONTINUATION", "LEAD FEATURE"),
+        ("GAME_REPORTS_A", "WEEKLY GAME REPORTS"),
+        ("GAME_REPORTS_B", "WEEKLY GAME REPORTS"),
+        ("GAME_REPORTS_C", "WEEKLY GAME REPORTS"),
+        ("SECONDARY_FEATURE", "SECONDARY FEATURE"),
+        ("USAGE_DESK", "THE USAGE DESK"),
+        ("ROSTER_HEALTH", titles.get("ROSTER_HEALTH", "ROSTER HEALTH")),
+        ("MARKET_DESK", titles.get("MARKET_DESK", "MARKET DESK")),
+        ("HONORS_ROOKIE", "HONORS & ROOKIE WATCH"),
+        ("POWER_BOARD_1_4", "THE POWER BOARD"),
+        ("POWER_BOARD_5_8", "THE POWER BOARD"),
+        ("POWER_BOARD_9_12", "THE POWER BOARD"),
+        ("POWER_BOARD_13_16", "THE POWER BOARD"),
+        ("PLAYOFF_FORECAST", "PLAYOFF FORECAST"),
+        ("POWER_RANKINGS", "POWER RANKINGS"),
+        ("PRESSURE_POINTS", titles.get("PRESSURE_POINTS", "PRESSURE POINTS")),
+        ("FULL_SLATE", "THE FULL SLATE"),
+        ("DIVISION_ROAD_AHEAD", titles.get("DIVISION_ROAD_AHEAD", "DIVISION / ROAD AHEAD")),
+        ("SOURCES", "SOURCES & MODEL NOTES"),
+    ]
+    return {
+        "page_count": 22,
+        "shared_spine": True,
+        "pages": [
+            {
+                "page": page,
+                "module_id": module_id,
+                "display_title": display_title,
+            }
+            for page, (module_id, display_title) in enumerate(modules, 1)
+        ],
+    }
+
+
+def _editorial_style_rules() -> dict[str, Any]:
+    return {
+        "numbers_support_thesis": True,
+        "separate_result_from_process": True,
+        "separate_role_from_efficiency": True,
+        "compare_expectation_to_reality_when_supported": True,
+        "state_uncertainty": True,
+        "identify_actionable_consequence": True,
+        "do_not_translate_chart_to_prose": True,
+        "do_not_overclaim_small_samples": True,
+        "actual_nfl_stats_are_default_player_evidence": True,
+        "instruction": (
+            "Write like a fantasy analyst explaining what the evidence changes, "
+            "not a robot narrating a table. Use numbers to support a claim about "
+            "role, process, sustainability, expectation, or consequence."
+        ),
+    }
+
+
 def _cover_candidates(games: list[dict[str, Any]], dossier: dict[str, Any]) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     monday = (dossier.get("game_timing") or {}).get("monday") or {}
@@ -1093,6 +1166,9 @@ def _power_board_inputs(
                 "previous_rank": ranking.previous_rank if ranking else None,
                 "rank_movement": ranking.movement if ranking else None,
                 "ranking_score": ranking.score if ranking else None,
+                "ranking_components": (
+                    dict(ranking.components or {}) if ranking else {}
+                ),
                 "playoff_odds": _row_for_team(
                     external.playoff_odds, rid, franchise_key, team
                 ),

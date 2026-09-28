@@ -21,6 +21,7 @@ def build_flagship_research_packet(
     history_root: Path,
     chronicle: ChronicleQueries | None = None,
     publication_assets: dict[str, dict[str, Any]] | None = None,
+    beat_report: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -52,7 +53,7 @@ def build_flagship_research_packet(
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.4",
+        "contract_version": "ironbound-production-v0.5",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
@@ -82,6 +83,7 @@ def build_flagship_research_packet(
         },
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
+        "beat_report": beat_report,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
@@ -225,6 +227,61 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     _check(checks, "injury_health", health_ok, str(health.get("status") or "missing"))
     if not health_ok:
         manual.append("Injury / roster-health source is unavailable.")
+
+    beat = packet.get("beat_report")
+    if beat is not None and beat.get("required"):
+        beat_ok = beat.get("status") == "READY"
+        _check(
+            checks,
+            "beat_news",
+            beat_ok,
+            str(beat.get("status") or "missing"),
+        )
+        if not beat_ok:
+            manual.append(
+                "Beat/news ledger is unavailable or its weekly reporting window "
+                "could not be verified."
+            )
+
+    beat = packet.get("beat_report")
+    if beat is not None:
+        lines.extend(["", "## BEAT / NEWS WIRE", ""])
+        lines.append(f"Status: {beat.get('status', 'UNKNOWN')}")
+        if beat.get("source_revision"):
+            lines.append(
+                f"Source revision: {beat.get('source_revision')} "
+                f"({beat.get('source_repository')}:{beat.get('source_branch')})"
+            )
+        window = beat.get("reporting_window") or {}
+        if window:
+            lines.append(
+                f"Reporting window: {window.get('start')} through {window.get('end')}."
+            )
+        lines.append(
+            f"League-relevant accepted stories: {int(beat.get('relevant_event_count') or 0)}."
+        )
+        for row in beat.get("items") or []:
+            players = ", ".join(
+                f"{player.get('player')} ({player.get('fantasy_team')})"
+                for player in row.get("league_players") or []
+            )
+            tags = ", ".join(row.get("tags") or [])
+            lines.append(
+                f"- {row.get('published_at')} — {row.get('headline') or row.get('original_title')} "
+                f"— {row.get('source')} — {players or 'league relevance mapped'}"
+                + (f" — tags: {tags}" if tags else "")
+            )
+            if row.get("feed_summary"):
+                lines.append(f"  Evidence summary: {row.get('feed_summary')}")
+            if row.get("source_url"):
+                lines.append(f"  Source: {row.get('source_url')}")
+            lanes = [
+                key.replace("_", " ")
+                for key, enabled in (row.get("editorial_lanes") or {}).items()
+                if enabled
+            ]
+            if lanes:
+                lines.append("  Editorial lanes: " + ", ".join(lanes))
 
     honors = packet.get("weekly_honors") or {}
     for key in (

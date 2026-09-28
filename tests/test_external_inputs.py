@@ -225,3 +225,74 @@ def test_external_input_rejects_publication_asset_checksum_mismatch(tmp_path):
 
     with pytest.raises(ExternalInputError, match="checksum mismatch"):
         load_external_inputs(path, "ironbound_weekly")
+
+
+def test_v3_power_rankings_handoff_preserves_components_schedule_and_weekly_forecast(tmp_path):
+    path = _write(
+        tmp_path / "ironbound_weekly.json",
+        {
+            "schema_version": 3,
+            "publication_key": "ironbound_weekly",
+            "official_power_rankings": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "rank": 1,
+                    "previous_rank": 2,
+                    "movement": 1,
+                    "score": 82.8,
+                    "components": {
+                        "market_percentile": 91.0,
+                        "ros_starters_percentile": 88.0,
+                        "season_results_percentile": 72.0,
+                        "market_points": 31.9,
+                        "ros_starters_points": 39.6,
+                        "season_results_points": 14.4,
+                        "weights": {
+                            "market": 0.35,
+                            "ros_starters": 0.45,
+                            "season_results": 0.20,
+                        },
+                    },
+                }
+            ],
+            "playoff_odds": [{"roster_id": 7, "playoff": 91.0}],
+            "remaining_schedule_strength": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "average_opponent_index": 55.8,
+                    "difficulty_rank": 2,
+                    "grade": "D-",
+                    "opponents": [],
+                }
+            ],
+            "weekly_matchup_forecast": [
+                {
+                    "week": 3,
+                    "matchup_id": 2,
+                    "roster_one": 7,
+                    "team_one": "San Carlos FC",
+                    "roster_two": 8,
+                    "team_two": "Blue Moose",
+                    "projected_score_one": 128.4,
+                    "projected_score_two": 124.1,
+                    "spread": 4.5,
+                    "over_under": 252.5,
+                    "win_probability_one": 58.0,
+                    "simulations": 10000,
+                }
+            ],
+            "source_metadata": {
+                "ranking_week": 3,
+                "results_through_week": 2,
+            },
+        },
+    )
+
+    result = load_external_inputs(path, "ironbound_weekly")
+
+    assert result.schema_version == 3
+    assert result.official_power_rankings[0].components["market_points"] == 31.9
+    assert result.remaining_schedule_strength[0]["grade"] == "D-"
+    assert result.weekly_matchup_forecast[0]["over_under"] == 252.5

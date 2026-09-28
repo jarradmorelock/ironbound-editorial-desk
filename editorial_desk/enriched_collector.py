@@ -24,6 +24,7 @@ from .newspaper_research import (
     write_newspaper_research_packet,
 )
 from .rankings import RankingsClient
+from .roster_market import build_network_market_context, build_roster_market_report
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
@@ -74,6 +75,12 @@ def collect_all(
     )
     shared = _collect_deep_nfl_context(nflverse, season, week)
     player_directory = sleeper.players()
+    network_snapshots = {
+        league_key: json.loads(path.read_text(encoding="utf-8"))
+        for league_key, path in snapshot_paths.items()
+        if path.exists()
+    }
+    network_market = build_network_market_context(network_snapshots)
     beat_source = load_news_ledger(
         beat_ledger_path,
         revision=beat_ledger_revision,
@@ -145,6 +152,13 @@ def collect_all(
                     if story_path.exists()
                     else {}
                 )
+                beat_report = build_beat_report(snapshot, beat_source)
+                roster_market = build_roster_market_report(
+                    snapshot,
+                    dossier,
+                    beat_report,
+                    network_market,
+                )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,
                     dossier,
@@ -157,7 +171,8 @@ def collect_all(
                         else None
                     ),
                     publication_assets=publication_assets,
-                    beat_report=build_beat_report(snapshot, beat_source),
+                    beat_report=beat_report,
+                    roster_market=roster_market,
                 )
                 if flagship_packet is not None:
                     generated.extend(

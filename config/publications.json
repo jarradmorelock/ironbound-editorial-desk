@@ -9,25 +9,46 @@
         "ironbound-weekly-2026.01-preseason-issue.pdf"
       ],
       "recurring_sections": [
-        "Weekly factual backbone",
-        "External official Power Rankings",
-        "Magazine Story Desk"
+        "Cover",
+        "Inside the Issue",
+        "Lead Feature",
+        "Week Game Reports",
+        "Secondary Feature",
+        "Usage Desk",
+        "Roster Health",
+        "Market Desk",
+        "Honors & Rookie Watch",
+        "Power Board",
+        "Playoff Forecast",
+        "Power Rankings",
+        "Pressure Points",
+        "Full Slate",
+        "Division / Road Ahead",
+        "Sources & Model Notes"
       ],
       "brand_departments": [
-        "The Founding XVI",
-        "The First Forging",
-        "Rookie Draft Report",
-        "Offseason Arms Race",
+        "Inside the Issue",
+        "Lead Feature",
+        "Week Game Reports",
+        "Divisional Feature",
+        "The Usage Desk",
+        "Roster Health",
+        "The Transaction Desk",
+        "Honors & Rookie Watch",
+        "The Power Board",
+        "Playoff Forecast",
         "Power Rankings",
-        "The Opening Line",
-        "Division of Death?",
-        "First Contact"
+        "Pressure Points",
+        "The Full Slate",
+        "Division of Death",
+        "Sources & Model Notes"
       ],
       "editorial_priorities": [
-        "Magazine-scale depth",
-        "Divisions as a primary organizing story",
-        "Lineup efficiency as a featured statistic",
-        "Cumulative franchise context"
+        "Shared 22-page flagship spine with Unbound Weekly",
+        "Magazine-scale depth with divisions as a primary organizing story",
+        "Actual NFL stats and workload evidence before fantasy-point narration",
+        "Lineup efficiency, market context, roster health, and cumulative franchise context",
+        "Analyst prose must interpret evidence rather than restate charts"
       ],
       "feature_contracts": {}
     },
@@ -40,25 +61,46 @@
         "unboundweekly-2026.01-preseason issue.pdf"
       ],
       "recurring_sections": [
-        "Weekly factual backbone",
-        "External official Power Rankings",
-        "Magazine Story Desk"
+        "Cover",
+        "Inside the Issue",
+        "Lead Feature",
+        "Week Game Reports",
+        "Secondary Feature",
+        "Usage Desk",
+        "Roster Health",
+        "Market Desk",
+        "Honors & Rookie Watch",
+        "Power Board",
+        "Playoff Forecast",
+        "Power Rankings",
+        "Pressure Points",
+        "Full Slate",
+        "Division / Road Ahead",
+        "Sources & Model Notes"
       ],
       "brand_departments": [
-        "The Unbound XVI",
-        "Forged Link by Link",
-        "Rookie Draft Report",
-        "Off the Chain",
+        "Inside the Issue",
+        "Lead Feature",
+        "Week Game Reports",
+        "Secondary Feature",
+        "Usage Desk",
+        "Availability Watch",
+        "Market Moves",
+        "Honors & Rookie Watch",
+        "The Power Board",
+        "Playoff Forecast",
         "Power Rankings",
-        "The Opening Line",
+        "The Pressure Points",
+        "The Full Slate",
         "Under Tension",
-        "First Contact"
+        "Sources & Model Notes"
       ],
       "editorial_priorities": [
-        "Full sister flagship depth",
-        "Divisions as a primary organizing story",
-        "Lineup efficiency as a featured statistic",
-        "Cumulative franchise context"
+        "Shared 22-page flagship spine with The Ironbound Weekly",
+        "Full sister flagship depth with divisions as a primary organizing story",
+        "Actual NFL stats and workload evidence before fantasy-point narration",
+        "Lineup efficiency, market context, roster health, and cumulative franchise context",
+        "Analyst prose must interpret evidence rather than restate charts"
       ],
       "feature_contracts": {}
     },

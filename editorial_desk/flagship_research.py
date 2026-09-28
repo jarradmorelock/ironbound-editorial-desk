@@ -12,6 +12,80 @@ FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
 CORE_POSITIONS = ("QB", "RB", "WR", "TE")
 
 
+FLAGSHIP_DISPLAY_NAMES = {
+    "ironbound_weekly": {
+        "CONTENTS": "INSIDE THE ISSUE",
+        "USAGE_DESK": "THE USAGE DESK",
+        "ROSTER_HEALTH": "ROSTER HEALTH",
+        "MARKET_DESK": "THE TRANSACTION DESK",
+        "PRESSURE_POINTS": "PRESSURE POINTS",
+        "DIVISION_ROAD_AHEAD": "DIVISION OF DEATH",
+    },
+    "unbound_weekly": {
+        "CONTENTS": "INSIDE THE ISSUE",
+        "USAGE_DESK": "USAGE DESK",
+        "ROSTER_HEALTH": "AVAILABILITY WATCH",
+        "MARKET_DESK": "MARKET MOVES",
+        "PRESSURE_POINTS": "THE PRESSURE POINTS",
+        "DIVISION_ROAD_AHEAD": "UNDER TENSION",
+    },
+}
+
+
+def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, Any]]:
+    """Return the shared 22-page flagship architecture with branded labels."""
+    names = FLAGSHIP_DISPLAY_NAMES.get(publication_key) or {}
+    next_week = int(week) + 1
+    modules = [
+        ("COVER", "COVER"),
+        ("CONTENTS", names.get("CONTENTS", "INSIDE THE ISSUE")),
+        ("LEAD_FEATURE", "LEAD FEATURE"),
+        ("LEAD_FEATURE", "LEAD FEATURE CONTINUATION"),
+        ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
+        ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
+        ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
+        ("SECONDARY_FEATURE", "SECONDARY FEATURE"),
+        ("USAGE_DESK", names.get("USAGE_DESK", "USAGE DESK")),
+        ("ROSTER_HEALTH", names.get("ROSTER_HEALTH", "ROSTER HEALTH")),
+        ("MARKET_DESK", names.get("MARKET_DESK", "MARKET MOVES")),
+        ("HONORS_ROOKIE", "HONORS & ROOKIE WATCH"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("PLAYOFF_FORECAST", f"WEEK {next_week} PLAYOFF FORECAST"),
+        ("POWER_RANKINGS", f"WEEK {next_week} POWER RANKINGS"),
+        ("PRESSURE_POINTS", names.get("PRESSURE_POINTS", "PRESSURE POINTS")),
+        ("FULL_SLATE", f"WEEK {next_week} FULL SLATE"),
+        ("DIVISION_ROAD_AHEAD", names.get("DIVISION_ROAD_AHEAD", "DIVISION / ROAD AHEAD")),
+        ("SOURCES", "SOURCES & MODEL NOTES"),
+    ]
+    return [
+        {"page": page, "module": module, "display_name": display}
+        for page, (module, display) in enumerate(modules, start=1)
+    ]
+
+
+def flagship_style_guidance() -> dict[str, Any]:
+    return {
+        "stats_support_thesis": True,
+        "result_vs_process": True,
+        "role_vs_efficiency": True,
+        "expectation_vs_outcome": True,
+        "state_uncertainty": True,
+        "actionable_consequence": True,
+        "avoid_chart_in_prose": True,
+        "guidance": [
+            "Use numbers as evidence for an argument, not as a paragraph-shaped table.",
+            "Separate what happened from whether the underlying role or process changed.",
+            "Explain why a workload, market move, injury timeline, or model component changes the fantasy read.",
+            "Compare outcome with prior expectation when the evidence supports it.",
+            "Preserve uncertainty; one game or one report is not automatically a trend.",
+            "End analytical passages with the consequence for the manager, roster, matchup, or next decision.",
+        ],
+    }
+
+
 def build_flagship_research_packet(
     snapshot: dict[str, Any],
     dossier: dict[str, Any],
@@ -22,6 +96,7 @@ def build_flagship_research_packet(
     chronicle: ChronicleQueries | None = None,
     publication_assets: dict[str, dict[str, Any]] | None = None,
     beat_report: dict[str, Any] | None = None,
+    roster_market: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -55,12 +130,14 @@ def build_flagship_research_packet(
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.5",
+        "contract_version": "ironbound-production-v0.6",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
         "week": week,
         "information_current_through": dossier.get("information_current_through"),
+        "editorial_spine": flagship_editorial_spine(publication_key, week),
+        "editorial_style_guidance": flagship_style_guidance(),
         "contract_principles": {
             "deterministic_facts_first": True,
             "ai_role": "editorial selection and prose only",
@@ -86,11 +163,18 @@ def build_flagship_research_packet(
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
         "beat_report": beat_report,
+        "context_events": {
+            "policy": "Verified beat/news events are reusable context. The same event may inform game stories, health, market, usage, and previews when relevant.",
+            "items": list((beat_report or {}).get("items") or []),
+        },
+        "roster_market": roster_market,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
             ),
             "manager_of_the_week": awards.get("manager_of_the_week"),
+            "bad_beat": awards.get("bad_beat"),
+            "escape_artist": awards.get("escape_artist"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
             "season_efficiency_top_three": _season_efficiency_top_three(
                 history,
@@ -142,6 +226,7 @@ def build_flagship_research_packet(
                     "previous_rank": row.previous_rank,
                     "movement": row.movement,
                     "score": row.score,
+                    "components": dict(row.components),
                 }
                 for row in external.official_power_rankings
             ],
@@ -152,6 +237,34 @@ def build_flagship_research_packet(
             "asset_key": "playoff_forecast",
             "rows": [dict(row) for row in external.playoff_odds],
         },
+        "remaining_schedule_strength": {
+            "status": (
+                "READY"
+                if external.remaining_schedule_strength
+                else (
+                    "AWAITING_TUESDAY_INPUT"
+                    if external.schema_version >= 3
+                    else "LEGACY_NOT_SUPPLIED"
+                )
+            ),
+            "authority": "Ironbound_power_ranks",
+            "method": "Average remaining opponent current Power Board index; higher is harder.",
+            "rows": [dict(row) for row in external.remaining_schedule_strength],
+        },
+        "weekly_matchup_forecast": {
+            "status": (
+                "READY"
+                if external.weekly_matchup_forecast
+                else (
+                    "AWAITING_TUESDAY_INPUT"
+                    if external.schema_version >= 3
+                    else "LEGACY_NOT_SUPPLIED"
+                )
+            ),
+            "authority": "Ironbound_power_ranks",
+            "lineup_policy": "Projected-optimal legal lineups are selected once from pregame projections and remain fixed through the simulations. Submitted current starters do not set the line.",
+            "rows": [dict(row) for row in external.weekly_matchup_forecast],
+        },
         "ranking_publication_assets": {
             "authority": "Ironbound_power_ranks",
             "required": publication_assets is not None,
@@ -159,6 +272,7 @@ def build_flagship_research_packet(
             "assets": dict(publication_assets or {}),
         },
         "tuesday_external_inputs": {
+            "schema_version": external.schema_version,
             "usage": {
                 "status": _optional_external_status(external.usage_supplied),
                 "rows": [dict(row) for row in external.usage],
@@ -245,10 +359,19 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
                 "could not be verified."
             )
 
+    market = packet.get("roster_market")
+    if market is not None:
+        market_ok = market.get("status") == "READY"
+        _check(checks, "roster_market", market_ok, str(market.get("status") or "missing"))
+        if not market_ok:
+            manual.append("Roster & Market research could not be assembled deterministically.")
+
     honors = packet.get("weekly_honors") or {}
     for key in (
         "started_position_leaders",
         "manager_of_the_week",
+        "bad_beat",
+        "escape_artist",
         "season_efficiency_top_three",
         "season_team_score_top_three",
         "benchwarmer_of_the_week",
@@ -290,6 +413,30 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
             awaiting.append(f"{label} from Tuesday power-rankings delivery.")
 
     source_metadata = (packet.get("tuesday_external_inputs") or {}).get("source_metadata") or {}
+    external_schema_version = int((packet.get("tuesday_external_inputs") or {}).get("schema_version") or 1)
+    if external_schema_version >= 3:
+        schedule = packet.get("remaining_schedule_strength") or {}
+        schedule_ok = schedule.get("status") == "READY" and len(schedule.get("rows") or []) == 16
+        _check(
+            checks,
+            "remaining_schedule_strength",
+            schedule_ok,
+            f"{len(schedule.get('rows') or [])}/16 teams",
+        )
+        if not schedule_ok:
+            awaiting.append("Complete remaining-schedule strength from the Power Rankings engine.")
+
+        weekly_forecast = packet.get("weekly_matchup_forecast") or {}
+        forecast_rows = weekly_forecast.get("rows") or []
+        forecast_ok = weekly_forecast.get("status") == "READY" and len(forecast_rows) == 8
+        _check(
+            checks,
+            "weekly_matchup_forecast",
+            forecast_ok,
+            f"{len(forecast_rows)}/8 matchups",
+        )
+        if not forecast_ok:
+            awaiting.append("Complete projected-optimal weekly matchup forecast from the Power Rankings engine.")
     results_through_week = source_metadata.get("results_through_week")
     if results_through_week is not None:
         try:
@@ -367,6 +514,15 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
 
     lines.extend(["", "### Editorial Judgment"])
     lines.extend(f"- {row}" for row in validation.get("editorial_judgment") or [])
+
+    lines.extend(["", "## FLAGSHIP EDITORIAL SPINE", ""])
+    for row in packet.get("editorial_spine") or []:
+        lines.append(
+            f"- Page {int(row.get('page') or 0):02d}: {row.get('module')} — {row.get('display_name')}"
+        )
+    lines.extend(["", "## EDITORIAL STYLE", ""])
+    for row in (packet.get("editorial_style_guidance") or {}).get("guidance") or []:
+        lines.append(f"- {row}")
 
     coverage = packet.get("game_coverage") or {}
     lines.extend(["", "## GAME COVERAGE LEDGER", ""])
@@ -451,6 +607,52 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             if value
         ]
         lines.append(f"- {row.get('team')}: {row.get('player')} — {', '.join(details) or 'flagged'}")
+
+    market = packet.get("roster_market")
+    if market is not None:
+        lines.extend(["", "## ROSTER & MARKET DESK", ""])
+        lines.append(f"Status: {market.get('status', 'UNKNOWN')}")
+        lines.extend(["", "### Lineup Churn"])
+        for row in market.get("lineup_churn") or []:
+            moved_in = ", ".join(player.get("player") or "" for player in row.get("moved_into_starting_lineup") or []) or "none"
+            moved_out = ", ".join(player.get("player") or "" for player in row.get("moved_out_of_starting_lineup") or []) or "none"
+            lines.append(f"- {row.get('team')}: IN {moved_in}; OUT {moved_out}.")
+        lines.extend(["", "### Current Transactions"])
+        for row in (market.get("transactions") or {}).get("current_week") or []:
+            lines.append("- " + _compact(row))
+        lines.extend(["", "### Repeated Asset Movement"])
+        for row in market.get("repeated_asset_movement") or []:
+            lines.append(
+                f"- {row.get('player')}: {row.get('transaction_events')} transaction events "
+                f"({row.get('adds')} adds, {row.get('drops')} drops)."
+            )
+        lines.extend(["", "### Beat / Health Timelines"])
+        for row in market.get("news_timelines") or []:
+            if len(row.get("events") or []) < 1:
+                continue
+            lines.append(f"- {row.get('player')}:")
+            for event in row.get("events") or []:
+                lines.append(
+                    f"  - {event.get('published_at')} — {event.get('headline')} — "
+                    f"{event.get('source')} — {event.get('source_url')}"
+                )
+        platform = market.get("sleeper_platform_rates") or {}
+        lines.extend(["", "### Sleeper-wide Ownership / Start Rates"])
+        lines.append(
+            f"- Status: {platform.get('status', 'UNAVAILABLE')}. "
+            f"{platform.get('note') or 'Optional enrichment only.'}"
+        )
+        network = market.get("network_market") or {}
+        lines.extend(["", f"### {network.get('scope') or 'Ironbound Network'} Signals"])
+        for row in network.get("players") or []:
+            if row.get("added_leagues") or row.get("dropped_leagues") or row.get("started_leagues"):
+                rate = row.get("tracked_start_rate")
+                rate_text = f"; tracked start rate {float(rate):.0%}" if rate is not None else ""
+                lines.append(
+                    f"- {row.get('player')}: rostered {row.get('rostered_leagues')} tracked leagues; "
+                    f"started {row.get('started_leagues')}; added {row.get('added_leagues')}; "
+                    f"dropped {row.get('dropped_leagues')}{rate_text}."
+                )
 
     beat = packet.get("beat_report")
     if beat is not None:
@@ -537,6 +739,24 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('week')} |"
         )
 
+    lines.extend(["", "### Bad Beat"])
+    bad_beat = honors.get("bad_beat")
+    if bad_beat:
+        lines.append(
+            f"- {bad_beat.get('team')}: {float(bad_beat.get('points') or 0):.2f} points in a loss."
+        )
+    else:
+        lines.append("- No eligible bad beat.")
+
+    lines.extend(["", "### Escape Artist"])
+    escape = honors.get("escape_artist")
+    if escape:
+        lines.append(
+            f"- {escape.get('team')}: {float(escape.get('points') or 0):.2f} points in a win."
+        )
+    else:
+        lines.append("- No eligible escape artist.")
+
     lines.extend(["", "### Benchwarmer of the Week"])
     bench = honors.get("benchwarmer_of_the_week")
     if bench:
@@ -584,6 +804,14 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             f"{float(row.get('points_for') or 0):.2f} PF; official rank {row.get('official_rank', 'awaiting')}"
             f"{movement_text}; efficiency {float(row.get('efficiency') or 0):.1%}."
         )
+        components = row.get("ranking_components") or {}
+        if components:
+            lines.append(
+                "  - Ranking components: "
+                f"market {float(components.get('market_points') or 0):.1f}; "
+                f"ROS starters {float(components.get('ros_starters_points') or 0):.1f}; "
+                f"season results {float(components.get('season_results_points') or 0):.1f}."
+            )
 
     lines.extend(["", "## POWER RANKINGS CHART INPUT", ""])
     power = packet.get("power_rankings_chart") or {}
@@ -631,6 +859,30 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     lines.append(f"Status: {odds.get('status')}")
     for row in odds.get("rows") or []:
         lines.append("- " + _compact(row))
+
+    lines.extend(["", "## REMAINING SCHEDULE STRENGTH", ""])
+    schedule = packet.get("remaining_schedule_strength") or {}
+    lines.append(f"Status: {schedule.get('status')}; Authority: {schedule.get('authority')}.")
+    for row in schedule.get("rows") or []:
+        lines.append(
+            f"- #{row.get('difficulty_rank')} {row.get('team')}: "
+            f"average opponent index {row.get('average_opponent_index')} ({row.get('grade')})."
+        )
+
+    lines.extend(["", "## FULL SLATE — SIMULATED WEEKLY LINES", ""])
+    weekly_forecast = packet.get("weekly_matchup_forecast") or {}
+    lines.append(f"Status: {weekly_forecast.get('status')}; Authority: {weekly_forecast.get('authority')}.")
+    lines.append(str(weekly_forecast.get("lineup_policy") or ""))
+    for row in weekly_forecast.get("rows") or []:
+        favorite = row.get("favorite_team") or (
+            row.get("team_one") if int(row.get("favorite_roster_id") or 0) == int(row.get("roster_one") or -1) else row.get("team_two")
+        )
+        lines.append(
+            f"- {row.get('team_one')} vs. {row.get('team_two')}: "
+            f"{favorite} -{float(row.get('spread') or 0):.1f}; "
+            f"O/U {float(row.get('over_under') or 0):.1f}; "
+            f"{row.get('simulations')} simulations."
+        )
 
     lines.extend(["", "## OPTIONAL SUPPLEMENTAL ANALYTICS", ""])
     ext = packet.get("tuesday_external_inputs") or {}
@@ -1056,6 +1308,7 @@ def _power_board_inputs(
                 "previous_rank": ranking.previous_rank if ranking else None,
                 "rank_movement": ranking.movement if ranking else None,
                 "ranking_score": ranking.score if ranking else None,
+                "ranking_components": dict(ranking.components) if ranking else {},
                 "playoff_odds": _row_for_team(
                     external.playoff_odds, rid, franchise_key, team
                 ),

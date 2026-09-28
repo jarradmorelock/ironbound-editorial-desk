@@ -498,6 +498,14 @@ def test_ready_beat_news_is_rendered_with_source_attribution(tmp_path):
     )
 
     assert packet["validation"]["research_complete"] is True
+    assert any(
+        game.get("beat_context")
+        for game in packet["game_coverage"]["games"]
+        if any(
+            str(team.get("team") or "") == "Team 1"
+            for team in game.get("teams") or []
+        )
+    )
     text = render_flagship_research_packet(packet)
     assert "## BEAT / NEWS WIRE" in text
     assert "Player 1 earns lead role" in text

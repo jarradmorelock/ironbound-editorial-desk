@@ -577,3 +577,82 @@ def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
     assert first["rank_movement"] == 1
     assert first["playoff_odds"]["playoff"] == 79
     assert first["war"]["value"] == 2.4
+
+
+def test_v06_contract_exposes_shared_flagship_spine_and_authoritative_forward_models(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    rankings = tuple(
+        OfficialPowerRanking(
+            franchise_key=None,
+            rank=rank,
+            roster_id=rank,
+            team=f"Team {rank}",
+            previous_rank=rank,
+            movement=0,
+            score=80 - rank,
+            components={
+                "market_points": 20.0,
+                "ros_starters_points": 30.0,
+                "season_results_points": 10.0,
+            },
+        )
+        for rank in range(1, 17)
+    )
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        schema_version=3,
+        official_power_rankings=rankings,
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+        remaining_schedule_strength=tuple(
+            {
+                "roster_id": rank,
+                "team": f"Team {rank}",
+                "average_opponent_index": 50 + rank / 10,
+                "difficulty_rank": rank,
+                "grade": "C",
+            }
+            for rank in range(1, 17)
+        ),
+        weekly_matchup_forecast=(
+            {
+                "week": 5,
+                "matchup_id": 1,
+                "roster_one": 1,
+                "team_one": "Team 1",
+                "roster_two": 2,
+                "team_two": "Team 2",
+                "spread": 3.5,
+                "over_under": 245.5,
+                "simulations": 10000,
+            },
+        ),
+        source_metadata={"ranking_week": 5, "results_through_week": 4},
+    )
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        external,
+        history_root=tmp_path,
+        roster_market={"status": "READY", "lineup_churn": [], "transactions": {}},
+    )
+
+    assert packet["contract_version"] == "ironbound-production-v0.6"
+    assert len(packet["editorial_spine"]) == 22
+    assert packet["editorial_spine"][2]["module"] == "LEAD_FEATURE"
+    assert packet["editorial_spine"][7]["module"] == "SECONDARY_FEATURE"
+    assert packet["editorial_spine"][9]["module"] == "ROSTER_HEALTH"
+    assert packet["editorial_spine"][10]["module"] == "MARKET_DESK"
+    assert packet["editorial_spine"][16]["module"] == "PLAYOFF_FORECAST"
+    assert packet["editorial_spine"][17]["module"] == "POWER_RANKINGS"
+    assert packet["editorial_spine"][19]["module"] == "FULL_SLATE"
+    assert packet["power_board"]["writeup_inputs"][0]["ranking_components"]["market_points"] == 20.0
+    assert packet["remaining_schedule_strength"]["rows"][0]["difficulty_rank"] == 1
+    assert packet["weekly_matchup_forecast"]["rows"][0]["over_under"] == 245.5
+    assert packet["editorial_style_guidance"]["stats_support_thesis"] is True
+    assert packet["validation"]["research_complete"] is True

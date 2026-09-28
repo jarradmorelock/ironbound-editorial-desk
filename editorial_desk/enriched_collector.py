@@ -12,6 +12,7 @@ from .collector import collect_all as collect_base
 from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
 from .reading_packet import reading_packet_from_artifacts
+from .roster_market import build_network_market_context
 from .external_inputs import load_external_inputs
 from .flagship_research import (
     build_flagship_research_packet,
@@ -66,7 +67,12 @@ def collect_all(
     if not publication_configs or not snapshot_paths:
         return generated
 
-    first_snapshot = json.loads(next(iter(snapshot_paths.values())).read_text(encoding="utf-8"))
+    raw_snapshots = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in snapshot_paths.values()
+    ]
+    network_market_context = build_network_market_context(raw_snapshots, week)
+    first_snapshot = raw_snapshots[0]
     season = str(
         (first_snapshot.get("nfl_state") or {}).get("season")
         or (first_snapshot.get("league") or {}).get("season")
@@ -158,6 +164,7 @@ def collect_all(
                     ),
                     publication_assets=publication_assets,
                     beat_report=build_beat_report(snapshot, beat_source),
+                    network_market_context=network_market_context,
                 )
                 if flagship_packet is not None:
                     generated.extend(

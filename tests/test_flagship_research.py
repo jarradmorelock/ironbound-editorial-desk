@@ -140,6 +140,33 @@ def _fixture():
         "rosters": rosters,
         "players": players,
         "matchups": matchups,
+        "flagship_sleeper": {
+            "schedule": {
+                "status": "available",
+                "weeks": {
+                    "3": [
+                        {
+                            "roster_id": roster_id,
+                            "starters": [f"p{roster_id}"],
+                            "players": [f"p{roster_id}"],
+                        }
+                        for roster_id in range(1, 17)
+                    ],
+                    "4": [
+                        {
+                            "roster_id": roster_id,
+                            "starters": [f"p{roster_id}"],
+                            "players": [f"p{roster_id}"],
+                        }
+                        for roster_id in range(1, 17)
+                    ],
+                },
+            },
+            "transactions": {
+                "status": "available",
+                "weeks": {"1": [], "2": [], "3": [], "4": []},
+            },
+        },
         "draft_context": {
             "status": "available",
             "records": [
@@ -204,6 +231,8 @@ def _fixture():
                 "actual_points": 102,
                 "efficiency": 0.99,
             },
+            "bad_beat": {"team": "Team 15", "points": 115},
+            "escape_artist": {"team": "Team 2", "points": 102},
             "waiver_star_candidates": [
                 {
                     "team": "Team 2",
@@ -577,3 +606,124 @@ def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
     assert first["rank_movement"] == 1
     assert first["playoff_odds"]["playoff"] == 79
     assert first["war"]["value"] == 2.4
+
+
+def test_unified_flagship_spine_and_brand_names_are_stable(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+
+    assert packet["contract_version"] == "ironbound-production-v0.6"
+    assert len(packet["publication_spine"]) == 22
+    assert packet["publication_spine"][9]["module"] == "ROSTER_HEALTH"
+    assert packet["publication_spine"][10]["module"] == "MARKET_DESK"
+    assert packet["publication_spine"][20]["module"] == "DIVISION_ROAD_AHEAD"
+    assert packet["publication_spine"][20]["display_name"] == "Division of Death"
+
+    snapshot["editorial"]["publication_profile"]["key"] = "unbound_weekly"
+    packet2 = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        ExternalEditorialInputs(publication_key="unbound_weekly"),
+        history_root=tmp_path,
+    )
+    assert [row["module"] for row in packet2["publication_spine"]] == [
+        row["module"] for row in packet["publication_spine"]
+    ]
+    assert packet2["publication_spine"][20]["display_name"] == "Under Tension"
+
+
+def test_power_board_gets_model_components_and_forward_model_inputs(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    external = ExternalEditorialInputs(
+        publication_key="ironbound_weekly",
+        handoff_schema_version=3,
+        official_power_rankings=tuple(
+            OfficialPowerRanking(
+                franchise_key=None,
+                rank=rank,
+                roster_id=rank,
+                team=f"Team {rank}",
+                previous_rank=rank,
+                movement=0,
+                score=90 - rank,
+                components={
+                    "market_percentile": 80 - rank,
+                    "ros_starters_percentile": 70 - rank,
+                    "season_results_percentile": 60 - rank,
+                    "weights": {
+                        "market": 0.35,
+                        "ros_starters": 0.45,
+                        "season_results": 0.20,
+                    },
+                },
+            )
+            for rank in range(1, 17)
+        ),
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+        remaining_schedule_strength=(
+            {
+                "roster_id": 1,
+                "team": "Team 1",
+                "average_opponent_index": 58.4,
+                "difficulty_rank": 1,
+                "grade": "F",
+            },
+        ),
+        weekly_matchup_forecast=(
+            {
+                "week": 5,
+                "matchup_id": 1,
+                "roster_one": 1,
+                "team_one": "Team 1",
+                "roster_two": 2,
+                "team_two": "Team 2",
+                "spread": 4.5,
+                "over_under": 252.5,
+                "win_probability_one": 58.0,
+            },
+        ),
+        source_metadata={"ranking_week": 5, "results_through_week": 4},
+    )
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        external,
+        history_root=tmp_path,
+    )
+
+    first = packet["power_board"]["writeup_inputs"][0]
+    assert first["ranking_components"]["market_percentile"] == 79
+    assert packet["remaining_schedule_strength"]["status"] == "READY"
+    assert packet["remaining_schedule_strength"]["rows"][0]["grade"] == "F"
+    assert packet["weekly_matchup_forecast"]["status"] == "READY"
+    assert packet["weekly_matchup_forecast"]["rows"][0]["over_under"] == 252.5
+    assert packet["validation"]["research_complete"] is True
+
+
+def test_shared_honors_include_bad_beat_and_escape_artist(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+
+    assert packet["weekly_honors"]["bad_beat"]["team"] == "Team 15"
+    assert packet["weekly_honors"]["escape_artist"]["team"] == "Team 2"

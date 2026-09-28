@@ -225,3 +225,76 @@ def test_external_input_rejects_publication_asset_checksum_mismatch(tmp_path):
 
     with pytest.raises(ExternalInputError, match="checksum mismatch"):
         load_external_inputs(path, "ironbound_weekly")
+
+
+def test_v3_ranking_handoff_preserves_components_schedule_strength_and_weekly_forecast(tmp_path):
+    path = _write(
+        tmp_path / "handoff-v3.json",
+        {
+            "schema_version": 3,
+            "publication_key": "ironbound_weekly",
+            "official_power_rankings": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "rank": 1,
+                    "previous_rank": 3,
+                    "movement": 2,
+                    "score": 91.2,
+                    "components": {
+                        "market_percentile": 90,
+                        "ros_starters_percentile": 92,
+                        "season_results_percentile": 95,
+                        "market_points": 31,
+                        "ros_starters_points": 41,
+                        "season_results_points": 19,
+                        "weights": {
+                            "market": 0.35,
+                            "ros_starters": 0.45,
+                            "season_results": 0.20,
+                        },
+                    },
+                }
+            ],
+            "playoff_odds": [{"roster_id": 7, "playoff": 91.0}],
+            "remaining_schedule_strength": [
+                {
+                    "roster_id": 7,
+                    "team": "San Carlos FC",
+                    "average_opponent_index": 58.4,
+                    "difficulty_rank": 1,
+                    "grade": "F",
+                    "opponents": [{"week": 3, "roster_id": 2, "power_index": 80.7}],
+                }
+            ],
+            "weekly_matchup_forecast": [
+                {
+                    "week": 3,
+                    "matchup_id": 1,
+                    "roster_one": 7,
+                    "team_one": "San Carlos FC",
+                    "roster_two": 2,
+                    "team_two": "Blue Moose",
+                    "projected_score_one": 128.4,
+                    "projected_score_two": 124.1,
+                    "spread": 4.5,
+                    "over_under": 252.5,
+                    "win_probability_one": 58.0,
+                    "simulations": 10000,
+                }
+            ],
+            "source_metadata": {
+                "ranking_week": 3,
+                "results_through_week": 2,
+                "weekly_matchup_simulations": 10000,
+            },
+        },
+    )
+
+    result = load_external_inputs(path, "ironbound_weekly")
+
+    ranking = result.official_power_rankings[0]
+    assert ranking.components["market_percentile"] == 90
+    assert ranking.components["weights"]["ros_starters"] == 0.45
+    assert result.remaining_schedule_strength[0]["grade"] == "F"
+    assert result.weekly_matchup_forecast[0]["over_under"] == 252.5

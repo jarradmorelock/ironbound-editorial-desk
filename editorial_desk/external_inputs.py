@@ -20,6 +20,7 @@ class OfficialPowerRanking:
     previous_rank: int | None = None
     movement: int | None = None
     score: float | None = None
+    components: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,8 @@ class ExternalEditorialInputs:
     cwar: tuple[dict[str, Any], ...] = ()
     usage: tuple[dict[str, Any], ...] = ()
     playoff_odds: tuple[dict[str, Any], ...] = ()
+    remaining_schedule_strength: tuple[dict[str, Any], ...] = ()
+    weekly_matchup_forecast: tuple[dict[str, Any], ...] = ()
     publication_assets: dict[str, dict[str, Any]] = field(default_factory=dict)
     notes: tuple[str, ...] = ()
     source_metadata: dict[str, Any] = field(default_factory=dict)
@@ -160,6 +163,7 @@ def load_external_inputs(
                 previous_rank=_optional_int(row.get("previous_rank")),
                 movement=_optional_int(row.get("movement")),
                 score=_optional_float(row.get("score")),
+                components=dict(row.get("components") or {}),
             )
         )
 
@@ -175,6 +179,16 @@ def load_external_inputs(
     playoff_odds_raw = raw.get("playoff_odds") or []
     if not isinstance(playoff_odds_raw, list) or any(not isinstance(row, dict) for row in playoff_odds_raw):
         raise ExternalInputError("playoff_odds must be a list of objects")
+    schedule_strength_raw = raw.get("remaining_schedule_strength") or []
+    if not isinstance(schedule_strength_raw, list) or any(
+        not isinstance(row, dict) for row in schedule_strength_raw
+    ):
+        raise ExternalInputError("remaining_schedule_strength must be a list of objects")
+    weekly_forecast_raw = raw.get("weekly_matchup_forecast") or []
+    if not isinstance(weekly_forecast_raw, list) or any(
+        not isinstance(row, dict) for row in weekly_forecast_raw
+    ):
+        raise ExternalInputError("weekly_matchup_forecast must be a list of objects")
     assets_raw = raw.get("publication_assets") or {}
     if not isinstance(assets_raw, dict):
         raise ExternalInputError("publication_assets must be an object")
@@ -225,6 +239,8 @@ def load_external_inputs(
         cwar=tuple(dict(row) for row in cwar_raw),
         usage=tuple(dict(row) for row in usage_raw),
         playoff_odds=tuple(dict(row) for row in playoff_odds_raw),
+        remaining_schedule_strength=tuple(dict(row) for row in schedule_strength_raw),
+        weekly_matchup_forecast=tuple(dict(row) for row in weekly_forecast_raw),
         publication_assets=publication_assets,
         notes=tuple(str(note) for note in notes_raw),
         source_metadata=dict(source_metadata),

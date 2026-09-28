@@ -6,6 +6,7 @@ from typing import Any
 
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
+from .flagship_market import build_context_events, build_market_desk
 
 
 FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -55,12 +56,14 @@ def build_flagship_research_packet(
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.5",
+        "contract_version": "ironbound-production-v0.6",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
         "week": week,
         "information_current_through": dossier.get("information_current_through"),
+        "issue_manifest": _issue_manifest(publication_key),
+        "editorial_style_rules": _editorial_style_rules(),
         "contract_principles": {
             "deterministic_facts_first": True,
             "ai_role": "editorial selection and prose only",
@@ -86,6 +89,8 @@ def build_flagship_research_packet(
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
         "beat_report": beat_report,
+        "context_events": build_context_events(beat_report),
+        "market_desk": build_market_desk(snapshot, dossier, beat_report),
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
@@ -109,6 +114,8 @@ def build_flagship_research_packet(
             "benchwarmer_of_the_week": _attach_stat_lines(
                 weekly.get("benchwarmer_of_the_week"), intelligence
             ),
+            "bad_beat": awards.get("bad_beat"),
+            "escape_artist": awards.get("escape_artist"),
             "rookie_watch_top_five": _attach_rookie_draft_context(
                 _attach_stat_lines(
                     weekly.get("rookie_watch_top_five") or [], intelligence
@@ -142,6 +149,7 @@ def build_flagship_research_packet(
                     "previous_rank": row.previous_rank,
                     "movement": row.movement,
                     "score": row.score,
+                    "components": dict(row.components or {}),
                 }
                 for row in external.official_power_rankings
             ],
@@ -151,6 +159,34 @@ def build_flagship_research_packet(
             "authority": "Ironbound_power_ranks",
             "asset_key": "playoff_forecast",
             "rows": [dict(row) for row in external.playoff_odds],
+        },
+        "remaining_schedule_strength": {
+            "status": (
+                "READY"
+                if external.remaining_schedule_strength
+                else (
+                    "AWAITING_TUESDAY_INPUT"
+                    if external.handoff_schema_version >= 3
+                    else "LEGACY_NOT_REQUIRED"
+                )
+            ),
+            "authority": "Ironbound_power_ranks",
+            "method": "Average opponent current Power Board index over remaining regular-season games.",
+            "rows": [dict(row) for row in external.remaining_schedule_strength],
+        },
+        "full_slate_forecast": {
+            "status": (
+                "READY"
+                if external.weekly_matchup_forecast
+                else (
+                    "AWAITING_TUESDAY_INPUT"
+                    if external.handoff_schema_version >= 3
+                    else "LEGACY_NOT_REQUIRED"
+                )
+            ),
+            "authority": "Ironbound_power_ranks",
+            "lineup_policy": "Projected-optimal legal lineup selected once before simulation; submitted current starters do not set the line.",
+            "matchups": [dict(row) for row in external.weekly_matchup_forecast],
         },
         "ranking_publication_assets": {
             "authority": "Ironbound_power_ranks",
@@ -172,6 +208,7 @@ def build_flagship_research_packet(
                 "status": _optional_external_status(external.cwar_supplied),
                 "rows": [dict(row) for row in external.cwar],
             },
+            "handoff_schema_version": external.handoff_schema_version,
             "source_metadata": dict(external.source_metadata),
             "notes": list(external.notes),
         },

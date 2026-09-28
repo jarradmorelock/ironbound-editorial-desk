@@ -489,3 +489,9 @@ A production run with a configured beat ledger treats that source as required:
 an unavailable ledger or unverifiable reporting window prevents
 `Research complete: YES`.
 
+The `news-data` branch also publishes `ledger/coverage.json`, which records
+when durable accepted-story history actually began. Editorial Desk compares that
+coverage start against the issue's reporting window. Older issues that predate
+the durable ledger are marked `PARTIAL_HISTORY` rather than incorrectly
+claiming that an empty ledger means no relevant news occurred.
+

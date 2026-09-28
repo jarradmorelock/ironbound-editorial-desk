@@ -3,6 +3,10 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from typing import Any
 
+from .market_rates import timestamp
+from .beat_news import _reporting_window
+from .chronicle_queries import ChronicleQueries
+
 
 def build_network_market_context(
     snapshots: dict[str, dict[str, Any]],
@@ -29,7 +33,8 @@ def build_network_market_context(
                 rostered_leagues[str(player_id)].add(str(league_key))
         for matchup in snapshot.get("matchups") or []:
             for player_id in matchup.get("starters") or []:
-                started_leagues[str(player_id)].add(str(league_key))
+                if player_id and str(player_id) != "0":
+                    started_leagues[str(player_id)].add(str(league_key))
         for tx in _current_transactions(snapshot):
             for player_id in (tx.get("adds") or {}):
                 add_leagues[str(player_id)].add(str(league_key))
@@ -77,6 +82,8 @@ def build_roster_market_report(
     dossier: dict[str, Any],
     beat_report: dict[str, Any] | None,
     network_context: dict[str, Any] | None,
+    *,
+    chronicle: ChronicleQueries | None = None,
 ) -> dict[str, Any]:
     players = snapshot.get("players") or {}
     team_names = _roster_team_names(snapshot)
@@ -92,13 +99,13 @@ def build_roster_market_report(
     movement_counts: Counter[str] = Counter()
     movement_kinds: dict[str, Counter[str]] = defaultdict(Counter)
     for tx in all_transactions:
+        for player_id in set(tx.get("adds") or {}) | set(tx.get("drops") or {}):
+            movement_counts[str(player_id)] += 1
         for player_id in (tx.get("adds") or {}):
             pid = str(player_id)
-            movement_counts[pid] += 1
             movement_kinds[pid]["adds"] += 1
         for player_id in (tx.get("drops") or {}):
             pid = str(player_id)
-            movement_counts[pid] += 1
             movement_kinds[pid]["drops"] += 1
 
     repeated = [
@@ -145,10 +152,17 @@ def build_roster_market_report(
         ),
     )
 
+    source_coverage = {
+        key: ((snapshot.get("flagship_sleeper") or {}).get(key) or {}).get("status", "unknown")
+        for key in ("transactions", "schedule")
+    }
+    missing_required = any(value in {"unavailable", "partial"} for value in source_coverage.values())
     return {
-        "status": "READY",
+        "status": "MANUAL_VERIFY" if missing_required else "READY",
+        "source_coverage": source_coverage,
         "week": week,
         "health": health,
+        "status_timeline": _status_timeline(snapshot, beat_report, chronicle),
         "lineup_churn": churn,
         "transactions": {
             "current_week": normalized_current,
@@ -182,12 +196,11 @@ def _current_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     flagship = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {})
     weeks = flagship.get("weeks") or {}
     rows = []
-    if isinstance(weeks, dict):
-        rows = weeks.get(week) or (weeks.get(int(week)) if week.isdigit() else []) or []
-    if isinstance(rows, list) and rows:
-        return [dict(row) for row in rows if isinstance(row, dict)]
+    if isinstance(weeks, dict) and (week in weeks or int(week) in weeks):
+        rows = weeks.get(week, weeks.get(int(week), []))
+        return [dict(row) for row in rows or [] if isinstance(row, dict) and row.get("status") == "complete"]
     rows = snapshot.get("transactions") or []
-    return [dict(row) for row in rows if isinstance(row, dict)]
+    return [dict(row) for row in rows if isinstance(row, dict) and row.get("status") == "complete"]
 
 
 def _all_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
@@ -195,9 +208,11 @@ def _all_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     weeks = flagship.get("weeks") or {}
     rows: list[dict[str, Any]] = []
     if isinstance(weeks, dict):
-        for values in weeks.values():
+        for tx_week, values in weeks.items():
+            if int(tx_week) > int(snapshot.get("week") or 0):
+                continue
             if isinstance(values, list):
-                rows.extend(dict(row) for row in values if isinstance(row, dict))
+                rows.extend(dict(row) for row in values if isinstance(row, dict) and row.get("status") == "complete")
     if not rows:
         rows.extend(_current_transactions(snapshot))
     seen: set[str] = set()
@@ -264,14 +279,14 @@ def _lineup_churn(
     week: int,
 ) -> list[dict[str, Any]]:
     current = {
-        int(row.get("roster_id") or 0): {str(pid) for pid in row.get("starters") or []}
+        int(row.get("roster_id") or 0): {str(pid) for pid in row.get("starters") or [] if pid and str(pid) != "0"}
         for row in snapshot.get("matchups") or []
     }
     schedule = ((snapshot.get("flagship_sleeper") or {}).get("schedule") or {})
     weeks = schedule.get("weeks") or {}
     previous_rows = weeks.get(str(week - 1)) or weeks.get(week - 1) or []
     previous = {
-        int(row.get("roster_id") or 0): {str(pid) for pid in row.get("starters") or []}
+        int(row.get("roster_id") or 0): {str(pid) for pid in row.get("starters") or [] if pid and str(pid) != "0"}
         for row in previous_rows
         if isinstance(row, dict)
     }
@@ -410,3 +425,37 @@ def _safe_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _status_timeline(snapshot, beat_report, chronicle):
+    window = (beat_report or {}).get("reporting_window") or {}
+    if not window:
+        dates = _reporting_window(snapshot)
+        if dates:
+            window = {"start": dates[0].isoformat(), "end": dates[1].isoformat()}
+    result = {"status": "UNAVAILABLE", "events": [], "reporting_window": window,
+              "source_revision": snapshot.get("chronicle_revision"),
+              "note": "Observed transitions only. Polling intervals are not exact announcement times; missing history does not mean no status changes."}
+    if chronicle is None:
+        return result
+    try:
+        start, end = timestamp(window['start']), timestamp(window['end'])
+    except (KeyError, ValueError, TypeError):
+        return result
+    tracked = {str(pid) for row in snapshot.get('rosters') or [] for pid in row.get('players') or []}
+    for tx in _current_transactions(snapshot):
+        tracked.update(map(str, tx.get('adds') or {}))
+        tracked.update(map(str, tx.get('drops') or {}))
+    for matchup in snapshot.get('matchups') or []:
+        tracked.update(str(pid) for pid in matchup.get('players') or [])
+    events = chronicle.player_status_events(tracked)
+    selected = []
+    for event in events:
+        try:
+            observed = timestamp(event.get('observed_at'))
+        except (ValueError, TypeError):
+            continue
+        if start <= observed < end:
+            selected.append(dict(event))
+    selected.sort(key=lambda row: (timestamp(row['observed_at']), str(row.get('event_id'))))
+    return {**result, 'status': 'OBSERVED_HISTORY', 'events': selected}

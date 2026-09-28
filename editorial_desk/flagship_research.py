@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .context_events import build_context_events
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
 
@@ -61,7 +62,9 @@ def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, 
         ("SOURCES", "SOURCES & MODEL NOTES"),
     ]
     return [
-        {"page": page, "module": module, "display_name": display}
+        {"page": page, "module": module, "display_name": display,
+         **({"game_report_numbers": [(page - 5) * 2 + 1, (page - 5) * 2 + 2]} if module == "GAME_REPORTS" else {}),
+         **({"ranks": list(range((page - 13) * 4 + 1, (page - 13) * 4 + 5))} if module == "POWER_BOARD" else {})}
         for page, (module, display) in enumerate(modules, start=1)
     ]
 
@@ -81,6 +84,9 @@ def flagship_style_guidance() -> dict[str, Any]:
             "Explain why a workload, market move, injury timeline, or model component changes the fantasy read.",
             "Compare outcome with prior expectation when the evidence supports it.",
             "Preserve uncertainty; one game or one report is not automatically a trend.",
+            "Assess role sustainability using opportunity and workload evidence; distinguish volume from efficiency and touchdown variance.",
+            "Describe market and model expectations separately and explain opportunity cost where supported.",
+            "Observed status intervals do not prove exact announcement times or manager intent; chronology alone is not causation.",
             "End analytical passages with the consequence for the manager, roster, matchup, or next decision.",
         ],
     }
@@ -163,10 +169,7 @@ def build_flagship_research_packet(
         "usage_desk": _usage_desk(intelligence),
         "injury_roster_health": health,
         "beat_report": beat_report,
-        "context_events": {
-            "policy": "Verified beat/news events are reusable context. The same event may inform game stories, health, market, usage, and previews when relevant.",
-            "items": list((beat_report or {}).get("items") or []),
-        },
+        "context_events": build_context_events(beat_report, games),
         "roster_market": roster_market,
         "weekly_honors": {
             "started_position_leaders": _attach_stat_lines(
@@ -294,6 +297,16 @@ def build_flagship_research_packet(
             "candidates": (story or {}).get("candidates") or [],
         },
     }
+    context = packet["context_events"]
+    for game in games:
+        game["context_event_ids"] = context["by_game"].get(str(game.get("matchup_id")), [])
+    for field, module in (("injury_roster_health", "ROSTER_HEALTH"), ("roster_market", "MARKET_DESK"),
+                          ("usage_desk", "USAGE_DESK"), ("weekly_matchup_forecast", "FULL_SLATE")):
+        if isinstance(packet.get(field), dict):
+            packet[field] = {**packet[field], "context_event_ids": context["by_module"].get(module, [])}
+    for row in packet["weekly_matchup_forecast"]["rows"]:
+        row["context_event_ids"] = sorted(set(context["by_roster"].get(str(row.get("roster_one")), []) +
+                                             context["by_roster"].get(str(row.get("roster_two")), [])))
     packet["validation"] = validate_flagship_research_packet(packet)
     return packet
 
@@ -304,6 +317,14 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     manual: list[str] = []
     awaiting: list[str] = []
     editorial: list[str] = []
+
+    expected = flagship_editorial_spine(str(packet.get("publication_key") or ""), int(packet.get("week") or 0))
+    structural_fields = ("page", "module", "game_report_numbers", "ranks")
+    structure = lambda rows: [{key: row.get(key) for key in structural_fields} for row in rows]
+    spine_ok = structure(packet.get("editorial_spine") or []) == structure(expected)
+    _check(checks, "flagship_spine", spine_ok, "22-page canonical module order and allocations")
+    if not spine_ok:
+        manual.append("Shared flagship page structure is missing or inconsistent.")
 
     games = ((packet.get("game_coverage") or {}).get("games") or [])
     required_games = int((packet.get("game_coverage") or {}).get("required_matchups") or 8)
@@ -636,12 +657,19 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
                     f"  - {event.get('published_at')} — {event.get('headline')} — "
                     f"{event.get('source')} — {event.get('source_url')}"
                 )
+        timeline = market.get("status_timeline") or {}
+        lines.extend(["", "### Observed Status Changes", f"- Coverage: {timeline.get('status', 'UNAVAILABLE')}. {timeline.get('note', '')}"])
+        for event in timeline.get("events") or []:
+            pid = (event.get("entities") or {}).get("player_id")
+            lines.append(f"- Player {pid}: {_compact(event.get('before') or {})} → {_compact(event.get('after') or {})}; observed between {event.get('observed_before')} and {event.get('observed_after') or event.get('observed_at')}; source {event.get('source')}.")
         platform = market.get("sleeper_platform_rates") or {}
         lines.extend(["", "### Sleeper-wide Ownership / Start Rates"])
         lines.append(
             f"- Status: {platform.get('status', 'UNAVAILABLE')}. "
             f"{platform.get('note') or 'Optional enrichment only.'}"
         )
+        for pid, rates in (platform.get("players") or {}).items():
+            lines.append(f"- Player {pid}: {_compact(rates)}; observed {platform.get('observed_at')}; {platform.get('source_url')}.")
         network = market.get("network_market") or {}
         lines.extend(["", f"### {network.get('scope') or 'Ironbound Network'} Signals"])
         for row in network.get("players") or []:
@@ -656,7 +684,7 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
 
     beat = packet.get("beat_report")
     if beat is not None:
-        lines.extend(["", "## BEAT / NEWS WIRE", ""])
+        lines.extend(["", "## REUSABLE BEAT CONTEXT — SOURCE EVIDENCE", ""])
         lines.append(f"Status: {beat.get('status', 'UNKNOWN')}")
         if beat.get("source_revision"):
             lines.append(

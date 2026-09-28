@@ -26,6 +26,7 @@ class OfficialPowerRanking:
 @dataclass(frozen=True)
 class ExternalEditorialInputs:
     publication_key: str
+    handoff_schema_version: int = 0
     official_power_rankings: tuple[OfficialPowerRanking, ...] = ()
     war: tuple[dict[str, Any], ...] = ()
     cwar: tuple[dict[str, Any], ...] = ()
@@ -234,6 +235,7 @@ def load_external_inputs(
 
     return ExternalEditorialInputs(
         publication_key=publication_key,
+        handoff_schema_version=_optional_int(raw.get("schema_version")) or 0,
         official_power_rankings=tuple(rankings),
         war=tuple(dict(row) for row in war_raw),
         cwar=tuple(dict(row) for row in cwar_raw),

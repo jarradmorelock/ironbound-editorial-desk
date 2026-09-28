@@ -181,8 +181,10 @@ def _current_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     week = str(int(snapshot.get("week") or 0))
     flagship = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {})
     weeks = flagship.get("weeks") or {}
-    rows = weeks.get(week) or weeks.get(int(week)) if week.isdigit() else []
-    if isinstance(rows, list):
+    rows = []
+    if isinstance(weeks, dict):
+        rows = weeks.get(week) or (weeks.get(int(week)) if week.isdigit() else []) or []
+    if isinstance(rows, list) and rows:
         return [dict(row) for row in rows if isinstance(row, dict)]
     rows = snapshot.get("transactions") or []
     return [dict(row) for row in rows if isinstance(row, dict)]

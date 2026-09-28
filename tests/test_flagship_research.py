@@ -577,3 +577,294 @@ def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
     assert first["rank_movement"] == 1
     assert first["playoff_odds"]["playoff"] == 79
     assert first["war"]["value"] == 2.4
+
+
+def _v3_external(publication_key="ironbound_weekly"):
+    rankings = []
+    schedules = []
+    for rank in range(1, 17):
+        rankings.append(
+            OfficialPowerRanking(
+                franchise_key=None,
+                rank=rank,
+                roster_id=rank,
+                team=f"Team {rank}",
+                previous_rank=rank,
+                movement=0,
+                score=80 - rank,
+                components={
+                    "market_percentile": 90 - rank,
+                    "ros_starters_percentile": 85 - rank,
+                    "season_results_percentile": 75 - rank,
+                    "market_points": 30.0,
+                    "ros_starters_points": 35.0,
+                    "season_results_points": 15.0,
+                    "weights": {
+                        "market": 0.35,
+                        "ros_starters": 0.45,
+                        "season_results": 0.20,
+                    },
+                },
+            )
+        )
+        schedules.append(
+            {
+                "roster_id": rank,
+                "team": f"Team {rank}",
+                "remaining_opponents": [],
+                "opponents": [],
+                "average_opponent_index": 50 + rank / 10,
+                "difficulty_rank": rank,
+                "grade": "C",
+            }
+        )
+    forecast = []
+    for matchup_id in range(1, 9):
+        one = matchup_id * 2 - 1
+        two = matchup_id * 2
+        forecast.append(
+            {
+                "week": 5,
+                "matchup_id": matchup_id,
+                "roster_one": one,
+                "team_one": f"Team {one}",
+                "roster_two": two,
+                "team_two": f"Team {two}",
+                "projected_score_one": 120 + one,
+                "projected_score_two": 120 + two,
+                "projected_total": 240 + one + two,
+                "over_under": 250.5,
+                "favorite_roster_id": two,
+                "favorite_team": f"Team {two}",
+                "favorite_by": 1.1,
+                "spread": 1.0,
+                "win_probability_one": 48.0,
+                "simulations": 10000,
+                "model": "Sleeper projected-optimal legal lineup Monte Carlo",
+                "optimal_lineup_one": [f"p{one}"],
+                "optimal_lineup_two": [f"p{two}"],
+            }
+        )
+    return ExternalEditorialInputs(
+        publication_key=publication_key,
+        handoff_schema_version=3,
+        official_power_rankings=tuple(rankings),
+        playoff_odds=tuple(
+            {"roster_id": rank, "team": f"Team {rank}", "playoff": 80 - rank}
+            for rank in range(1, 17)
+        ),
+        remaining_schedule_strength=tuple(schedules),
+        weekly_matchup_forecast=tuple(forecast),
+        source_metadata={
+            "ranking_week": 5,
+            "results_through_week": 4,
+            "weekly_matchup_simulations": 10000,
+        },
+    )
+
+
+def test_v06_common_issue_manifest_is_same_structure_for_both_flagships(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    ironbound = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _v3_external("ironbound_weekly"),
+        history_root=tmp_path,
+    )
+
+    snapshot_unbound = json.loads(json.dumps(snapshot))
+    dossier_unbound = json.loads(json.dumps(dossier))
+    snapshot_unbound["editorial"]["publication_profile"]["key"] = "unbound_weekly"
+    snapshot_unbound["editorial"]["league_key"] = "free_ironbound_sixteen"
+    dossier_unbound["league"]["league_key"] = "free_ironbound_sixteen"
+    unbound_root = tmp_path / "unbound-history"
+    _write_history(unbound_root, {**dossier_unbound, "league": {**dossier_unbound["league"], "league_key": "ironbound_sixteen"}})
+    unbound = build_flagship_research_packet(
+        snapshot_unbound,
+        dossier_unbound,
+        {"status": "available", "candidates": []},
+        _v3_external("unbound_weekly"),
+        history_root=unbound_root,
+    )
+
+    assert ironbound["contract_version"] == "ironbound-production-v0.6"
+    assert len(ironbound["issue_manifest"]["pages"]) == 22
+    assert [row["module_id"] for row in ironbound["issue_manifest"]["pages"]] == [
+        row["module_id"] for row in unbound["issue_manifest"]["pages"]
+    ]
+    assert ironbound["issue_manifest"]["pages"][9]["module_id"] == "ROSTER_HEALTH"
+    assert ironbound["issue_manifest"]["pages"][10]["module_id"] == "MARKET_DESK"
+    assert ironbound["issue_manifest"]["pages"][20]["module_id"] == "DIVISION_ROAD_AHEAD"
+    assert ironbound["issue_manifest"]["pages"][10]["display_title"] == "THE TRANSACTION DESK"
+    assert unbound["issue_manifest"]["pages"][10]["display_title"] == "MARKET MOVES"
+
+
+def test_v3_model_inputs_feed_power_board_schedule_strength_and_full_slate(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _v3_external(),
+        history_root=tmp_path,
+    )
+
+    first = next(row for row in packet["power_board"]["writeup_inputs"] if row["roster_id"] == 1)
+    assert first["ranking_components"]["market_percentile"] == 89
+    assert first["ranking_components"]["weights"]["market"] == 0.35
+    assert packet["remaining_schedule_strength"]["authority"] == "Ironbound_power_ranks"
+    assert len(packet["remaining_schedule_strength"]["rows"]) == 16
+    assert packet["full_slate_forecast"]["authority"] == "Ironbound_power_ranks"
+    assert len(packet["full_slate_forecast"]["matchups"]) == 8
+    assert packet["full_slate_forecast"]["matchups"][0]["simulations"] == 10000
+    assert packet["validation"]["research_complete"] is True
+
+
+def test_standardized_honors_expose_bad_beat_escape_artist_and_running_efficiency(tmp_path):
+    snapshot, dossier = _fixture()
+    dossier["awards"]["bad_beat"] = {"team": "Team 15", "points": 115.0}
+    dossier["awards"]["escape_artist"] = {"team": "Team 2", "points": 102.0}
+    _write_history(tmp_path, dossier)
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _v3_external(),
+        history_root=tmp_path,
+    )
+
+    honors = packet["weekly_honors"]
+    assert honors["bad_beat"]["team"] == "Team 15"
+    assert honors["escape_artist"]["team"] == "Team 2"
+    assert len(honors["season_efficiency_top_three"]) == 3
+    assert set(honors["started_position_leaders"]) == {"QB", "RB", "WR", "TE"}
+
+
+def test_market_desk_stays_useful_with_transactions_starter_churn_health_and_news(tmp_path):
+    snapshot, dossier = _fixture()
+    # Add a bench player and prior/current lineup history so starter churn is deterministic.
+    snapshot["players"]["bench1"] = {"full_name": "Bench One", "position": "WR"}
+    snapshot["rosters"][0]["players"].append("bench1")
+    snapshot["flagship_sleeper"] = {
+        "transactions": {
+            "status": "available",
+            "weeks": {
+                "4": [
+                    {
+                        "transaction_id": "tx-waiver",
+                        "status": "complete",
+                        "type": "waiver",
+                        "created": 1790568000000,
+                        "adds": {"bench1": 1},
+                        "drops": {},
+                        "roster_ids": [1],
+                        "settings": {"waiver_bid": 7},
+                    }
+                ]
+            },
+        },
+        "schedule": {
+            "status": "available",
+            "weeks": {
+                "3": [
+                    {
+                        "matchup_id": 1,
+                        "roster_id": 1,
+                        "players": ["p1", "bench1"],
+                        "starters": ["p1"],
+                    }
+                ],
+                "4": [
+                    {
+                        "matchup_id": 1,
+                        "roster_id": 1,
+                        "players": ["p1", "bench1"],
+                        "starters": ["bench1"],
+                    }
+                ],
+            },
+        },
+    }
+    dossier["roster_health"] = {
+        "status": "available",
+        "players": [
+            {
+                "player_id": "p1",
+                "player": "Player 1",
+                "team": "Team 1",
+                "status": "OUT",
+            }
+        ],
+    }
+    beat_report = {
+        "required": True,
+        "status": "READY",
+        "source_revision": "abc",
+        "items": [
+            {
+                "event_id": "news:p1",
+                "published_at": "2026-09-20T15:00:00+00:00",
+                "headline": "Player 1 downgraded before kickoff",
+                "source": "RotoWire",
+                "source_url": "https://example.com/p1",
+                "tags": ["Injury", "Game Status"],
+                "league_players": [
+                    {
+                        "sleeper_player_id": "p1",
+                        "player": "Player 1",
+                        "fantasy_team": "Team 1",
+                        "roster_id": 1,
+                    }
+                ],
+                "editorial_lanes": {
+                    "health_context": True,
+                    "usage_context": True,
+                    "preview_context": True,
+                },
+            }
+        ],
+    }
+    _write_history(tmp_path, dossier)
+
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _v3_external(),
+        history_root=tmp_path,
+        beat_report=beat_report,
+    )
+
+    market = packet["market_desk"]
+    assert market["status"] == "READY"
+    assert market["transaction_ledger"]["season_summary"]["waivers"] == 1
+    assert market["starter_churn"][0]["roster_id"] == 1
+    assert market["starter_churn"][0]["promoted"][0]["player"] == "Bench One"
+    assert market["starter_churn"][0]["demoted"][0]["player"] == "Player 1"
+    assert market["roster_architecture"][0]["roster_id"] == 1
+    assert market["health_context"][0]["player"] == "Player 1"
+    assert market["beat_context"][0]["event_id"] == "news:p1"
+    assert market["sleeper_platform_market"]["status"] in {"UNAVAILABLE", "EXPERIMENTAL", "READY"}
+
+
+def test_editorial_style_rules_require_analysis_not_chart_in_prose(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _v3_external(),
+        history_root=tmp_path,
+    )
+
+    rules = packet["editorial_style_rules"]
+    assert rules["numbers_support_thesis"] is True
+    assert rules["separate_result_from_process"] is True
+    assert rules["separate_role_from_efficiency"] is True
+    assert rules["do_not_translate_chart_to_prose"] is True
+    assert rules["state_uncertainty"] is True

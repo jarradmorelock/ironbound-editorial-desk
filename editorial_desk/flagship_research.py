@@ -241,6 +241,13 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     if duplicate_ids:
         manual.append("Duplicate matchup coverage must be resolved before production.")
 
+    manifest = packet.get("issue_manifest") or {}
+    pages = manifest.get("pages") or []
+    manifest_ok = int(manifest.get("page_count") or 0) == 22 and len(pages) == 22
+    _check(checks, "flagship_issue_manifest", manifest_ok, f"{len(pages)}/22 pages defined")
+    if not manifest_ok:
+        manual.append("Flagship issue manifest must define the shared 22-page spine.")
+
     for game in games:
         if not game.get("starter_stat_lines"):
             manual.append(
@@ -325,6 +332,32 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         section = packet.get(key) or {}
         if section.get("status") != "READY":
             awaiting.append(f"{label} from Tuesday power-rankings delivery.")
+
+    handoff_schema = int(
+        (packet.get("tuesday_external_inputs") or {}).get("handoff_schema_version") or 1
+    )
+    if handoff_schema >= 3:
+        schedule = packet.get("remaining_schedule_strength") or {}
+        schedule_ok = schedule.get("status") == "READY" and len(schedule.get("rows") or []) == 16
+        _check(
+            checks,
+            "remaining_schedule_strength",
+            schedule_ok,
+            f"{len(schedule.get('rows') or [])}/16 team rows",
+        )
+        if not schedule_ok:
+            awaiting.append("Remaining schedule strength from the Power Rankings engine.")
+
+        slate = packet.get("full_slate_forecast") or {}
+        slate_ok = slate.get("status") == "READY" and len(slate.get("matchups") or []) == 8
+        _check(
+            checks,
+            "weekly_matchup_forecast",
+            slate_ok,
+            f"{len(slate.get('matchups') or [])}/8 matchup simulations",
+        )
+        if not slate_ok:
+            awaiting.append("Eight-game projected-optimal matchup forecast from the Power Rankings engine.")
 
     source_metadata = (packet.get("tuesday_external_inputs") or {}).get("source_metadata") or {}
     results_through_week = source_metadata.get("results_through_week")

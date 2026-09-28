@@ -230,7 +230,12 @@ jobs:
             echo "ERROR: Could not resolve Ironbound-Forum-Feed-Poster news-data revision."
             exit 1
           fi
-          curl --fail --silent --show-error --location             "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl"             -o beat-inputs/events.jsonl
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
+            -o beat-inputs/events.jsonl
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
+            -o beat-inputs/coverage.json
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
           echo "Loaded durable beat/news ledger at revision $revision."
 

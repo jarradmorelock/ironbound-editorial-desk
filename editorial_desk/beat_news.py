@@ -68,11 +68,22 @@ def load_news_ledger(path: Path | None, *, revision: str | None = None) -> dict[
             "error": str(exc),
         }
 
+    coverage: dict[str, Any] = {}
+    coverage_path = source_path.parent / "coverage.json"
+    if coverage_path.exists():
+        try:
+            raw_coverage = json.loads(coverage_path.read_text(encoding="utf-8"))
+            if isinstance(raw_coverage, dict):
+                coverage = dict(raw_coverage)
+        except (OSError, json.JSONDecodeError):
+            coverage = {}
+
     return {
         "status": "available",
         "source_repository": "jarradmorelock/Ironbound-Forum-Feed-Poster",
         "source_branch": "news-data",
         "source_revision": revision,
+        "coverage": coverage,
         "records": records,
     }
 
@@ -188,9 +199,20 @@ def build_beat_report(
             str(row.get("event_id") or ""),
         )
     )
-    return {
+
+    coverage = source.get("coverage") or {}
+    durable_since = _timestamp(coverage.get("durable_since"))
+    complete_window = durable_since is not None and durable_since <= start
+    status = "READY" if complete_window else "PARTIAL_HISTORY"
+
+    result = {
         **base,
-        "status": "READY",
+        "status": status,
+        "coverage": {
+            "durable_since": coverage.get("durable_since"),
+            "complete_for_reporting_window": complete_window,
+            "note": coverage.get("meaning"),
+        },
         "reporting_window": {
             "start": start.isoformat(),
             "end": end.isoformat(),
@@ -209,6 +231,12 @@ def build_beat_report(
             )
         },
     }
+    if not complete_window:
+        result["error"] = (
+            "Durable beat/news history begins after the start of this issue's "
+            "reporting window; earlier Discord news cannot be claimed as complete."
+        )
+    return result
 
 
 def _reporting_window(snapshot: dict[str, Any]) -> tuple[datetime, datetime] | None:

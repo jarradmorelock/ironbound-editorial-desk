@@ -89,12 +89,17 @@ def test_load_news_ledger_reads_jsonl_and_records_revision(tmp_path):
         json.dumps(_event("news:1", "2026-09-16T12:00:00+00:00")) + "\n",
         encoding="utf-8",
     )
+    (tmp_path / "coverage.json").write_text(
+        json.dumps({"durable_since": "2026-09-01T00:00:00+00:00"}),
+        encoding="utf-8",
+    )
 
     source = load_news_ledger(path, revision="abc123")
 
     assert source["status"] == "available"
     assert source["source_revision"] == "abc123"
     assert len(source["records"]) == 1
+    assert source["coverage"]["durable_since"] == "2026-09-01T00:00:00+00:00"
 
 
 def test_build_beat_report_maps_only_rostered_relevant_news_in_weekly_window():
@@ -103,6 +108,7 @@ def test_build_beat_report_maps_only_rostered_relevant_news_in_weekly_window():
         "source_repository": "jarradmorelock/Ironbound-Forum-Feed-Poster",
         "source_branch": "news-data",
         "source_revision": "abc123",
+        "coverage": {"durable_since": "2026-09-01T00:00:00+00:00"},
         "records": [
             _event("news:in", "2026-09-16T12:00:00+00:00"),
             _event(
@@ -133,6 +139,7 @@ def test_build_beat_report_maps_only_rostered_relevant_news_in_weekly_window():
 def test_health_story_is_routed_to_health_and_preview_lanes():
     source = {
         "status": "available",
+        "coverage": {"durable_since": "2026-09-01T00:00:00+00:00"},
         "records": [
             _event(
                 "news:health",
@@ -159,3 +166,17 @@ def test_missing_schedule_date_requires_manual_verification():
 
     assert report["status"] == "MANUAL_VERIFY"
     assert "schedule" in report["error"].lower()
+
+
+def test_reporting_window_before_durable_ledger_start_is_marked_partial():
+    source = {
+        "status": "available",
+        "coverage": {"durable_since": "2026-09-20T00:00:00+00:00"},
+        "records": [],
+    }
+
+    report = build_beat_report(_snapshot(), source)
+
+    assert report["status"] == "PARTIAL_HISTORY"
+    assert report["coverage"]["complete_for_reporting_window"] is False
+    assert "cannot be claimed as complete" in report["error"]

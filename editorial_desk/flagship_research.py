@@ -245,46 +245,6 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
                 "could not be verified."
             )
 
-    beat = packet.get("beat_report")
-    if beat is not None:
-        lines.extend(["", "## BEAT / NEWS WIRE", ""])
-        lines.append(f"Status: {beat.get('status', 'UNKNOWN')}")
-        if beat.get("source_revision"):
-            lines.append(
-                f"Source revision: {beat.get('source_revision')} "
-                f"({beat.get('source_repository')}:{beat.get('source_branch')})"
-            )
-        window = beat.get("reporting_window") or {}
-        if window:
-            lines.append(
-                f"Reporting window: {window.get('start')} through {window.get('end')}."
-            )
-        lines.append(
-            f"League-relevant accepted stories: {int(beat.get('relevant_event_count') or 0)}."
-        )
-        for row in beat.get("items") or []:
-            players = ", ".join(
-                f"{player.get('player')} ({player.get('fantasy_team')})"
-                for player in row.get("league_players") or []
-            )
-            tags = ", ".join(row.get("tags") or [])
-            lines.append(
-                f"- {row.get('published_at')} — {row.get('headline') or row.get('original_title')} "
-                f"— {row.get('source')} — {players or 'league relevance mapped'}"
-                + (f" — tags: {tags}" if tags else "")
-            )
-            if row.get("feed_summary"):
-                lines.append(f"  Evidence summary: {row.get('feed_summary')}")
-            if row.get("source_url"):
-                lines.append(f"  Source: {row.get('source_url')}")
-            lanes = [
-                key.replace("_", " ")
-                for key, enabled in (row.get("editorial_lanes") or {}).items()
-                if enabled
-            ]
-            if lanes:
-                lines.append("  Editorial lanes: " + ", ".join(lanes))
-
     honors = packet.get("weekly_honors") or {}
     for key in (
         "started_position_leaders",
@@ -491,6 +451,46 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             if value
         ]
         lines.append(f"- {row.get('team')}: {row.get('player')} — {', '.join(details) or 'flagged'}")
+
+    beat = packet.get("beat_report")
+    if beat is not None:
+        lines.extend(["", "## BEAT / NEWS WIRE", ""])
+        lines.append(f"Status: {beat.get('status', 'UNKNOWN')}")
+        if beat.get("source_revision"):
+            lines.append(
+                f"Source revision: {beat.get('source_revision')} "
+                f"({beat.get('source_repository')}:{beat.get('source_branch')})"
+            )
+        window = beat.get("reporting_window") or {}
+        if window:
+            lines.append(
+                f"Reporting window: {window.get('start')} through {window.get('end')}."
+            )
+        lines.append(
+            f"League-relevant accepted stories: {int(beat.get('relevant_event_count') or 0)}."
+        )
+        for row in beat.get("items") or []:
+            players = ", ".join(
+                f"{player.get('player')} ({player.get('fantasy_team')})"
+                for player in row.get("league_players") or []
+            )
+            tags = ", ".join(row.get("tags") or [])
+            lines.append(
+                f"- {row.get('published_at')} — {row.get('headline') or row.get('original_title')} "
+                f"— {row.get('source')} — {players or 'league relevance mapped'}"
+                + (f" — tags: {tags}" if tags else "")
+            )
+            if row.get("feed_summary"):
+                lines.append(f"  Evidence summary: {row.get('feed_summary')}")
+            if row.get("source_url"):
+                lines.append(f"  Source: {row.get('source_url')}")
+            lanes = [
+                key.replace("_", " ")
+                for key, enabled in (row.get("editorial_lanes") or {}).items()
+                if enabled
+            ]
+            if lanes:
+                lines.append("  Editorial lanes: " + ", ".join(lanes))
 
     honors = packet.get("weekly_honors") or {}
     lines.extend(["", "## WEEKLY HONORS & ROOKIE WATCH", "", "### Started Position Leaders"])

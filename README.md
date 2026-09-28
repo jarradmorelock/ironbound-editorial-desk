@@ -216,13 +216,19 @@ python -m editorial_desk collect \
 ```
 
 If no external input file is supplied, Story Desk still operates from Chronicle
-and weekly evidence, but the flagship research contract marks Power Rankings,
-playoff odds, Dynasty Daddy usage, WAR, and cWAR as
-`AWAITING_TUESDAY_INPUT`. This is distinct from a collection failure. Story
-Desk also does not collect images. Headline packages may include a text-only
-suggested visual based on the supported story content, such as a rivalry image,
-game-action photo concept, trade-chain graphic, workload chart, or record-card
-overlay. No image URL, path, asset, or downloaded file is produced.
+and weekly evidence, but flagship production marks the ranking-engine-owned
+Power Rankings and playoff forecast as `AWAITING_TUESDAY_INPUT`. When a v3
+ranking handoff is supplied, remaining-schedule strength and the complete
+eight-matchup projected-optimal weekly forecast are required as part of that
+same authoritative delivery. Internal nflverse usage remains independent of the
+Tuesday handoff, while WAR and cWAR are optional enrichment and never block
+weekly completeness. This is distinct from a collection failure.
+
+Story Desk also does not collect images. Headline packages may include a
+text-only suggested visual based on the supported story content, such as a
+rivalry image, game-action photo concept, trade-chain graphic, workload chart,
+or record-card overlay. No image URL, path, asset, or downloaded file is
+produced.
 
 ## Chronicle recovery, receipts, and retention
 

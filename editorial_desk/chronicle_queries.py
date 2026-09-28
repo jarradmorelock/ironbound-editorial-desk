@@ -134,6 +134,13 @@ class ChronicleQueries:
             and (since is None or self._after(row.get("observed_at"), since))
         ]
 
+    def player_status_events(self, player_ids: Iterable[str]) -> list[dict[str, Any]]:
+        """Read the shared status ledger once for all rostered players."""
+        wanted = set(map(str, player_ids))
+        return [row for row in self._read_jsonl_tree(self.root / "cross_league" / "nfl_player_events")
+                if row.get("event_type") == "PLAYER_STATUS_CHANGE"
+                and str((row.get("entities") or {}).get("player_id")) in wanted]
+
     def transactions_for_entity(
         self, league_key: str, entity_key: str, since: str | None = None
     ) -> list[dict[str, Any]]:

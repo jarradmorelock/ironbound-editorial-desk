@@ -556,3 +556,23 @@ coverage start against the issue's reporting window. Older issues that predate
 the durable ledger are marked `PARTIAL_HISTORY` rather than incorrectly
 claiming that an empty ledger means no relevant news occurred.
 
+
+### Reusable context and optional platform rates
+
+`context_events` retains source-attributed events once and indexes their IDs by
+player, roster, game, and canonical module. Games, health, market, usage, and
+future matchups carry references to that evidence. The source evidence appendix
+is research material, not an additional page in the 22-page publication.
+Roster & Market reads `PLAYER_STATUS_CHANGE` from the pinned Chronicle ledger
+within the issue window and preserves before/after observation times. Those
+intervals must never be described as exact announcement times. Coverage is
+labeled `OBSERVED_HISTORY`, without claiming missing historical reports exist.
+Only completed transactions count as movement; a trade counts once per player.
+
+An optional provider may supply `sleeper_market_rates.json` in
+`--external-inputs-dir`. The JSON requires `scope: "Sleeper-wide"`, an HTTPS
+`source_url`, a timezone-aware `observed_at`, and `players` keyed by Sleeper ID
+with `roster_percent` and/or `start_percent` in 0–100. Valid data is labeled
+`EXPERIMENTAL`; missing, malformed, future-dated, or more-than-seven-day-old data
+is `UNAVAILABLE`. Neither state gates publication. No undocumented Sleeper
+endpoint is contacted by this adapter. Ironbound Network rates remain separate.

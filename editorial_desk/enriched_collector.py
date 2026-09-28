@@ -24,6 +24,7 @@ from .newspaper_research import (
     write_newspaper_research_packet,
 )
 from .rankings import RankingsClient
+from .market_rates import load_market_rates
 from .roster_market import build_network_market_context, build_roster_market_report
 from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
@@ -153,11 +154,17 @@ def collect_all(
                     else {}
                 )
                 beat_report = build_beat_report(snapshot, beat_source)
+                issue_network = dict(network_market)
+                issue_network["sleeper_platform_rates"] = load_market_rates(
+                    Path(external_inputs_dir) / "sleeper_market_rates.json" if external_inputs_dir else None,
+                    as_of=((beat_report or {}).get("reporting_window") or {}).get("end") or dossier.get("information_current_through"),
+                )
                 roster_market = build_roster_market_report(
                     snapshot,
                     dossier,
                     beat_report,
-                    network_market,
+                    issue_network,
+                    chronicle=ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None,
                 )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,

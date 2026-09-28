@@ -519,7 +519,7 @@ def test_ready_beat_news_is_rendered_with_source_attribution(tmp_path):
         )
     )
     text = render_flagship_research_packet(packet)
-    assert "## BEAT / NEWS WIRE" in text
+    assert "## REUSABLE BEAT CONTEXT" in text
     assert "Player 1 earns lead role" in text
     assert "RotoWire" in text
     assert "https://example.com/story" in text
@@ -669,3 +669,23 @@ def test_v06_contract_exposes_shared_flagship_spine_and_authoritative_forward_mo
     assert packet["weekly_matchup_forecast"]["rows"][0]["over_under"] == 245.5
     assert packet["editorial_style_guidance"]["stats_support_thesis"] is True
     assert packet["validation"]["research_complete"] is True
+
+
+def test_flagship_brands_share_exact_page_functions_and_content_allocations():
+    from editorial_desk.flagship_research import flagship_editorial_spine
+    iron = flagship_editorial_spine('ironbound_weekly', 3)
+    unbound = flagship_editorial_spine('unbound_weekly', 3)
+    assert [r['module'] for r in iron] == [r['module'] for r in unbound]
+    assert [r['page'] for r in iron] == list(range(1, 23))
+    assert [r['game_report_numbers'] for r in iron[4:7]] == [[1, 2], [3, 4], [5, 6]]
+    assert [r['ranks'] for r in iron[12:16]] == [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
+    assert iron[9]['display_name'] != unbound[9]['display_name']
+
+
+def test_missing_page_fails_structural_contract_validation(tmp_path):
+    from editorial_desk.flagship_research import validate_flagship_research_packet
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(snapshot, dossier, {}, _external(), history_root=tmp_path)
+    packet['editorial_spine'].pop()
+    assert validate_flagship_research_packet(packet)['research_complete'] is False

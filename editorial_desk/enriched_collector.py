@@ -182,6 +182,11 @@ def collect_all(
                     roster_market=roster_market,
                 )
                 if flagship_packet is not None:
+                    honors = flagship_packet["weekly_honors"]
+                    dossier.setdefault("awards", {})["manager_of_the_week"] = honors["manager_of_the_week"]
+                    dossier["awards"]["exceptional_loss_review"] = honors["exceptional_loss_review"]
+                    _write_json(directory / "dossier.json", dossier)
+                    (directory / "dossier.md").write_text(render_editorial_review(dossier), encoding="utf-8")
                     generated.extend(
                         write_flagship_research_packet(directory, flagship_packet)
                     )

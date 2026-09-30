@@ -100,39 +100,21 @@ def test_manager_of_week_balances_score_and_efficiency_among_winners():
 
     assert manager["roster_id"] == 2
     assert manager["head_to_head_result"] == "win"
-    assert manager["efficiency_rank_among_winners"] == 2
-    assert manager["score_rank_among_winners"] == 1
-    assert manager["manager_rank_sum"] == 3
+    assert "components" not in manager
+    assert "manager_rank_sum" not in manager
+    assert manager["data_warnings"]  # no authoritative handoff in this fixture
 
 
-def test_lower_projected_start_that_preserved_win_breaks_manager_tie():
+def test_current_projections_do_not_influence_manager_selection():
     snapshot = _snapshot(projection_tiebreak=True)
     dossier = apply_weekly_features(snapshot, build_weekly_dossier(snapshot))
-
-    manager = dossier["awards"]["manager_of_the_week"]
-
-    assert manager["roster_id"] == 3
-    evidence = manager["management_tiebreak"]["evidence"]
-    assert any(row["type"] == "projection_start_sit" for row in evidence)
-    projection_call = next(row for row in evidence if row["type"] == "projection_start_sit")
-    assert projection_call["started_player"] == "Q Three"
-    assert projection_call["bench_player"] == "Q Three Bench"
-    assert projection_call["started_projection"] < projection_call["bench_projection"]
-    assert projection_call["point_swing"] > projection_call["victory_margin"]
+    assert dossier["awards"]["manager_of_the_week"]["roster_id"] == 2
 
 
-def test_started_waiver_add_that_outscored_margin_breaks_manager_tie():
+def test_transaction_does_not_override_five_component_manager_score():
     snapshot = _snapshot(transaction_tiebreak=True)
     dossier = apply_weekly_features(snapshot, build_weekly_dossier(snapshot))
-
-    manager = dossier["awards"]["manager_of_the_week"]
-
-    assert manager["roster_id"] == 3
-    evidence = manager["management_tiebreak"]["evidence"]
-    transaction_call = next(row for row in evidence if row["type"] == "transaction_start")
-    assert transaction_call["player"] == "Q Three"
-    assert transaction_call["transaction_type"] == "waiver"
-    assert transaction_call["points"] > transaction_call["victory_margin"]
+    assert dossier["awards"]["manager_of_the_week"]["roster_id"] == 2
 
 
 def test_review_renders_weekly_lineup_efficiency_top_three_as_separate_section():

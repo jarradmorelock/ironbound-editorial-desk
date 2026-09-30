@@ -92,8 +92,7 @@ def render_editorial_review(dossier: dict[str, Any]) -> str:
             f"- {manager.get('team')} — WIN — "
             f"{float(manager.get('actual_points') or 0):.2f} points; "
             f"{float(manager.get('efficiency') or 0):.1%} lineup efficiency; "
-            f"score rank #{manager.get('score_rank_among_winners', '?')} among winners; "
-            f"efficiency rank #{manager.get('efficiency_rank_among_winners', '?')} among winners"
+            f"opponent entering Power Rank: {manager.get('opponent_entering_power_rank') or 'unavailable'}"
         )
         evidence = (manager.get("management_tiebreak") or {}).get("evidence") or []
         if evidence:

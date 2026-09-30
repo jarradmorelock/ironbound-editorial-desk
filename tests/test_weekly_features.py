@@ -262,7 +262,8 @@ def test_started_position_leaders_ignore_taxi_and_nonstarters():
     assert leaders["QB"]["status"] == "STARTED"
     assert leaders["RB"]["player"] == "Runner One"
     assert leaders["RB"]["status"] == "STARTED"
-    assert leaders["WR"]["player"] == "Receiver One"
+    assert leaders["WR"]["player"] == "Receiver Two"
+    assert dossier["weekly_features"]["overall_player_of_the_week"]["player"] == "Receiver One"
     assert leaders["WR"]["status"] == "STARTED"
 
 

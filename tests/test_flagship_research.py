@@ -689,3 +689,21 @@ def test_missing_page_fails_structural_contract_validation(tmp_path):
     packet = build_flagship_research_packet(snapshot, dossier, {}, _external(), history_root=tmp_path)
     packet['editorial_spine'].pop()
     assert validate_flagship_research_packet(packet)['research_complete'] is False
+
+
+def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(snapshot,dossier,{},_external(),history_root=tmp_path)
+    honors=packet['weekly_honors']
+    assert honors['overall_player_of_the_week']['nfl_stat_line']
+    assert honors['high_score']['points']==116
+    assert honors['low_score']['points']==101
+    assert honors['most_efficient_manager']
+    assert honors['selected_rotating_award'] is None
+    assert honors['award_availability']['IRON_BALLS']['status']=='UNAVAILABLE'
+    assert packet['validation']['award_warnings']
+    rendered=render_flagship_research_packet(packet)
+    assert 'Missing verified same-season/week frozen pregame capture' in rendered
+    assert 'Overall Player of the Week' in rendered
+    assert 'Manager of the Week' in rendered

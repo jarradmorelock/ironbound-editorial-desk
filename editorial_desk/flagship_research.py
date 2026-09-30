@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Any
 
 from .context_events import build_context_events
+from .honors import research_honors
+from .weekly_features import _overall_player_of_week
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
 
@@ -126,6 +128,7 @@ def build_flagship_research_packet(
     league_key = str(editorial.get("league_key") or "")
     history = _season_dossiers(history_root, season, league_key, week)
 
+    honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
@@ -172,10 +175,15 @@ def build_flagship_research_packet(
         "context_events": build_context_events(beat_report, games),
         "roster_market": roster_market,
         "weekly_honors": {
+            **honors_research,
+            "overall_player_of_the_week": _attach_stat_lines(weekly.get("overall_player_of_the_week") or _overall_player_of_week(snapshot), intelligence),
+            "most_efficient_manager": next(iter(dossier.get("lineup_efficiency") or []), None),
+            "high_score": max((r for g in dossier.get("scoreboard") or [] for r in g.get("teams") or []), key=lambda r: float(r.get("points") or 0), default=None),
+            "low_score": min((r for g in dossier.get("scoreboard") or [] for r in g.get("teams") or []), key=lambda r: float(r.get("points") or 0), default=None),
             "started_position_leaders": _attach_stat_lines(
                 weekly.get("started_position_leaders") or {}, intelligence
             ),
-            "manager_of_the_week": awards.get("manager_of_the_week"),
+
             "bad_beat": awards.get("bad_beat"),
             "escape_artist": awards.get("escape_artist"),
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
@@ -202,7 +210,7 @@ def build_flagship_research_packet(
                 ),
                 snapshot,
             ),
-            "rotating_award_candidates": _rotating_award_candidates(dossier),
+
         },
         "power_board": {
             "writeup_inputs": _power_board_inputs(
@@ -390,6 +398,10 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     honors = packet.get("weekly_honors") or {}
     for key in (
         "started_position_leaders",
+        "overall_player_of_the_week",
+        "most_efficient_manager",
+        "high_score",
+        "low_score",
         "manager_of_the_week",
         "bad_beat",
         "escape_artist",
@@ -403,6 +415,10 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         _check(checks, f"honors_{key}", ok, "present" if ok else "missing/empty")
         if not ok:
             manual.append(f"Weekly Honors: {key.replace('_', ' ')} is missing or empty.")
+
+    award_warnings = [f"{code}: {status.get('reason')}"
+        for code, status in (honors.get("award_availability") or {}).items()
+        if status.get("status") != "AVAILABLE"]
 
     season_week = int(packet.get("week") or 0)
     efficiency_rows = honors.get("season_efficiency_top_three") or []
@@ -492,7 +508,7 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     editorial.extend(
         [
             "Choose the two cover-feature game slots from deterministic cover candidates.",
-            "Choose one rotating weekly award from the supplied candidate pool.",
+            "Choose one or none from the qualified rotating manager award candidates; never auto-select.",
             "Write game stories, context-box wording, headlines, Power Board writeups, and art direction from verified evidence.",
         ]
     )
@@ -503,6 +519,7 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         "research_complete": ready,
         "checks": checks,
         "manual_verify": manual,
+        "award_warnings": award_warnings,
         "awaiting_tuesday_input": awaiting,
         "editorial_judgment": editorial,
     }
@@ -732,6 +749,21 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
                 line += f" — {row.get('nfl_stat_line')}"
             lines.append(line)
 
+    overall = honors.get("overall_player_of_the_week")
+    if overall:
+        lines.extend(["", "### Overall Player of the Week", f"- {overall.get('player')} — {overall.get('points')} FP — {overall.get('nfl_stat_line') or ''}"])
+    for key, label in (("most_efficient_manager", "Most Efficient Manager"), ("high_score", "High Score"), ("low_score", "Low Score")):
+        row = honors.get(key)
+        if row:
+            lines.extend(["", f"### {label}", f"- {row.get('team')} — {row.get('points', row.get('actual_points'))} points"])
+    lines.extend(["", "### Rotating Award Availability", honors.get("rotating_award_policy", "")])
+    for code, status in (honors.get("award_availability") or {}).items():
+        if status.get("status") != "AVAILABLE":
+            lines.append(f"- {code}: {status.get('status')} — {status.get('reason')}")
+    for row in honors.get("rotating_award_manual_review") or []:
+        lines.append(f"- MANUAL_REVIEW: {row.get('label')} — {row.get('team')} — {_compact(row.get('evidence') or {})}")
+    for row in honors.get("exceptional_loss_review") or []:
+        lines.append(f"- Exceptional loss review: {row.get('team')} — {row.get('reason')}")
     manager = honors.get("manager_of_the_week")
     lines.extend(["", "### Manager of the Week"])
     lines.append(
@@ -1148,7 +1180,7 @@ def _season_team_score_top_three(
         for row in chronicle.season_matchup_finals(league_key, season):
             roster_id = int(row.get("roster_id") or 0)
             week = int(row.get("week") or 0)
-            if roster_id and week:
+            if roster_id and 0 < week <= int(snapshot.get("week") or 0):
                 by_week_roster[(week, roster_id)] = {
                     "team": names.get(roster_id, f"Roster {roster_id}"),
                     "roster_id": roster_id,
@@ -1177,7 +1209,6 @@ def _season_team_score_top_three(
     # Always merge the reviewed week from the live dossier so a correctly
     # completed packet does not depend on materialized Chronicle freshness.
     current_week = int(snapshot.get("week") or 0)
-    teams_by_name = {value: key for key, value in names.items()}
     for matchup in snapshot.get("matchups") or []:
         roster_id = int(matchup.get("roster_id") or 0)
         if roster_id and current_week:
@@ -1207,34 +1238,35 @@ def _season_efficiency_top_three(
     season: str,
     chronicle: ChronicleQueries | None,
 ) -> list[dict[str, Any]]:
-    by_team: dict[str, dict[str, float]] = {}
-    max_week = 0
+    from .weekly_features import _lineup_efficiency
+    names = _roster_team_names(snapshot)
+    through = int(snapshot.get("week") or 0)
+    by_week_team = {}
+    for dossier in history:
+        week = int(dossier.get("week") or 0)
+        if not 0 < week <= through:
+            continue
+        for row in dossier.get("lineup_efficiency") or []:
+            team = names.get(int(row.get("roster_id") or 0)) or row.get("team")
+            if team:
+                by_week_team[(week, team)] = row
     if chronicle is not None:
-        names = _roster_team_names(snapshot)
         for row in chronicle.season_efficiency(league_key, season):
-            max_week = max(max_week, int(row.get("week") or 0))
+            week = int(row.get("week") or 0)
             team = names.get(int(row.get("roster_id") or 0))
-            if not team:
-                continue
-            aggregate = by_team.setdefault(
-                team, {"actual": 0.0, "optimal": 0.0, "weeks": 0.0}
-            )
-            aggregate["actual"] += float(row.get("actual_points") or 0)
-            aggregate["optimal"] += float(row.get("optimal_points") or 0)
-            aggregate["weeks"] += 1
-    if not by_team:
-        for dossier in history:
-            max_week = max(max_week, int(dossier.get("week") or 0))
-            for row in dossier.get("lineup_efficiency") or []:
-                team = str(row.get("team") or "")
-                if not team:
-                    continue
-                aggregate = by_team.setdefault(
-                    team, {"actual": 0.0, "optimal": 0.0, "weeks": 0.0}
-                )
-                aggregate["actual"] += float(row.get("actual_points") or 0)
-                aggregate["optimal"] += float(row.get("optimal_points") or 0)
-                aggregate["weeks"] += 1
+            if team and 0 < week <= through:
+                by_week_team[(week, team)] = row
+    # Fresh current-week evidence wins, without depending on ledger write timing.
+    if (snapshot.get("league") or {}).get("roster_positions"):
+        for row in _lineup_efficiency(snapshot):
+            by_week_team[(through, row["team"])] = row
+    by_team = {}
+    max_week = max((w for w, _ in by_week_team), default=0)
+    for (week, team), row in by_week_team.items():
+        aggregate = by_team.setdefault(team, {"actual": 0.0, "optimal": 0.0, "weeks": 0.0})
+        aggregate["actual"] += float(row.get("actual_points") or 0)
+        aggregate["optimal"] += float(row.get("optimal_points") or 0)
+        aggregate["weeks"] += 1
     rows = [
         {
             "team": team,
@@ -1251,46 +1283,6 @@ def _season_efficiency_top_three(
     ]
     rows.sort(key=lambda row: (-row["efficiency"], -row["weeks"], row["team"].casefold()))
     return rows[:3]
-
-
-def _rotating_award_candidates(dossier: dict[str, Any]) -> list[dict[str, Any]]:
-    awards = dossier.get("awards") or {}
-    rows: list[dict[str, Any]] = []
-    for row in awards.get("waiver_star_candidates") or []:
-        rows.append(
-            {
-                "candidate_type": "WAIVER_OR_TRADE_PICKUP_CHANGED_GAME",
-                "team": row.get("team"),
-                "player": row.get("player"),
-                "reason": "Transaction addition contributed to a completed matchup result.",
-                "evidence": row,
-            }
-        )
-    for row in awards.get("result_flipping_decisions") or []:
-        rows.append(
-            {
-                "candidate_type": "RESULT_CHANGING_START_SIT",
-                "team": row.get("team"),
-                "player": row.get("bench_player"),
-                "reason": (
-                    f"{row.get('bench_player')} over {row.get('started_player')} "
-                    f"would have swung the result by {float(row.get('point_swing') or 0):.2f}."
-                ),
-                "evidence": row,
-            }
-        )
-    records = dossier.get("weekly_records") or {}
-    high = records.get("highest_score") if isinstance(records, dict) else None
-    if high:
-        rows.append(
-            {
-                "candidate_type": "WEEKLY_HIGH_SCORE_RECORD_CANDIDATE",
-                "team": high.get("team"),
-                "reason": f"Weekly high score: {float(high.get('points') or 0):.2f}.",
-                "evidence": high,
-            }
-        )
-    return rows
 
 
 def _power_board_inputs(

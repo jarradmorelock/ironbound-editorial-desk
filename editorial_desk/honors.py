@@ -180,7 +180,7 @@ def frozen_projections(snapshot):
         return (
             {},
             {},
-            "Missing matching Sleeper retained projections or a verified legacy pregame capture.",
+            "Missing verified same-season/week frozen pregame capture and no matching Sleeper retained same-season/week projections were available.",
         )
     players = {
         str(k): _number(v) for k, v in (source.get("player_points") or {}).items()

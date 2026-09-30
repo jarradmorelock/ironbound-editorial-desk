@@ -1,7 +1,8 @@
 """Research-only honors. Qualification is deterministic; publication is editorial.
 
-No current/postgame projection fallback is permitted. Component scores remain
-inside manager_scores and are never included in a publication packet.
+Completed-week awards may use Sleeper's retained same-season/week projection
+resource. Component scores remain inside manager_scores and are never included
+in a publication packet.
 """
 
 from __future__ import annotations
@@ -64,8 +65,101 @@ def _time(value):
         return None
 
 
+def _projection_points(row, scoring_settings):
+    """Score one Sleeper projection row with this league's scoring settings."""
+    if not isinstance(row, dict):
+        return None
+    total = 0.0
+    used = False
+    for stat, weight in (scoring_settings or {}).items():
+        value = _number(row.get(stat))
+        multiplier = _number(weight)
+        if value is None or multiplier is None:
+            continue
+        total += value * multiplier
+        used = True
+    if used:
+        return round(total, 4)
+
+    # Compatibility fallback for leagues whose scoring settings are unavailable.
+    reception = _number((scoring_settings or {}).get("rec"))
+    keys = (
+        ("pts_ppr", "pts_half_ppr", "pts_std")
+        if reception == 1
+        else ("pts_half_ppr", "pts_ppr", "pts_std")
+        if reception == 0.5
+        else ("pts_std", "pts_half_ppr", "pts_ppr")
+    )
+    for key in keys:
+        value = _number(row.get(key))
+        if value is not None:
+            return value
+    return None
+
+
+def _retained_sleeper_projections(snapshot):
+    source = ((snapshot.get("ranking_inputs") or {}).get("sleeper_projections") or {})
+    if not source:
+        return None
+    season = str(
+        (snapshot.get("league") or {}).get("season")
+        or (snapshot.get("nfl_state") or {}).get("season")
+        or ""
+    )
+    week = int(snapshot.get("week") or 0)
+    source_week = source.get("week")
+    same_week = False
+    try:
+        same_week = int(source_week) == week
+    except (TypeError, ValueError):
+        pass
+    if (
+        source.get("status") != "available"
+        or str(source.get("season") or "") != season
+        or not same_week
+    ):
+        return (
+            {},
+            {},
+            "Sleeper retained projections are unavailable or do not match the issue's same-season/week identity.",
+        )
+
+    scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
+    players = {
+        str(player_id): _projection_points(row, scoring)
+        for player_id, row in (source.get("players") or {}).items()
+    }
+    players = {key: value for key, value in players.items() if value is not None}
+    if not players:
+        return (
+            {},
+            {},
+            "Sleeper retained same-season/week projection resource contains no scoreable player projections.",
+        )
+
+    matchups = {}
+    for matchup in snapshot.get("matchups") or []:
+        roster_id = matchup.get("roster_id")
+        starters = [str(player_id) for player_id in matchup.get("starters") or [] if str(player_id) != "0"]
+        if roster_id is None or not starters:
+            continue
+        values = [players.get(player_id) for player_id in starters]
+        if all(value is not None for value in values):
+            matchups[str(roster_id)] = round(sum(values), 4)
+    return players, matchups, None
+
+
 def frozen_projections(snapshot):
-    """Require same-week identity and timestamped capture before first kickoff."""
+    """Load the issue week's authoritative retained projections.
+
+    Sleeper keeps its week-specific projection resource after games complete, so
+    retrieval time does not need to precede kickoff. Legacy explicitly frozen
+    captures remain supported for older fixtures/artifacts.
+    """
+    retained = _retained_sleeper_projections(snapshot)
+    if retained is not None:
+        return retained
+
     source = snapshot.get("frozen_pregame_projections") or {}
     captured, kickoff = _time(source.get("captured_at")), _time(
         source.get("first_kickoff_at")
@@ -86,7 +180,7 @@ def frozen_projections(snapshot):
         return (
             {},
             {},
-            "Missing verified same-season/week frozen pregame capture: source, captured_at before first_kickoff_at, player_points and matchup_points. Current Sleeper projections are not a substitute.",
+            "Missing matching Sleeper retained projections or a verified legacy pregame capture.",
         )
     players = {
         str(k): _number(v) for k, v in (source.get("player_points") or {}).items()
@@ -381,6 +475,82 @@ def _transactions(snapshot, chronicle=None):
                     },
                 )
     return list(rows.values())
+
+
+def _build_award_audit(snapshot, availability, candidates, reviews):
+    """Explain what qualified, failed, or could not be evaluated for every rule."""
+    by_code = defaultdict(list)
+    review_by_code = defaultdict(list)
+    for row in candidates:
+        by_code[row["candidate_type"]].append(row)
+    for row in reviews:
+        review_by_code[row["candidate_type"]].append(row)
+
+    audit = {}
+    games = _games(snapshot)
+    for code in LABELS:
+        status = (availability.get(code) or {}).get("status", "UNAVAILABLE")
+        reason = (availability.get(code) or {}).get("reason")
+        qualified = by_code.get(code, [])
+        manual = review_by_code.get(code, [])
+        evaluations = []
+
+        if code in {"BY_A_RIVET", "HAMMER_DROP"} and status == "AVAILABLE":
+            threshold = 1.0 if code == "BY_A_RIVET" else 50.0
+            for pair in games:
+                ordered = sorted(pair, key=lambda row: float(row.get("points") or 0), reverse=True)
+                if float(ordered[0].get("points") or 0) <= float(ordered[1].get("points") or 0):
+                    continue
+                margin = round(
+                    float(ordered[0].get("points") or 0) - float(ordered[1].get("points") or 0),
+                    2,
+                )
+                passed = margin <= threshold if code == "BY_A_RIVET" else margin >= threshold
+                evaluations.append(
+                    {
+                        "roster_id": int(ordered[0]["roster_id"]),
+                        "matchup_id": ordered[0].get("matchup_id"),
+                        "result": "QUALIFIED" if passed else "NOT_QUALIFIED",
+                        "metrics": {"margin": margin, "threshold": threshold},
+                    }
+                )
+        elif qualified:
+            evaluations.extend(
+                {
+                    "roster_id": row.get("roster_id"),
+                    "result": "QUALIFIED",
+                    "metrics": row.get("evidence") or {},
+                }
+                for row in qualified
+            )
+        elif manual:
+            evaluations.extend(
+                {
+                    "roster_id": row.get("roster_id"),
+                    "result": "MANUAL_REVIEW",
+                    "metrics": row.get("evidence") or {},
+                }
+                for row in manual
+            )
+        elif status != "AVAILABLE":
+            evaluations.append({"result": status, "reason": reason})
+        else:
+            evaluations.append(
+                {
+                    "result": "NOT_QUALIFIED",
+                    "reason": "No completed-week event met the deterministic qualification rule.",
+                }
+            )
+
+        audit[code] = {
+            "label": LABELS[code],
+            "availability": status,
+            "availability_reason": reason,
+            "qualified_candidate_ids": [row["candidate_id"] for row in qualified],
+            "manual_review_candidate_ids": [row["candidate_id"] for row in manual],
+            "evaluations": evaluations,
+        }
+    return audit
 
 
 def research_honors(snapshot, dossier, external, history=(), chronicle=None):
@@ -830,14 +1000,16 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                     },
                     status="MANUAL_REVIEW",
                 )
+    sorted_candidates = sorted(candidates, key=lambda r: r["candidate_id"])
     return {
         "manager_of_the_week": winner,
         "exceptional_loss_review": exceptional,
-        "rotating_award_candidates": sorted(
-            candidates, key=lambda r: r["candidate_id"]
-        ),
+        "rotating_award_candidates": sorted_candidates,
         "rotating_award_manual_review": reviews,
         "award_availability": availability,
+        "award_audit": _build_award_audit(
+            snapshot, availability, sorted_candidates, reviews
+        ),
         "selected_rotating_award": None,
         "rotating_award_policy": "Editor selects one or none; qualification never selects a published winner.",
     }

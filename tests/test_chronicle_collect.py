@@ -182,6 +182,64 @@ def test_pulse_does_not_write_matchup_final_until_explicitly_finalized(
     assert finals[0]["evidence"]["winner_roster_id"] == 1
 
 
+def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Path):
+    store = ChronicleStore(tmp_path)
+    client = FakeClient()
+    client.player_payload["p1"]["position"] = "WR"
+    client.player_payload["p2"]["position"] = "RB"
+    client.matchups = lambda league_id, week: [
+        {
+            "roster_id": 1,
+            "matchup_id": 1,
+            "points": 110.0,
+            "starters": ["p1"],
+            "players": ["p1", "p2"],
+            "players_points": {"p1": 17.25, "p2": 5.5},
+        },
+        {
+            "roster_id": 2,
+            "matchup_id": 1,
+            "points": 100.0,
+            "starters": ["p1"],
+            "players": ["p1"],
+            "players_points_custom": {"p1": 21.0},
+        },
+    ]
+
+    for observed_at in (
+        "2026-09-17T02:00:00+00:00",
+        "2026-09-17T03:00:00+00:00",
+    ):
+        collect_pulse(
+            [League("a", "1")],
+            client,
+            store,
+            2,
+            observed_at,
+            finalize_matchups=True,
+        )
+
+    finals = [
+        row
+        for row in store.read_events("a", "2026")
+        if row["event_type"] == "PLAYER_FANTASY_WEEK_FINAL"
+    ]
+    assert len(finals) == 3
+    assert {
+        (
+            row["entities"]["roster_id"],
+            row["entities"]["player_id"],
+            row["evidence"]["position"],
+            row["evidence"]["points"],
+        )
+        for row in finals
+    } == {
+        (1, "p1", "WR", 17.25),
+        (1, "p2", "RB", 5.5),
+        (2, "p1", "WR", 21.0),
+    }
+
+
 def test_failed_health_refresh_does_not_create_fake_healthy_transition(
     tmp_path: Path,
 ):

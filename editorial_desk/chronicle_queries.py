@@ -229,6 +229,44 @@ class ChronicleQueries:
         )
         return rows
 
+    def season_player_fantasy_finals(
+        self, league_key: str, season: str
+    ) -> list[dict[str, Any]]:
+        """Return finalized per-player fantasy scores for one season."""
+        wanted = str(season)
+        rows: list[dict[str, Any]] = []
+        for event in self.league_events(
+            league_key, {"PLAYER_FANTASY_WEEK_FINAL"}
+        ):
+            if str(event.get("season") or "") != wanted:
+                continue
+            evidence = dict(event.get("evidence") or {})
+            entities = dict(event.get("entities") or {})
+            roster_id = int(entities.get("roster_id") or 0)
+            player_id = str(entities.get("player_id") or "")
+            week = int(event.get("week") or 0)
+            if not roster_id or not player_id or week <= 0:
+                continue
+            rows.append(
+                {
+                    "season": wanted,
+                    "week": week,
+                    "roster_id": roster_id,
+                    "player_id": player_id,
+                    "position": evidence.get("position"),
+                    "points": float(evidence.get("points") or 0),
+                    "event_id": event.get("event_id"),
+                }
+            )
+        rows.sort(
+            key=lambda row: (
+                row["week"],
+                row["roster_id"],
+                row["player_id"],
+            )
+        )
+        return rows
+
     def season_efficiency(
         self, league_key: str, season: str
     ) -> list[dict[str, Any]]:

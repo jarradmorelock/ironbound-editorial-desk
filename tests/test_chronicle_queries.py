@@ -349,3 +349,57 @@ def test_season_matchup_finals_reads_raw_event_ledger_without_materialization(tm
         (1, 1, 167.15),
         (1, 2, 99.4),
     ]
+
+
+def test_season_player_fantasy_finals_filters_season_and_returns_player_week_rows(tmp_path):
+    from editorial_desk.chronicle_events import make_event
+    from editorial_desk.chronicle_store import ChronicleStore
+
+    store = ChronicleStore(tmp_path)
+    store.append_events(
+        [
+            make_event(
+                event_type="PLAYER_FANTASY_WEEK_FINAL",
+                source="sleeper_matchups",
+                source_ref="league:demo:season:2026:week:1:roster:7:player:p1",
+                league_key="demo",
+                season="2026",
+                week=1,
+                provenance="source_exact",
+                entities={"roster_id": 7, "player_id": "p1"},
+                evidence={"position": "WR", "points": 23.4},
+                observed_at="2026-09-15T12:00:00+00:00",
+            ),
+            make_event(
+                event_type="PLAYER_FANTASY_WEEK_FINAL",
+                source="sleeper_matchups",
+                source_ref="league:demo:season:2026:week:2:roster:7:player:p1",
+                league_key="demo",
+                season="2026",
+                week=2,
+                provenance="source_exact",
+                entities={"roster_id": 7, "player_id": "p1"},
+                evidence={"position": "WR", "points": 5.1},
+                observed_at="2026-09-22T12:00:00+00:00",
+            ),
+            make_event(
+                event_type="PLAYER_FANTASY_WEEK_FINAL",
+                source="sleeper_matchups",
+                source_ref="league:demo:season:2025:week:1:roster:7:player:p1",
+                league_key="demo",
+                season="2025",
+                week=1,
+                provenance="source_exact",
+                entities={"roster_id": 7, "player_id": "p1"},
+                evidence={"position": "WR", "points": 99.0},
+                observed_at="2025-09-15T12:00:00+00:00",
+            ),
+        ]
+    )
+
+    rows = ChronicleQueries(tmp_path).season_player_fantasy_finals("demo", "2026")
+
+    assert [
+        (row["week"], row["roster_id"], row["player_id"], row["position"], row["points"])
+        for row in rows
+    ] == [(1, 7, "p1", "WR", 23.4), (2, 7, "p1", "WR", 5.1)]

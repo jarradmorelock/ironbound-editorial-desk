@@ -82,9 +82,9 @@ def test_season_score_board_merges_chronicle_history_and_current_week():
         season="2026",
         chronicle=Chronicle(),
     )
-    assert rows[0]["score"] == 167.15
-    assert rows[0]["week"] == 1
-    assert any(row["score"] == 147.08 and row["week"] == 2 for row in rows)
+    assert rows[0]["score"] == 267.15
+    assert rows[0]["through_week"] == 2
+    assert any(row["score"] == 237.08 and row["through_week"] == 2 for row in rows)
 
 
 def test_flagship_stat_book_enriches_bench_player_without_polluting_starter_records():

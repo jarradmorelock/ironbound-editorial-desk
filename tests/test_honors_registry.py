@@ -491,7 +491,13 @@ def test_season_boards_merge_current_week_and_exclude_future(tmp_path):
                     "optimal_points": 20,
                 },
             ],
-        }
+        },
+        {
+            "week": 9,
+            "scoreboard": [
+                {"teams": [{"roster_id": 1, "team": "Roster 1", "points": 999}]}
+            ],
+        },
     ]
     args = {
         "snapshot": s,
@@ -504,7 +510,11 @@ def test_season_boards_merge_current_week_and_exclude_future(tmp_path):
     assert (
         one["weeks"] == 2 and one["actual_points"] == 40 and one["optimal_points"] == 50
     )
-    assert all(r["week"] <= 2 for r in _season_team_score_top_three(history, **args))
+    score_rows = _season_team_score_top_three(history, **args)
+    score_one = next(r for r in score_rows if r["roster_id"] == 1)
+    assert score_one["score"] == 40
+    assert score_one["weeks"] == 2
+    assert all(r["through_week"] == 2 for r in score_rows)
 
 
 def test_exceptional_loss_is_review_only():

@@ -827,6 +827,12 @@ def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):
     assert honors['high_score']['points']==116
     assert honors['low_score']['points']==101
     assert honors['most_efficient_manager']
+    assert honors['most_efficient_manager']['roster_id'] != honors['manager_of_the_week']['roster_id']
+    assert 'rookie_of_the_week' in honors
+    assert 'top_rookie_starter' in honors
+    assert 'rookie_disappointment_candidates' in honors
+    assert 'free_agent_of_the_week' in honors
+    assert 'bad_beat_candidates' in honors and 'escape_artist_candidates' in honors
     assert honors['selected_rotating_award'] is None
     assert honors['award_availability']['IRON_BALLS']['status']=='UNAVAILABLE'
     assert packet['validation']['award_warnings']
@@ -834,3 +840,105 @@ def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):
     assert 'Missing verified same-season/week frozen pregame capture' in rendered
     assert 'Overall Player of the Week' in rendered
     assert 'Manager of the Week' in rendered
+
+
+def test_manager_bad_beat_and_escape_artist_are_record_aware_and_disjoint():
+    from editorial_desk.flagship_research import _manager_weekly_awards
+
+    history = [
+        {
+            "week": 1,
+            "scoreboard": [
+                {"matchup_id": 1, "teams": [{"roster_id": 1, "team": "A", "points": 110}, {"roster_id": 2, "team": "B", "points": 90}]},
+                {"matchup_id": 2, "teams": [{"roster_id": 3, "team": "C", "points": 100}, {"roster_id": 4, "team": "D", "points": 95}]},
+            ],
+        }
+    ]
+    dossier = {
+        "lineup_efficiency": [
+            {"roster_id": 4, "efficiency": 0.80},
+            {"roster_id": 3, "efficiency": 0.98},
+            {"roster_id": 1, "efficiency": 1.0},
+            {"roster_id": 2, "efficiency": 0.95},
+        ],
+        "scoreboard": [
+            {"matchup_id": 11, "teams": [{"roster_id": 1, "team": "A", "points": 121.05}, {"roster_id": 2, "team": "B", "points": 121.06}]},
+            {"matchup_id": 12, "teams": [{"roster_id": 3, "team": "C", "points": 105}, {"roster_id": 4, "team": "D", "points": 104.9}]},
+        ],
+    }
+
+    awards = _manager_weekly_awards(
+        dossier, history, current_week=2, manager_of_the_week={"roster_id": 1}
+    )
+
+    assert awards["most_efficient_manager"]["roster_id"] == 3
+    assert awards["bad_beat"]["roster_id"] == 1
+    assert awards["escape_artist"]["roster_id"] == 3
+    assert awards["bad_beat"]["matchup_id"] != awards["escape_artist"]["matchup_id"]
+    assert awards["bad_beat"]["entering_record"]["wins"] == 1
+
+
+def test_rookie_of_week_can_be_bench_while_top_rookie_starter_is_separate():
+    from editorial_desk.flagship_research import _rookie_weekly_awards
+
+    snapshot = {
+        "week": 2,
+        "league": {"season": "2026", "roster_positions": ["QB", "RB", "BN"]},
+        "users": [{"user_id": "u1", "metadata": {"team_name": "Forge"}}],
+        "rosters": [{"roster_id": 1, "owner_id": "u1", "players": ["rookie-qb", "rookie-rb", "taxi-wr"], "taxi": ["taxi-wr"]}],
+        "players": {
+            "rookie-qb": {"full_name": "Rookie QB", "position": "QB", "years_exp": 0},
+            "rookie-rb": {"full_name": "Rookie RB", "position": "RB", "years_exp": 0},
+            "taxi-wr": {"full_name": "Taxi WR", "position": "WR", "years_exp": 0},
+        },
+        "draft_context": {
+            "records": [
+                {
+                    "draft": {"season": "2026"},
+                    "picks": [
+                        {"player_id": "taxi-wr", "round": 1, "draft_slot": 1, "roster_id": 1},
+                        {"player_id": "rookie-qb", "round": 2, "draft_slot": 1, "roster_id": 1},
+                    ],
+                }
+            ]
+        },
+        "matchups": [{"roster_id": 1, "players": ["rookie-qb", "rookie-rb", "taxi-wr"], "starters": ["rookie-qb"], "players_points": {"rookie-qb": 20, "rookie-rb": 32, "taxi-wr": 40}}],
+    }
+
+    awards = _rookie_weekly_awards({}, snapshot, {})
+
+    assert awards["rookie_of_the_week"]["player"] == "Taxi WR"
+    assert awards["rookie_of_the_week"]["status"] == "TAXI"
+    assert awards["top_rookie_starter"]["player"] == "Rookie QB"
+    assert awards["top_rookie_starter"]["status"] == "STARTED"
+    assert awards["rookie_of_the_week"]["ironbound_draft"] == "1.01"
+    assert awards["top_rookie_starter"]["ironbound_draft"] == "2.01"
+    assert awards["rookie_disappointment_status"]["status"] == "PARTIAL"
+
+
+def test_started_positional_awards_remain_distinct_from_overall_winner():
+    from editorial_desk.flagship_research import _distinct_started_position_leaders
+
+    snapshot = {
+        "users": [{"user_id": "u1", "metadata": {"team_name": "Forge"}}],
+        "rosters": [{"roster_id": 1, "owner_id": "u1"}],
+        "players": {
+            "overall": {"full_name": "Overall QB", "position": "QB"},
+            "next": {"full_name": "Next QB", "position": "QB"},
+        },
+        "matchups": [{"roster_id": 1, "players": ["overall", "next"], "starters": ["overall", "next"], "players_points": {"overall": 40, "next": 30}}],
+    }
+
+    leaders = _distinct_started_position_leaders(snapshot, {"player_id": "overall"})
+
+    assert leaders["QB"]["player_id"] == "next"
+
+
+def test_free_agent_display_is_explicitly_unrostered():
+    from editorial_desk.flagship_research import _unrostered_free_agent
+
+    result = _unrostered_free_agent(
+        {"player_id": "p1", "player": "Free Agent", "points": 25}, {}
+    )
+
+    assert result["fantasy_team"] == "UNROSTERED"

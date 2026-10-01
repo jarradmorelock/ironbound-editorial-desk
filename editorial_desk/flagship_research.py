@@ -36,14 +36,14 @@ FLAGSHIP_DISPLAY_NAMES = {
 
 
 def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, Any]]:
-    """Return the shared 22-page flagship architecture with branded labels."""
+    """Return the shared 25-page flagship architecture with branded labels."""
     names = FLAGSHIP_DISPLAY_NAMES.get(publication_key) or {}
     next_week = int(week) + 1
     modules = [
         ("COVER", "COVER"),
         ("CONTENTS", names.get("CONTENTS", "INSIDE THE ISSUE")),
+        ("LEAD_ART_OPENER", "LEAD FEATURE OPENER"),
         ("LEAD_FEATURE", "LEAD FEATURE"),
-        ("LEAD_FEATURE", "LEAD FEATURE CONTINUATION"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
@@ -51,22 +51,25 @@ def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, 
         ("USAGE_DESK", names.get("USAGE_DESK", "USAGE DESK")),
         ("ROSTER_HEALTH", names.get("ROSTER_HEALTH", "ROSTER HEALTH")),
         ("MARKET_DESK", names.get("MARKET_DESK", "MARKET MOVES")),
-        ("HONORS_ROOKIE", "HONORS & ROOKIE WATCH"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
+        ("MANAGER_HONORS", "MANAGER HONORS & CUMULATIVE TEAM STATS"),
+        ("PLAYER_HONORS", "PLAYER HONORS & SEASON LEADERS"),
+        ("ROOKIE_WATCH", "ROOKIE WATCH"),
         ("PLAYOFF_FORECAST", f"WEEK {next_week} PLAYOFF FORECAST"),
         ("POWER_RANKINGS", f"WEEK {next_week} POWER RANKINGS"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
         ("PRESSURE_POINTS", names.get("PRESSURE_POINTS", "PRESSURE POINTS")),
         ("FULL_SLATE", f"WEEK {next_week} FULL SLATE"),
         ("DIVISION_ROAD_AHEAD", names.get("DIVISION_ROAD_AHEAD", "DIVISION / ROAD AHEAD")),
+        ("WEEK_AHEAD", f"WEEK {next_week} PREVIEW"),
         ("SOURCES", "SOURCES & MODEL NOTES"),
     ]
     return [
         {"page": page, "module": module, "display_name": display,
          **({"game_report_numbers": [(page - 5) * 2 + 1, (page - 5) * 2 + 2]} if module == "GAME_REPORTS" else {}),
-         **({"ranks": list(range((page - 13) * 4 + 1, (page - 13) * 4 + 5))} if module == "POWER_BOARD" else {})}
+         **({"ranks": list(range((page - 17) * 4 + 1, (page - 17) * 4 + 5))} if module == "POWER_BOARD" else {})}
         for page, (module, display) in enumerate(modules, start=1)
     ]
 
@@ -139,7 +142,7 @@ def build_flagship_research_packet(
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.6",
+        "contract_version": "ironbound-production-v0.7",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
@@ -330,7 +333,7 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     structural_fields = ("page", "module", "game_report_numbers", "ranks")
     structure = lambda rows: [{key: row.get(key) for key in structural_fields} for row in rows]
     spine_ok = structure(packet.get("editorial_spine") or []) == structure(expected)
-    _check(checks, "flagship_spine", spine_ok, "22-page canonical module order and allocations")
+    _check(checks, "flagship_spine", spine_ok, "25-page canonical module order and allocations")
     if not spine_ok:
         manual.append("Shared flagship page structure is missing or inconsistent.")
 

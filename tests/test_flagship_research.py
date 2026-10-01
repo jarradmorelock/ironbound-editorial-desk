@@ -591,7 +591,7 @@ def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
     assert first["war"]["value"] == 2.4
 
 
-def test_v06_contract_exposes_shared_flagship_spine_and_authoritative_forward_models(tmp_path):
+def test_v07_contract_exposes_shared_flagship_spine_and_authoritative_forward_models(tmp_path):
     snapshot, dossier = _fixture()
     _write_history(tmp_path, dossier)
     rankings = tuple(
@@ -655,15 +655,16 @@ def test_v06_contract_exposes_shared_flagship_spine_and_authoritative_forward_mo
         roster_market={"status": "READY", "lineup_churn": [], "transactions": {}},
     )
 
-    assert packet["contract_version"] == "ironbound-production-v0.6"
-    assert len(packet["editorial_spine"]) == 22
-    assert packet["editorial_spine"][2]["module"] == "LEAD_FEATURE"
-    assert packet["editorial_spine"][7]["module"] == "SECONDARY_FEATURE"
-    assert packet["editorial_spine"][9]["module"] == "ROSTER_HEALTH"
-    assert packet["editorial_spine"][10]["module"] == "MARKET_DESK"
-    assert packet["editorial_spine"][16]["module"] == "PLAYOFF_FORECAST"
-    assert packet["editorial_spine"][17]["module"] == "POWER_RANKINGS"
-    assert packet["editorial_spine"][19]["module"] == "FULL_SLATE"
+    assert packet["contract_version"] == "ironbound-production-v0.7"
+    assert len(packet["editorial_spine"]) == 25
+    assert [row["module"] for row in packet["editorial_spine"]] == [
+        "COVER", "CONTENTS", "LEAD_ART_OPENER", "LEAD_FEATURE",
+        "GAME_REPORTS", "GAME_REPORTS", "GAME_REPORTS", "SECONDARY_FEATURE",
+        "USAGE_DESK", "ROSTER_HEALTH", "MARKET_DESK", "MANAGER_HONORS",
+        "PLAYER_HONORS", "ROOKIE_WATCH", "PLAYOFF_FORECAST", "POWER_RANKINGS",
+        "POWER_BOARD", "POWER_BOARD", "POWER_BOARD", "POWER_BOARD",
+        "PRESSURE_POINTS", "FULL_SLATE", "DIVISION_ROAD_AHEAD", "WEEK_AHEAD", "SOURCES",
+    ]
     assert packet["power_board"]["writeup_inputs"][0]["ranking_components"]["market_points"] == 20.0
     assert packet["remaining_schedule_strength"]["rows"][0]["difficulty_rank"] == 1
     assert packet["weekly_matchup_forecast"]["rows"][0]["over_under"] == 245.5
@@ -676,10 +677,16 @@ def test_flagship_brands_share_exact_page_functions_and_content_allocations():
     iron = flagship_editorial_spine('ironbound_weekly', 3)
     unbound = flagship_editorial_spine('unbound_weekly', 3)
     assert [r['module'] for r in iron] == [r['module'] for r in unbound]
-    assert [r['page'] for r in iron] == list(range(1, 23))
+    assert [r['page'] for r in iron] == list(range(1, 26))
     assert [r['game_report_numbers'] for r in iron[4:7]] == [[1, 2], [3, 4], [5, 6]]
-    assert [r['ranks'] for r in iron[12:16]] == [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
+    assert [r['ranks'] for r in iron[16:20]] == [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12], [13, 14, 15, 16]]
     assert iron[9]['display_name'] != unbound[9]['display_name']
+    assert [row["display_name"] for row in iron[11:14]] == [
+        "MANAGER HONORS & CUMULATIVE TEAM STATS",
+        "PLAYER HONORS & SEASON LEADERS",
+        "ROOKIE WATCH",
+    ]
+    assert iron[23]["display_name"] == "WEEK 4 PREVIEW"
 
 
 def test_missing_page_fails_structural_contract_validation(tmp_path):

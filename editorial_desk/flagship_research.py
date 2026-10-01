@@ -36,14 +36,14 @@ FLAGSHIP_DISPLAY_NAMES = {
 
 
 def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, Any]]:
-    """Return the shared 22-page flagship architecture with branded labels."""
+    """Return the shared 25-page flagship architecture with branded labels."""
     names = FLAGSHIP_DISPLAY_NAMES.get(publication_key) or {}
     next_week = int(week) + 1
     modules = [
         ("COVER", "COVER"),
         ("CONTENTS", names.get("CONTENTS", "INSIDE THE ISSUE")),
+        ("LEAD_ART_OPENER", "LEAD FEATURE OPENER"),
         ("LEAD_FEATURE", "LEAD FEATURE"),
-        ("LEAD_FEATURE", "LEAD FEATURE CONTINUATION"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
         ("GAME_REPORTS", f"WEEK {week} GAME REPORTS"),
@@ -51,22 +51,25 @@ def flagship_editorial_spine(publication_key: str, week: int) -> list[dict[str, 
         ("USAGE_DESK", names.get("USAGE_DESK", "USAGE DESK")),
         ("ROSTER_HEALTH", names.get("ROSTER_HEALTH", "ROSTER HEALTH")),
         ("MARKET_DESK", names.get("MARKET_DESK", "MARKET MOVES")),
-        ("HONORS_ROOKIE", "HONORS & ROOKIE WATCH"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
-        ("POWER_BOARD", "THE POWER BOARD"),
+        ("MANAGER_HONORS", "MANAGER HONORS & CUMULATIVE TEAM STATS"),
+        ("PLAYER_HONORS", "PLAYER HONORS & SEASON LEADERS"),
+        ("ROOKIE_WATCH", "ROOKIE WATCH"),
         ("PLAYOFF_FORECAST", f"WEEK {next_week} PLAYOFF FORECAST"),
         ("POWER_RANKINGS", f"WEEK {next_week} POWER RANKINGS"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
+        ("POWER_BOARD", "THE POWER BOARD"),
         ("PRESSURE_POINTS", names.get("PRESSURE_POINTS", "PRESSURE POINTS")),
         ("FULL_SLATE", f"WEEK {next_week} FULL SLATE"),
         ("DIVISION_ROAD_AHEAD", names.get("DIVISION_ROAD_AHEAD", "DIVISION / ROAD AHEAD")),
+        ("WEEK_AHEAD", f"WEEK {next_week} PREVIEW"),
         ("SOURCES", "SOURCES & MODEL NOTES"),
     ]
     return [
         {"page": page, "module": module, "display_name": display,
          **({"game_report_numbers": [(page - 5) * 2 + 1, (page - 5) * 2 + 2]} if module == "GAME_REPORTS" else {}),
-         **({"ranks": list(range((page - 13) * 4 + 1, (page - 13) * 4 + 5))} if module == "POWER_BOARD" else {})}
+         **({"ranks": list(range((page - 17) * 4 + 1, (page - 17) * 4 + 5))} if module == "POWER_BOARD" else {})}
         for page, (module, display) in enumerate(modules, start=1)
     ]
 
@@ -130,16 +133,28 @@ def build_flagship_research_packet(
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
+    player_score_rows = (
+        chronicle.season_player_fantasy_finals(league_key, season)
+        if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
+        else []
+    )
+    player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
-    awards = dossier.get("awards") or {}
-    health = dossier.get("roster_health") or {}
     intelligence = dossier.get("nfl_game_intelligence") or {}
+    manager_awards = _manager_weekly_awards(
+        dossier,
+        history,
+        current_week=week,
+        manager_of_the_week=honors_research.get("manager_of_the_week"),
+    )
+    rookie_awards = _rookie_weekly_awards(weekly, snapshot, intelligence)
+    health = dossier.get("roster_health") or {}
 
     packet: dict[str, Any] = {
         "schema_version": 1,
-        "contract_version": "ironbound-production-v0.6",
+        "contract_version": "ironbound-production-v0.7",
         "publication_key": publication_key,
         "league_key": league_key,
         "season": season,
@@ -177,15 +192,19 @@ def build_flagship_research_packet(
         "weekly_honors": {
             **honors_research,
             "overall_player_of_the_week": _attach_stat_lines(weekly.get("overall_player_of_the_week") or _overall_player_of_week(snapshot), intelligence),
-            "most_efficient_manager": next(iter(dossier.get("lineup_efficiency") or []), None),
+            **manager_awards,
             "high_score": max((r for g in dossier.get("scoreboard") or [] for r in g.get("teams") or []), key=lambda r: float(r.get("points") or 0), default=None),
             "low_score": min((r for g in dossier.get("scoreboard") or [] for r in g.get("teams") or []), key=lambda r: float(r.get("points") or 0), default=None),
             "started_position_leaders": _attach_stat_lines(
-                weekly.get("started_position_leaders") or {}, intelligence
+                _distinct_started_position_leaders(
+                    snapshot,
+                    weekly.get("overall_player_of_the_week")
+                    or _overall_player_of_week(snapshot),
+                ),
+                intelligence,
             ),
 
-            "bad_beat": awards.get("bad_beat"),
-            "escape_artist": awards.get("escape_artist"),
+            **rookie_awards,
             "weekly_efficiency_top_three": weekly.get("lineup_efficiency_top_three") or [],
             "season_efficiency_top_three": _season_efficiency_top_three(
                 history,
@@ -201,6 +220,7 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
+            **player_boards,
             "benchwarmer_of_the_week": _attach_stat_lines(
                 weekly.get("benchwarmer_of_the_week"), intelligence
             ),
@@ -210,7 +230,6 @@ def build_flagship_research_packet(
                 ),
                 snapshot,
             ),
-
         },
         "power_board": {
             "writeup_inputs": _power_board_inputs(
@@ -305,6 +324,9 @@ def build_flagship_research_packet(
             "candidates": (story or {}).get("candidates") or [],
         },
     }
+    packet["division_outlook"] = _division_outlook(
+        dossier.get("divisions") or [], packet["remaining_schedule_strength"]
+    )
     context = packet["context_events"]
     for game in games:
         game["context_event_ids"] = context["by_game"].get(str(game.get("matchup_id")), [])
@@ -330,9 +352,32 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     structural_fields = ("page", "module", "game_report_numbers", "ranks")
     structure = lambda rows: [{key: row.get(key) for key in structural_fields} for row in rows]
     spine_ok = structure(packet.get("editorial_spine") or []) == structure(expected)
-    _check(checks, "flagship_spine", spine_ok, "22-page canonical module order and allocations")
+    _check(checks, "flagship_spine", spine_ok, "25-page canonical module order and allocations")
     if not spine_ok:
         manual.append("Shared flagship page structure is missing or inconsistent.")
+
+    report_pages = [
+        row for row in packet.get("editorial_spine") or [] if row.get("module") == "GAME_REPORTS"
+    ]
+    report_allocations = [row.get("game_report_numbers") for row in report_pages]
+    allocation_ok = (
+        report_allocations == [[1, 2], [3, 4], [5, 6]]
+        and len(report_pages) == 3
+        and int((packet.get("game_coverage") or {}).get("feature_slots") or 0) == 2
+        and int((packet.get("game_coverage") or {}).get("remaining_game_writeups") or 0) == 6
+    )
+    _check(
+        checks,
+        "game_report_allocation",
+        allocation_ok,
+        "three pages, two reports each, six non-feature writeups"
+        if allocation_ok
+        else "expected report pairs 1–2, 3–4, 5–6 and 2 feature slots",
+    )
+    if not allocation_ok:
+        manual.append(
+            "Weekly results must allocate six non-feature games as two reports on each of three pages."
+        )
 
     games = ((packet.get("game_coverage") or {}).get("games") or [])
     required_games = int((packet.get("game_coverage") or {}).get("required_matchups") or 8)
@@ -346,6 +391,29 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     _check(checks, "unique_matchups", not duplicate_ids, "no duplicate matchup IDs" if not duplicate_ids else f"duplicates: {', '.join(duplicate_ids)}")
     if duplicate_ids:
         manual.append("Duplicate matchup coverage must be resolved before production.")
+
+    allowed_division_statuses = {
+        "VERIFIED_DIVISIONAL",
+        "VERIFIED_NON_DIVISIONAL",
+        "UNAVAILABLE",
+    }
+    explicit_divisions = len(games) == required_games and all(
+        game.get("division_status") in allowed_division_statuses for game in games
+    )
+    _check(
+        checks,
+        "game_division_evidence",
+        explicit_divisions,
+        "every matchup has an explicit division classification state"
+        if explicit_divisions
+        else "one or more matchup division states are missing/invalid",
+    )
+    if explicit_divisions and any(
+        game.get("division_status") == "UNAVAILABLE" for game in games
+    ):
+        manual.append(
+            "One or more matchup division identities are unavailable; verify league division data before labeling divisional games."
+        )
 
     for game in games:
         if not game.get("starter_stat_lines"):
@@ -409,6 +477,8 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         "season_team_score_top_three",
         "benchwarmer_of_the_week",
         "rookie_watch_top_five",
+        "rookie_of_the_week",
+        "top_rookie_starter",
     ):
         value = honors.get(key)
         ok = value is not None and (not isinstance(value, (list, dict)) or bool(value))
@@ -416,9 +486,72 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             manual.append(f"Weekly Honors: {key.replace('_', ' ')} is missing or empty.")
 
+    overall_id = str((honors.get("overall_player_of_the_week") or {}).get("player_id") or "")
+    positional_ids = [
+        str(row.get("player_id") or "")
+        for row in (honors.get("started_position_leaders") or {}).values()
+        if isinstance(row, dict)
+    ]
+    player_awards_distinct = bool(overall_id) and overall_id not in positional_ids and len(
+        positional_ids
+    ) == len(set(positional_ids)) and all(
+        isinstance((honors.get("started_position_leaders") or {}).get(position), dict)
+        and (honors.get("started_position_leaders") or {}).get(position, {}).get("player_id")
+        for position in CORE_POSITIONS
+    )
+    _check(
+        checks,
+        "weekly_player_award_distinctness",
+        player_awards_distinct,
+        "overall and positional starter awards name distinct players"
+        if player_awards_distinct
+        else "overall and positional starter awards are missing or overlap",
+    )
+    if not player_awards_distinct:
+        manual.append(
+            "Overall and positional player awards must identify distinct eligible starters."
+        )
+
     award_warnings = [f"{code}: {status.get('reason')}"
         for code, status in (honors.get("award_availability") or {}).items()
         if status.get("status") != "AVAILABLE"]
+    rookie_disappointment_status = honors.get("rookie_disappointment_status") or {}
+    if rookie_disappointment_status.get("status") != "READY":
+        award_warnings.append(
+            "ROOKIE_DISAPPOINTMENT: "
+            + str(rookie_disappointment_status.get("reason") or "projection evidence incomplete")
+        )
+
+    division_outlook = packet.get("division_outlook") or {}
+    division_summary_ready = division_outlook.get("division_status") == "READY" and bool(
+        division_outlook.get("division_summaries")
+    )
+    _check(
+        checks,
+        "division_outlook_evidence",
+        division_summary_ready,
+        "verified division summaries are present"
+        if division_summary_ready
+        else "verified division summaries are unavailable",
+    )
+    if not division_summary_ready:
+        manual.append(
+            "Division of Death needs verified division-level matchup context and standings inputs."
+        )
+
+    schedule = packet.get("remaining_schedule_strength") or {}
+    schedule_rows = schedule.get("rows") or []
+    schedule_ready = schedule.get("status") == "READY" and len(schedule_rows) == 16
+    _check(
+        checks,
+        "division_outlook_schedule",
+        schedule_ready,
+        f"{len(schedule_rows)}/16 teams with remaining-schedule strength",
+    )
+    if not schedule_ready:
+        awaiting.append(
+            "Division of Death / Road Ahead needs the complete 16-team remaining-schedule strength handoff."
+        )
 
     season_week = int(packet.get("week") or 0)
     efficiency_rows = honors.get("season_efficiency_top_three") or []
@@ -440,6 +573,48 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         manual.append(
             "Running efficiency board is incomplete in Chronicle/history; backfill or manually verify missing completed weeks."
         )
+
+    team_score_rows = honors.get("season_team_score_top_three") or []
+    team_score_coverage = bool(team_score_rows) and all(
+        int(row.get("weeks") or 0) >= season_week for row in team_score_rows
+    )
+    _check(
+        checks,
+        "season_team_score_history",
+        team_score_coverage,
+        (
+            f"complete through Week {season_week}"
+            if team_score_coverage
+            else f"fewer than {season_week} finalized scoring weeks are recorded"
+        ),
+    )
+    if not team_score_coverage:
+        manual.append(
+            "Cumulative team points board is incomplete in Chronicle/history; backfill or manually verify missing completed weeks."
+        )
+
+    for key, check_name, label in (
+        ("player_season_top_three", "player_season_history", "Player Season Top 3"),
+        ("rookie_season_leaders", "rookie_season_history", "Rookie Season Leaders"),
+    ):
+        board = honors.get(key) or {}
+        has_applicable_positions = key == "rookie_season_leaders" or bool(
+            board.get("by_position")
+        )
+        board_ready = board.get("status") == "READY" and has_applicable_positions
+        _check(
+            checks,
+            check_name,
+            board_ready,
+            f"complete through Week {season_week}"
+            if board_ready
+            else str(board.get("reason") or board.get("status") or "unavailable"),
+        )
+        if not board_ready:
+            manual.append(
+                f"{label} requires complete per-player scoring history through Week {season_week}; "
+                + str(board.get("reason") or "source history unavailable")
+            )
 
     for key, label in (
         ("power_rankings_chart", "Power Rankings"),
@@ -515,7 +690,18 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
 
     ready = not manual and not awaiting
     return {
-        "contract_valid": not any(not row["passed"] for row in checks if row["name"] in {"eight_matchups", "unique_matchups"}),
+        "contract_valid": not any(
+            not row["passed"]
+            for row in checks
+            if row["name"]
+            in {
+                "flagship_spine",
+                "game_report_allocation",
+                "eight_matchups",
+                "unique_matchups",
+                "game_division_evidence",
+            }
+        ),
         "research_complete": ready,
         "checks": checks,
         "manual_verify": manual,
@@ -579,6 +765,12 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for game in coverage.get("games") or []:
         lines.extend(["", f"### Matchup {game.get('matchup_id')} — {game.get('matchup')}", ""])
         lines.append(f"- Final: {game.get('scoreline')}; margin {float(game.get('margin') or 0):.2f}.")
+        if game.get("division_status") == "VERIFIED_DIVISIONAL":
+            lines.append(f"- Divisional matchup: verified — {game.get('division_name')}.")
+        elif game.get("division_status") == "VERIFIED_NON_DIVISIONAL":
+            lines.append("- Divisional matchup: verified non-divisional.")
+        else:
+            lines.append("- Divisional matchup: unavailable; verify league division data.")
         for stat in game.get("starter_stat_lines") or []:
             lines.append(
                 f"- {stat.get('fantasy_team')}: {stat.get('player')} — {stat.get('nfl_stat_line')}"
@@ -752,6 +944,13 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     overall = honors.get("overall_player_of_the_week")
     if overall:
         lines.extend(["", "### Overall Player of the Week", f"- {overall.get('player')} — {overall.get('points')} FP — {overall.get('nfl_stat_line') or ''}"])
+    for key, label in (
+        ("rookie_of_the_week", "Rookie of the Week (starter, bench, or taxi)"),
+        ("top_rookie_starter", "Top Rookie Starter"),
+    ):
+        row = honors.get(key)
+        if row:
+            lines.extend(["", f"### {label}", f"- {row.get('player')} — {row.get('team')} — {float(row.get('points') or 0):.2f} FP — {row.get('ironbound_draft') or 'Draft pick not recorded'} — {row.get('nfl_stat_line') or 'NFL stat line unavailable'}"])
     for key, label in (("most_efficient_manager", "Most Efficient Manager"), ("high_score", "High Score"), ("low_score", "Low Score")):
         row = honors.get(key)
         if row:
@@ -790,32 +989,86 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             "",
             "### Season Team Score Top 3",
             "",
-            "| Rank | Team | Score | Week |",
+            "| Rank | Team | Cumulative Points | Weeks |",
             "|---:|---|---:|---:|",
         ]
     )
     for rank, row in enumerate(honors.get("season_team_score_top_three") or [], 1):
         lines.append(
-            f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('week')} |"
+            f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('weeks')} |"
+        )
+
+    lines.extend(["", "### Player Season Top 3", ""])
+    player_boards = honors.get("player_season_top_three") or {}
+    lines.append(f"Status: {player_boards.get('status', 'UNAVAILABLE')} — {player_boards.get('reason') or 'complete score history required'}.")
+    for position, rows in (player_boards.get("by_position") or {}).items():
+        for rank, row in enumerate(rows, 1):
+            lines.append(
+                f"- {position} #{rank}: {row.get('player')} — {row.get('fantasy_team')} — {float(row.get('points') or 0):.2f} cumulative FP."
+            )
+
+    rookie_boards = honors.get("rookie_season_leaders") or {}
+    lines.extend(["", "### Rookie Season Leaders", f"Status: {rookie_boards.get('status', 'UNAVAILABLE')} — {rookie_boards.get('reason') or 'complete score history required'}."])
+    for position, row in (rookie_boards.get("by_position") or {}).items():
+        lines.append(
+            f"- {position}: {row.get('player')} — {row.get('fantasy_team')} — {float(row.get('points') or 0):.2f} cumulative FP."
         )
 
     lines.extend(["", "### Bad Beat"])
     bad_beat = honors.get("bad_beat")
     if bad_beat:
         lines.append(
-            f"- {bad_beat.get('team')}: {float(bad_beat.get('points') or 0):.2f} points in a loss."
+            f"- {bad_beat.get('team')}: {float(bad_beat.get('points') or 0):.2f} points in a loss; entering record {_compact(bad_beat.get('entering_record') or {})}."
         )
     else:
-        lines.append("- No eligible bad beat.")
+        status = honors.get("bad_beat_status") or {}
+        lines.append(f"- {status.get('status', 'UNAVAILABLE')}: {status.get('reason') or 'No verified qualifying loss.'}")
+    for row in (honors.get("bad_beat_candidates") or [])[:5]:
+        lines.append(
+            f"  - Candidate: {row.get('team')} — {float(row.get('points') or 0):.2f} lost by "
+            f"{float(row.get('margin') or 0):.2f}; entering record "
+            f"{_compact(row.get('entering_record') or row.get('record_status'))}."
+        )
 
     lines.extend(["", "### Escape Artist"])
     escape = honors.get("escape_artist")
     if escape:
         lines.append(
-            f"- {escape.get('team')}: {float(escape.get('points') or 0):.2f} points in a win."
+            f"- {escape.get('team')}: {float(escape.get('points') or 0):.2f} points in a win; entering record {_compact(escape.get('entering_record') or {})}."
         )
     else:
-        lines.append("- No eligible escape artist.")
+        status = honors.get("escape_artist_status") or {}
+        lines.append(f"- {status.get('status', 'UNAVAILABLE')}: {status.get('reason') or 'No verified distinct qualifying win.'}")
+    for row in (honors.get("escape_artist_candidates") or [])[:5]:
+        lines.append(
+            f"  - Candidate: {row.get('team')} — {float(row.get('points') or 0):.2f} won by "
+            f"{float(row.get('margin') or 0):.2f}; entering record "
+            f"{_compact(row.get('entering_record') or row.get('record_status'))}."
+        )
+
+    lines.extend(["", "### Rookie Disappointment — Editorial Candidates"])
+    rookie_status = honors.get("rookie_disappointment_status") or {}
+    lines.append(f"Status: {rookie_status.get('status', 'UNAVAILABLE')} — {rookie_status.get('reason') or 'candidate evidence available'}.")
+    for row in honors.get("rookie_disappointment_candidates") or []:
+        projection = (
+            f"{float(row['projected_points']):.2f} projected; delta {float(row['projection_delta']):+.2f}"
+            if row.get("projection_status") == "VERIFIED"
+            else "projection unavailable"
+        )
+        lines.append(
+            f"- {row.get('player')} — {row.get('team')} — {row.get('status')} — "
+            f"{float(row.get('points') or 0):.2f} FP — {row.get('ironbound_draft') or 'Draft pick not recorded'} — {projection}."
+        )
+
+    free_agent = honors.get("free_agent_of_the_week")
+    lines.extend(["", "### Free Agent of the Week"])
+    if free_agent:
+        lines.append(
+            f"- {free_agent.get('player')} — {free_agent.get('fantasy_team', 'UNROSTERED')} — "
+            f"{float(free_agent.get('points') or 0):.2f} FP."
+        )
+    else:
+        lines.append("- UNAVAILABLE: no verified free-agent scoring candidate was supplied.")
 
     lines.extend(["", "### Benchwarmer of the Week"])
     bench = honors.get("benchwarmer_of_the_week")
@@ -920,6 +1173,26 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for row in odds.get("rows") or []:
         lines.append("- " + _compact(row))
 
+    outlook = packet.get("division_outlook") or {}
+    lines.extend(["", "## DIVISION OF DEATH / ROAD AHEAD", ""])
+    lines.append(
+        f"Status: {outlook.get('status', 'UNAVAILABLE')}; "
+        f"division data: {outlook.get('division_status', 'UNAVAILABLE')}; "
+        f"schedule data: {outlook.get('schedule_status', 'UNAVAILABLE')}."
+    )
+    for row in outlook.get("division_summaries") or []:
+        lines.append(
+            f"- {row.get('division_name') or row.get('division_id')}: "
+            f"{row.get('average_points', 'average unavailable')} average points; "
+            f"record {_compact(row.get('head_to_head_record') or {})}."
+        )
+    hardest = outlook.get("hardest_remaining_schedule") or {}
+    easiest = outlook.get("easiest_remaining_schedule") or {}
+    if hardest:
+        lines.append(f"- Hardest remaining schedule: {_compact(hardest)}")
+    if easiest:
+        lines.append(f"- Easiest remaining schedule: {_compact(easiest)}")
+
     lines.extend(["", "## REMAINING SCHEDULE STRENGTH", ""])
     schedule = packet.get("remaining_schedule_strength") or {}
     lines.append(f"Status: {schedule.get('status')}; Authority: {schedule.get('authority')}.")
@@ -993,6 +1266,12 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
     stat_rows = (((dossier.get("nfl_game_intelligence") or {}).get("stat_book") or {}).get("records") or [])
     signals = (dossier.get("nfl_game_intelligence") or {}).get("story_signals") or []
     team_stat_rows: dict[str, list[dict[str, Any]]] = {}
+    roster_by_id = {
+        int(row.get("roster_id") or 0): row
+        for row in snapshot.get("rosters") or []
+        if int(row.get("roster_id") or 0)
+    }
+    metadata = (snapshot.get("league") or {}).get("metadata") or {}
     for row in stat_rows:
         team_stat_rows.setdefault(str(row.get("fantasy_team") or ""), []).append(row)
 
@@ -1017,6 +1296,21 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
             for row in ordered
         )
         top_starter = _top_started_player_for_game(snapshot, team_names)
+        divisions = [
+            str(((roster_by_id.get(int(team.get("roster_id") or 0)) or {}).get("settings") or {}).get("division"))
+            if ((roster_by_id.get(int(team.get("roster_id") or 0)) or {}).get("settings") or {}).get("division") is not None
+            else None
+            for team in teams
+        ]
+        division_status = "UNAVAILABLE"
+        division_name = None
+        if len(divisions) == 2 and all(divisions):
+            if divisions[0] != divisions[1]:
+                division_status = "VERIFIED_NON_DIVISIONAL"
+            else:
+                division_name = metadata.get(f"division_{divisions[0]}")
+                if division_name:
+                    division_status = "VERIFIED_DIVISIONAL"
         games.append(
             {
                 "matchup_id": game.get("matchup_id"),
@@ -1029,9 +1323,32 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
                 "starter_stat_lines": starter_stats,
                 "context_signals": signal_lines,
                 "top_started_player": top_starter,
+                "division_status": division_status,
+                **({"division_name": str(division_name)} if division_name else {}),
             }
         )
     return games
+
+
+def _division_outlook(
+    division_summaries: list[dict[str, Any]],
+    remaining_schedule_strength: dict[str, Any],
+) -> dict[str, Any]:
+    summaries = [dict(row) for row in division_summaries if isinstance(row, dict)]
+    schedule = dict(remaining_schedule_strength or {})
+    rows = [dict(row) for row in schedule.get("rows") or [] if isinstance(row, dict)]
+    rows.sort(key=lambda row: int(row.get("difficulty_rank") or 999))
+    division_status = "READY" if summaries else "UNAVAILABLE"
+    schedule_status = str(schedule.get("status") or "UNAVAILABLE")
+    return {
+        "status": "READY" if division_status == "READY" and schedule_status == "READY" and rows else "PARTIAL",
+        "division_status": division_status,
+        "division_summaries": summaries,
+        "schedule_status": schedule_status,
+        "remaining_schedule_strength": rows,
+        "hardest_remaining_schedule": rows[0] if rows else None,
+        "easiest_remaining_schedule": rows[-1] if rows else None,
+    }
 
 
 def _attach_beat_context_to_games(
@@ -1174,17 +1491,19 @@ def _season_team_score_top_three(
     chronicle: ChronicleQueries | None,
 ) -> list[dict[str, Any]]:
     names = _roster_team_names(snapshot)
+    current_week = int(snapshot.get("week") or 0)
     by_week_roster: dict[tuple[int, int], dict[str, Any]] = {}
 
     if chronicle is not None:
         for row in chronicle.season_matchup_finals(league_key, season):
             roster_id = int(row.get("roster_id") or 0)
             week = int(row.get("week") or 0)
-            if roster_id and 0 < week <= int(snapshot.get("week") or 0):
+            points = _safe_float(row.get("points"))
+            if roster_id and points is not None and 0 < week <= current_week:
                 by_week_roster[(week, roster_id)] = {
                     "team": names.get(roster_id, f"Roster {roster_id}"),
                     "roster_id": roster_id,
-                    "score": float(row.get("points") or 0),
+                    "score": points,
                     "week": week,
                 }
 
@@ -1192,42 +1511,476 @@ def _season_team_score_top_three(
     # predate durable MATCHUP_FINAL events.
     for dossier in history:
         week = int(dossier.get("week") or 0)
+        if not 0 < week <= current_week:
+            continue
         for game in dossier.get("scoreboard") or []:
             for team in game.get("teams") or []:
                 roster_id = int(team.get("roster_id") or 0)
-                if roster_id and week:
+                points = _safe_float(team.get("points"))
+                if roster_id and points is not None:
                     by_week_roster.setdefault(
                         (week, roster_id),
                         {
                             "team": team.get("team") or names.get(roster_id),
                             "roster_id": roster_id,
-                            "score": float(team.get("points") or 0),
+                            "score": points,
                             "week": week,
                         },
                     )
 
     # Always merge the reviewed week from the live dossier so a correctly
     # completed packet does not depend on materialized Chronicle freshness.
-    current_week = int(snapshot.get("week") or 0)
     for matchup in snapshot.get("matchups") or []:
         roster_id = int(matchup.get("roster_id") or 0)
-        if roster_id and current_week:
+        points = _safe_float(matchup.get("points"))
+        if roster_id and current_week and points is not None:
             by_week_roster[(current_week, roster_id)] = {
                 "team": names.get(roster_id, f"Roster {roster_id}"),
                 "roster_id": roster_id,
-                "score": float(matchup.get("points") or 0),
+                "score": points,
                 "week": current_week,
             }
 
-    rows = list(by_week_roster.values())
+    totals: dict[int, dict[str, Any]] = {}
+    for row in by_week_roster.values():
+        roster_id = int(row["roster_id"])
+        aggregate = totals.setdefault(
+            roster_id,
+            {
+                "team": row.get("team") or names.get(roster_id) or f"Roster {roster_id}",
+                "roster_id": roster_id,
+                "score": 0.0,
+                "weeks": 0,
+                "through_week": int(snapshot.get("week") or 0),
+            },
+        )
+        aggregate["score"] += float(row["score"])
+        aggregate["weeks"] += 1
+    rows = list(totals.values())
     rows.sort(
         key=lambda row: (
             -row["score"],
-            row["week"],
+            -row["weeks"],
             str(row.get("team") or "").casefold(),
         )
     )
     return rows[:3]
+
+
+def _season_player_boards(
+    historical_rows: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Aggregate finalized weekly player scores without presenting gaps as full totals."""
+    from .weekly_features import _rostered_player_weeks
+
+    through_week = int(snapshot.get("week") or 0)
+    rosters = {
+        int(row.get("roster_id") or 0): row
+        for row in snapshot.get("rosters") or []
+        if int(row.get("roster_id") or 0)
+    }
+    team_names = _roster_team_names(snapshot)
+    players = snapshot.get("players") or {}
+
+    def display_player_name(player_id: str) -> str:
+        player = players.get(player_id) or {}
+        return str(player.get("full_name") or player.get("name") or player_id)
+
+    current_roster_by_player: dict[str, int] = {}
+    duplicate_current_players: set[str] = set()
+    for roster_id, roster in rosters.items():
+        for player_id in {
+            str(value)
+            for field in ("players", "taxi", "reserve")
+            for value in roster.get(field) or []
+        }:
+            if player_id in current_roster_by_player and current_roster_by_player[player_id] != roster_id:
+                duplicate_current_players.add(player_id)
+            current_roster_by_player[player_id] = roster_id
+
+    by_week_player: dict[tuple[int, str], dict[str, Any]] = {}
+    roster_coverage: dict[int, set[int]] = {}
+    conflicts: set[tuple[int, str]] = set()
+
+    def add_score(row: dict[str, Any], *, current: bool = False) -> None:
+        week = int(row.get("week") or 0)
+        roster_id = int(row.get("roster_id") or 0)
+        player_id = str(row.get("player_id") or "")
+        if not (0 < week <= through_week and roster_id in rosters and player_id):
+            return
+        roster_coverage.setdefault(week, set()).add(roster_id)
+        key = (week, player_id)
+        value = {
+            "week": week,
+            "roster_id": roster_id,
+            "player_id": player_id,
+            "position": row.get("position"),
+            "points": round(float(row.get("points") or 0), 2),
+        }
+        previous = by_week_player.get(key)
+        if previous and previous["roster_id"] != roster_id and previous["points"] != value["points"]:
+            conflicts.add(key)
+        if previous is None or current:
+            by_week_player[key] = value
+
+    for row in historical_rows:
+        if int(row.get("week") or 0) < through_week:
+            add_score(row)
+    for row in _rostered_player_weeks(snapshot):
+        add_score({**row, "week": through_week}, current=True)
+
+    expected_rosters = set(rosters)
+    missing_weeks = [
+        week
+        for week in range(1, through_week + 1)
+        if not expected_rosters.issubset(roster_coverage.get(week, set()))
+    ]
+    incomplete_players = {
+        player_id: [
+            week
+            for week in range(1, through_week + 1)
+            if (week, player_id) not in by_week_player
+        ]
+        for player_id in current_roster_by_player
+    }
+    incomplete_players = {
+        player_id: weeks
+        for player_id, weeks in incomplete_players.items()
+        if weeks
+    }
+    reasons = []
+    if missing_weeks:
+        reasons.append(
+            "missing finalized player scores for week(s) "
+            + ", ".join(str(value) for value in missing_weeks)
+        )
+    if incomplete_players:
+        names = []
+        for player_id, weeks in sorted(incomplete_players.items()):
+            missing = ", ".join(f"Week {week}" for week in weeks)
+            names.append(f"{display_player_name(player_id)} (missing {missing})")
+        reasons.append("incomplete fantasy-score history for " + "; ".join(names))
+    if conflicts:
+        reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
+    if duplicate_current_players:
+        reasons.append("one or more players are assigned to multiple current fantasy rosters")
+    status = "READY" if not reasons and through_week > 0 else "UNAVAILABLE"
+
+    totals: dict[str, float] = {}
+    for (_, player_id), row in by_week_player.items():
+        if player_id in current_roster_by_player:
+            totals[player_id] = totals.get(player_id, 0.0) + float(row["points"])
+
+    by_position: dict[str, list[dict[str, Any]]] = {}
+    rookie_by_position: dict[str, dict[str, Any]] = {}
+    if status == "READY":
+        for position in CORE_POSITIONS:
+            candidates = []
+            rookie_candidates = []
+            for player_id, points in totals.items():
+                player = players.get(player_id) or {}
+                player_position = str(player.get("position") or "").upper()
+                if not player_position:
+                    fantasy_positions = player.get("fantasy_positions") or []
+                    player_position = str(fantasy_positions[0] if fantasy_positions else "").upper()
+                if player_position != position:
+                    continue
+                roster_id = current_roster_by_player[player_id]
+                row = {
+                    "player_id": player_id,
+                    "player": display_player_name(player_id),
+                    "position": position,
+                    "points": round(points, 2),
+                    "fantasy_team": team_names.get(roster_id, f"Roster {roster_id}"),
+                }
+                candidates.append(row)
+                if player.get("years_exp") is not None and _safe_int(player.get("years_exp")) == 0:
+                    rookie_candidates.append(row)
+            candidates.sort(key=lambda row: (-row["points"], row["player"].casefold()))
+            rookie_candidates.sort(key=lambda row: (-row["points"], row["player"].casefold()))
+            by_position[position] = candidates[:3]
+            if rookie_candidates:
+                rookie_by_position[position] = rookie_candidates[0]
+
+    reason = "; ".join(reasons) if reasons else None
+    return {
+        "player_season_top_three": {
+            "status": status,
+            "through_week": through_week,
+            "reason": reason,
+            "by_position": by_position if status == "READY" else {},
+        },
+        "rookie_season_leaders": {
+            "status": status,
+            "through_week": through_week,
+            "reason": reason,
+            "by_position": rookie_by_position if status == "READY" else {},
+        },
+    }
+
+
+def _manager_weekly_awards(
+    dossier: dict[str, Any],
+    history: list[dict[str, Any]],
+    *,
+    current_week: int,
+    manager_of_the_week: dict[str, Any] | None,
+) -> dict[str, Any]:
+    lineup = list(dossier.get("lineup_efficiency") or [])
+    winner_id = _safe_int((manager_of_the_week or {}).get("roster_id"))
+    most_efficient = max(
+        (
+            row
+            for row in lineup
+            if _safe_int(row.get("roster_id")) is not None
+            and _safe_int(row.get("roster_id")) != winner_id
+        ),
+        key=lambda row: (
+            _safe_float(row.get("efficiency")) or 0,
+            _safe_float(row.get("actual_points")) or 0,
+        ),
+        default=None,
+    )
+
+    records: dict[int, dict[int, float]] = {}
+    for prior in history:
+        week = _safe_int(prior.get("week"))
+        if week is None or not 0 < week < current_week:
+            continue
+        for game in prior.get("scoreboard") or []:
+            teams = game.get("teams") or []
+            if len(teams) != 2:
+                continue
+            scores = [(_safe_int(team.get("roster_id")), _safe_float(team.get("points"))) for team in teams]
+            if any(rid is None or points is None for rid, points in scores):
+                continue
+            (left_id, left_score), (right_id, right_score) = scores
+            result = 0.5 if left_score == right_score else (1.0 if left_score > right_score else 0.0)
+            records.setdefault(left_id, {})[week] = result
+            records.setdefault(right_id, {})[week] = 1.0 - result if result != 0.5 else 0.5
+
+    expected_weeks = set(range(1, current_week))
+    entering: dict[int, dict[str, int]] = {}
+    if expected_weeks:
+        for roster_id, results in records.items():
+            if set(results) != expected_weeks:
+                continue
+            entering[roster_id] = {
+                "wins": sum(value == 1.0 for value in results.values()),
+                "losses": sum(value == 0.0 for value in results.values()),
+                "ties": sum(value == 0.5 for value in results.values()),
+            }
+
+    losses: list[dict[str, Any]] = []
+    wins: list[dict[str, Any]] = []
+    for game in dossier.get("scoreboard") or []:
+        teams = game.get("teams") or []
+        if len(teams) != 2:
+            continue
+        left, right = teams
+        left_id, right_id = _safe_int(left.get("roster_id")), _safe_int(right.get("roster_id"))
+        left_score, right_score = _safe_float(left.get("points")), _safe_float(right.get("points"))
+        if None in (left_id, right_id, left_score, right_score) or left_score == right_score:
+            continue
+        matchup_id = game.get("matchup_id")
+        for team, opponent, roster_id, score, opponent_score, won in (
+            (left, right, left_id, left_score, right_score, left_score > right_score),
+            (right, left, right_id, right_score, left_score, right_score > left_score),
+        ):
+            record = entering.get(roster_id)
+            row = {
+                "roster_id": roster_id,
+                "team": team.get("team") or f"Roster {roster_id}",
+                "points": round(score, 2),
+                "opponent": opponent.get("team") or f"Roster {_safe_int(opponent.get('roster_id'))}",
+                "opponent_points": round(opponent_score, 2),
+                "margin": round(abs(score - opponent_score), 2),
+                "matchup_id": matchup_id,
+                "entering_record": record,
+                "record_status": "VERIFIED" if record is not None else "UNAVAILABLE",
+            }
+            (wins if won else losses).append(row)
+
+    losses.sort(
+        key=lambda row: (
+            -(row["entering_record"]["wins"] > row["entering_record"]["losses"])
+            if row["entering_record"]
+            else 0,
+            -row["points"],
+            row["margin"],
+            str(row["team"]).casefold(),
+        )
+    )
+    wins.sort(
+        key=lambda row: (
+            -(row["entering_record"]["wins"] > row["entering_record"]["losses"])
+            if row["entering_record"]
+            else 0,
+            row["margin"],
+            row["points"] + row["opponent_points"],
+            str(row["team"]).casefold(),
+        )
+    )
+    bad_beat = next((row for row in losses if row["record_status"] == "VERIFIED"), None)
+    escape = next(
+        (
+            row
+            for row in wins
+            if row["record_status"] == "VERIFIED"
+            and bad_beat
+            and row["roster_id"] != bad_beat["roster_id"]
+            and row["matchup_id"] != bad_beat["matchup_id"]
+        ),
+        None,
+    )
+    if bad_beat and not escape:
+        escape_status = {
+            "status": "MANUAL_REVIEW",
+            "reason": "No verified Escape Artist candidate remains after excluding Bad Beat's manager and matchup.",
+        }
+    elif not bad_beat or not escape:
+        escape_status = {
+            "status": "UNAVAILABLE",
+            "reason": "Verified entering records and a distinct completed matchup are required for non-overlapping awards.",
+        }
+    else:
+        escape_status = {"status": "READY", "reason": None}
+    bad_status = (
+        {"status": "READY", "reason": None}
+        if bad_beat
+        else {
+            "status": "UNAVAILABLE",
+            "reason": "Verified entering records are required to prioritize Bad Beat candidates.",
+        }
+    )
+    return {
+        "most_efficient_manager": most_efficient,
+        "bad_beat": bad_beat,
+        "bad_beat_candidates": losses,
+        "bad_beat_status": bad_status,
+        "escape_artist": escape,
+        "escape_artist_candidates": wins,
+        "escape_artist_status": escape_status,
+    }
+
+
+def _rookie_weekly_awards(
+    weekly: dict[str, Any],
+    snapshot: dict[str, Any],
+    intelligence: dict[str, Any],
+) -> dict[str, Any]:
+    from .honors import frozen_projections
+    from .weekly_features import _free_agent_of_week, _rookie_of_week, _rostered_player_weeks
+
+    players = snapshot.get("players") or {}
+    rookie_rows = []
+    for row in _rostered_player_weeks(snapshot):
+        player = players.get(str(row.get("player_id") or "")) or {}
+        if player.get("years_exp") is None or _safe_int(player.get("years_exp")) != 0:
+            continue
+        rookie_rows.append(dict(row))
+
+    projections, _, projection_error = frozen_projections(snapshot)
+    disappointment = []
+    for row in rookie_rows:
+        item = dict(row)
+        player_id = str(row.get("player_id") or "")
+        projection = projections.get(player_id)
+        item["projection_status"] = "VERIFIED" if projection is not None else "UNAVAILABLE"
+        item["projected_points"] = projection
+        item["projection_delta"] = (
+            round(float(row.get("points") or 0) - float(projection), 2)
+            if projection is not None
+            else None
+        )
+        disappointment.append(item)
+    disappointment = _attach_rookie_draft_context(disappointment, snapshot)
+    # Draft cost is a secondary tie-breaker: early picks rank ahead of later picks.
+    disappointment.sort(
+        key=lambda row: (
+            row.get("status") != "STARTED",
+            row.get("projection_delta") is None,
+            row.get("projection_delta") if row.get("projection_delta") is not None else 0,
+            float(row.get("points") or 0),
+            _safe_int(row.get("ironbound_draft_round")) or 99,
+            _safe_int(row.get("ironbound_draft_slot")) or 99,
+        )
+    )
+    raw_rookie = weekly.get("rookie_of_the_week") or _rookie_of_week(snapshot)
+    raw_starter = max(
+        (row for row in rookie_rows if row.get("status") == "STARTED"),
+        key=lambda row: (float(row.get("points") or 0), str(row.get("player") or "").casefold()),
+        default=None,
+    )
+    projections_complete = bool(rookie_rows) and all(
+        row.get("projection_status") == "VERIFIED" for row in disappointment
+    )
+    if raw_rookie:
+        raw_rookie = _attach_rookie_draft_context([raw_rookie], snapshot)[0]
+    if raw_starter:
+        raw_starter = _attach_rookie_draft_context([raw_starter], snapshot)[0]
+    free_agent = weekly.get("free_agent_of_the_week") or _free_agent_of_week(snapshot)
+    free_agent = _unrostered_free_agent(free_agent, intelligence)
+    if not rookie_rows:
+        disappointment_status = {
+            "status": "UNAVAILABLE",
+            "reason": "No eligible rostered rookies were captured for the reviewed week.",
+        }
+    elif projections_complete and not projection_error:
+        disappointment_status = {"status": "READY", "reason": None}
+    else:
+        disappointment_status = {
+            "status": "PARTIAL",
+            "reason": projection_error
+            or "Verified player projections are incomplete; projection deltas are omitted where unavailable.",
+        }
+    return {
+        "rookie_of_the_week": _attach_stat_lines(raw_rookie, intelligence),
+        "top_rookie_starter": _attach_stat_lines(raw_starter, intelligence),
+        "rookie_disappointment_candidates": _attach_stat_lines(disappointment, intelligence),
+        "rookie_disappointment_status": disappointment_status,
+        "free_agent_of_the_week": free_agent,
+        "weekly_player_awards": {
+            "overall": "overall_player_of_the_week",
+            "positional": [f"started_position_leaders.{position}" for position in CORE_POSITIONS],
+            "distinct_player_rule": "Each positional leader excludes the overall player winner.",
+        },
+    }
+
+
+def _distinct_started_position_leaders(
+    snapshot: dict[str, Any], overall: dict[str, Any] | None
+) -> dict[str, dict[str, Any]]:
+    from .weekly_features import _rostered_player_weeks
+
+    overall_player_id = str((overall or {}).get("player_id") or "")
+    leaders: dict[str, dict[str, Any]] = {}
+    for row in _rostered_player_weeks(snapshot):
+        position = str(row.get("position") or "").upper()
+        if (
+            row.get("status") != "STARTED"
+            or position not in CORE_POSITIONS
+            or str(row.get("player_id") or "") == overall_player_id
+        ):
+            continue
+        current = leaders.get(position)
+        if current is None or (
+            float(row.get("points") or 0), str(row.get("player") or "").casefold()
+        ) > (
+            float(current.get("points") or 0), str(current.get("player") or "").casefold()
+        ):
+            leaders[position] = dict(row)
+    return leaders
+
+
+def _unrostered_free_agent(value: Any, intelligence: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        **_attach_stat_lines(dict(value), intelligence),
+        "fantasy_team": "UNROSTERED",
+    }
 
 
 def _season_efficiency_top_three(
@@ -1471,6 +2224,16 @@ def _safe_int(value: Any) -> int | None:
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _safe_float(value: Any) -> float | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed == parsed and abs(parsed) != float("inf") else None
 
 
 def _usage_desk(intelligence: dict[str, Any]) -> dict[str, Any]:

@@ -291,6 +291,61 @@ def _normalize_matchup_finals(
     return events
 
 
+def _normalize_player_fantasy_finals(
+    league_key: str,
+    season: str,
+    week: int,
+    matchups: list[dict[str, Any]],
+    players: dict[str, Any],
+    observed_at: str,
+) -> list[ChronicleEvent]:
+    """Persist each rostered player's finalized Sleeper fantasy score."""
+    events: list[ChronicleEvent] = []
+    for matchup in matchups:
+        roster_id = int(matchup.get("roster_id") or 0)
+        if not roster_id:
+            continue
+        raw_points = (
+            matchup.get("players_points")
+            or matchup.get("players_points_custom")
+            or {}
+        )
+        points = {str(player_id): float(value or 0) for player_id, value in raw_points.items()}
+        player_ids = sorted(
+            {str(player_id) for player_id in matchup.get("players") or []}
+            | {str(player_id) for player_id in matchup.get("starters") or []}
+            | set(points)
+        )
+        matchup_id = matchup.get("matchup_id")
+        for player_id in player_ids:
+            player = players.get(player_id) or {}
+            positions = player.get("fantasy_positions") or []
+            position = player.get("position") or (positions[0] if positions else None)
+            evidence = {
+                "matchup_id": matchup_id,
+                "position": str(position).upper() if position else None,
+                "points": round(points.get(player_id, 0.0), 2),
+            }
+            events.append(
+                make_event(
+                    event_type="PLAYER_FANTASY_WEEK_FINAL",
+                    source="sleeper_matchups",
+                    source_ref=(
+                        f"league:{league_key}:season:{season}:week:{week}:"
+                        f"roster:{roster_id}:player:{player_id}"
+                    ),
+                    league_key=league_key,
+                    season=season,
+                    week=week,
+                    provenance="source_exact",
+                    entities={"roster_id": roster_id, "player_id": player_id},
+                    observed_at=observed_at,
+                    evidence=evidence,
+                )
+            )
+    return events
+
+
 def _normalize_efficiency_finals(
     league_key: str,
     season: str,
@@ -500,6 +555,9 @@ def collect_pulse(
                     key, season, week, matchups, observed_at
                 )
                 if players is not None:
+                    events += _normalize_player_fantasy_finals(
+                        key, season, week, matchups, players, observed_at
+                    )
                     events += _normalize_efficiency_finals(
                         key,
                         season,

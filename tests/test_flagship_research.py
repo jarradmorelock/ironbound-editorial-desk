@@ -289,11 +289,14 @@ def test_flagship_contract_covers_all_eight_games_and_required_honors(tmp_path):
     assert packet["validation"]["contract_valid"] is True
     assert packet["validation"]["research_complete"] is True
     assert len(packet["game_coverage"]["games"]) == 8
+    assert all(game["division_status"] == "UNAVAILABLE" for game in packet["game_coverage"]["games"])
+    assert packet["division_outlook"]["status"] == "PARTIAL"
     assert packet["game_coverage"]["feature_slots"] == 2
     assert packet["game_coverage"]["remaining_game_writeups"] == 6
     assert len(packet["weekly_honors"]["rookie_watch_top_five"]) == 5
     assert len(packet["weekly_honors"]["season_team_score_top_three"]) == 3
     assert len(packet["weekly_honors"]["season_efficiency_top_three"]) == 3
+    assert packet["weekly_honors"]["player_season_top_three"]["status"] == "UNAVAILABLE"
     assert packet["weekly_honors"]["benchwarmer_of_the_week"]["player"] == "Bench Star"
     assert packet["weekly_honors"]["bad_beat"]["team"] == "Team 15"
     assert packet["weekly_honors"]["escape_artist"]["team"] == "Team 2"
@@ -312,6 +315,8 @@ def test_power_board_writeups_precede_rankings_and_playoff_charts(tmp_path):
 
     text = render_flagship_research_packet(packet)
 
+    assert "## DIVISION OF DEATH / ROAD AHEAD" in text
+    assert "## Player Season Top 3" in text
     assert text.index("## POWER BOARD — INDIVIDUAL WRITEUP INPUTS") < text.index(
         "## POWER RANKINGS CHART INPUT"
     ) < text.index("## PLAYOFF ODDS CHART INPUT")
@@ -696,6 +701,121 @@ def test_missing_page_fails_structural_contract_validation(tmp_path):
     packet = build_flagship_research_packet(snapshot, dossier, {}, _external(), history_root=tmp_path)
     packet['editorial_spine'].pop()
     assert validate_flagship_research_packet(packet)['research_complete'] is False
+
+
+def test_game_research_marks_division_only_from_verified_roster_membership():
+    from editorial_desk.flagship_research import _game_research
+
+    snapshot, dossier = _fixture()
+    snapshot["league"]["metadata"] = {
+        "division_1": "Forge",
+        "division_2": "Anvil",
+    }
+    for roster in snapshot["rosters"]:
+        roster["settings"]["division"] = 1
+    snapshot["rosters"][1]["settings"]["division"] = 2
+
+    games = _game_research(snapshot, dossier)
+
+    assert games[0]["division_status"] == "VERIFIED_NON_DIVISIONAL"
+    assert "division_name" not in games[0]
+    assert games[1]["division_status"] == "VERIFIED_DIVISIONAL"
+    assert games[1]["division_name"] == "Forge"
+
+    del snapshot["rosters"][1]["settings"]["division"]
+    missing = _game_research(snapshot, dossier)[0]
+    assert missing["division_status"] == "UNAVAILABLE"
+    assert "division_name" not in missing
+
+
+def test_division_outlook_keeps_summary_and_schedule_status_separate():
+    from editorial_desk.flagship_research import _division_outlook
+
+    summary = [{"division_id": "1", "division_name": "Forge"}]
+    schedule = {
+        "status": "AWAITING_TUESDAY_INPUT",
+        "authority": "Ironbound_power_ranks",
+        "rows": [],
+    }
+
+    outlook = _division_outlook(summary, schedule)
+
+    assert outlook["division_status"] == "READY"
+    assert outlook["division_summaries"] == summary
+    assert outlook["schedule_status"] == "AWAITING_TUESDAY_INPUT"
+    assert outlook["remaining_schedule_strength"] == []
+
+    ready = _division_outlook(
+        summary,
+        {
+            "status": "READY",
+            "rows": [
+                {"team": "Forge", "difficulty_rank": 2},
+                {"team": "Anvil", "difficulty_rank": 1},
+                {"team": "Crown", "difficulty_rank": 3},
+            ],
+        },
+    )
+    assert ready["status"] == "READY"
+    assert ready["hardest_remaining_schedule"]["team"] == "Anvil"
+    assert ready["easiest_remaining_schedule"]["team"] == "Crown"
+
+
+def test_season_player_boards_merge_current_week_and_report_missing_history():
+    from editorial_desk.flagship_research import _season_player_boards
+
+    snapshot = {
+        "week": 2,
+        "players": {
+            "p1": {"full_name": "Alpha QB", "position": "QB", "years_exp": 0},
+            "p2": {"full_name": "Beta RB", "position": "RB", "years_exp": 2},
+            "p3": {"full_name": "Gamma QB", "position": "QB", "years_exp": 0},
+            "p4": {"full_name": "Delta QB", "position": "QB", "years_exp": 2},
+        },
+        "users": [
+            {"user_id": "u1", "metadata": {"team_name": "Forge"}},
+            {"user_id": "u2", "metadata": {"team_name": "Anvil"}},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "players": ["p1", "p2"]},
+            {"roster_id": 2, "owner_id": "u2", "players": ["p3", "p4"]},
+        ],
+        "matchups": [
+            {"roster_id": 1, "players": ["p1", "p2"], "players_points": {"p1": 5, "p2": 8}},
+            {"roster_id": 2, "players": ["p3", "p4"], "players_points": {"p3": 30, "p4": 6}},
+        ],
+    }
+    prior = [
+        {"week": 1, "roster_id": 1, "player_id": "p1", "position": "QB", "points": 10},
+        {"week": 1, "roster_id": 1, "player_id": "p2", "position": "RB", "points": 20},
+        {"week": 1, "roster_id": 2, "player_id": "p3", "position": "QB", "points": 15},
+        {"week": 1, "roster_id": 2, "player_id": "p4", "position": "QB", "points": 20},
+    ]
+
+    boards = _season_player_boards(prior, snapshot)
+
+    assert boards["player_season_top_three"]["status"] == "READY"
+    assert boards["player_season_top_three"]["by_position"]["QB"] == [
+        {"player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil"},
+        {"player_id": "p4", "player": "Delta QB", "position": "QB", "points": 26.0, "fantasy_team": "Anvil"},
+        {"player_id": "p1", "player": "Alpha QB", "position": "QB", "points": 15.0, "fantasy_team": "Forge"},
+    ]
+    assert boards["rookie_season_leaders"]["by_position"]["QB"] == {
+        "player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil"
+    }
+    assert "RB" not in boards["rookie_season_leaders"]["by_position"]
+
+    incomplete = _season_player_boards(
+        [
+            {"week": 1, "roster_id": 1, "player_id": "p1", "position": "QB", "points": 10},
+            {"week": 1, "roster_id": 2, "player_id": "p3", "position": "QB", "points": 15},
+            {"week": 1, "roster_id": 2, "player_id": "p4", "position": "QB", "points": 20},
+        ],
+        snapshot,
+    )
+    assert incomplete["player_season_top_three"]["status"] == "UNAVAILABLE"
+    assert incomplete["player_season_top_three"]["by_position"] == {}
+    assert "Beta RB" in incomplete["player_season_top_three"]["reason"]
 
 
 def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):

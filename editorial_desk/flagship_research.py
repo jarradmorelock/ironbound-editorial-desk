@@ -133,6 +133,12 @@ def build_flagship_research_packet(
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
+    player_score_rows = (
+        chronicle.season_player_fantasy_finals(league_key, season)
+        if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
+        else []
+    )
+    player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
@@ -204,6 +210,7 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
+            **player_boards,
             "benchwarmer_of_the_week": _attach_stat_lines(
                 weekly.get("benchwarmer_of_the_week"), intelligence
             ),
@@ -308,6 +315,9 @@ def build_flagship_research_packet(
             "candidates": (story or {}).get("candidates") or [],
         },
     }
+    packet["division_outlook"] = _division_outlook(
+        dossier.get("divisions") or [], packet["remaining_schedule_strength"]
+    )
     context = packet["context_events"]
     for game in games:
         game["context_event_ids"] = context["by_game"].get(str(game.get("matchup_id")), [])
@@ -582,6 +592,12 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for game in coverage.get("games") or []:
         lines.extend(["", f"### Matchup {game.get('matchup_id')} — {game.get('matchup')}", ""])
         lines.append(f"- Final: {game.get('scoreline')}; margin {float(game.get('margin') or 0):.2f}.")
+        if game.get("division_status") == "VERIFIED_DIVISIONAL":
+            lines.append(f"- Divisional matchup: verified — {game.get('division_name')}.")
+        elif game.get("division_status") == "VERIFIED_NON_DIVISIONAL":
+            lines.append("- Divisional matchup: verified non-divisional.")
+        else:
+            lines.append("- Divisional matchup: unavailable; verify league division data.")
         for stat in game.get("starter_stat_lines") or []:
             lines.append(
                 f"- {stat.get('fantasy_team')}: {stat.get('player')} — {stat.get('nfl_stat_line')}"
@@ -802,6 +818,22 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             f"| {rank} | {row.get('team')} | {float(row.get('score') or 0):.2f} | {row.get('week')} |"
         )
 
+    lines.extend(["", "### Player Season Top 3", ""])
+    player_boards = honors.get("player_season_top_three") or {}
+    lines.append(f"Status: {player_boards.get('status', 'UNAVAILABLE')} — {player_boards.get('reason') or 'complete score history required'}.")
+    for position, rows in (player_boards.get("by_position") or {}).items():
+        for rank, row in enumerate(rows, 1):
+            lines.append(
+                f"- {position} #{rank}: {row.get('player')} — {row.get('fantasy_team')} — {float(row.get('points') or 0):.2f} cumulative FP."
+            )
+
+    rookie_boards = honors.get("rookie_season_leaders") or {}
+    lines.extend(["", "### Rookie Season Leaders", f"Status: {rookie_boards.get('status', 'UNAVAILABLE')} — {rookie_boards.get('reason') or 'complete score history required'}."])
+    for position, row in (rookie_boards.get("by_position") or {}).items():
+        lines.append(
+            f"- {position}: {row.get('player')} — {row.get('fantasy_team')} — {float(row.get('points') or 0):.2f} cumulative FP."
+        )
+
     lines.extend(["", "### Bad Beat"])
     bad_beat = honors.get("bad_beat")
     if bad_beat:
@@ -923,6 +955,26 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
     for row in odds.get("rows") or []:
         lines.append("- " + _compact(row))
 
+    outlook = packet.get("division_outlook") or {}
+    lines.extend(["", "## DIVISION OF DEATH / ROAD AHEAD", ""])
+    lines.append(
+        f"Status: {outlook.get('status', 'UNAVAILABLE')}; "
+        f"division data: {outlook.get('division_status', 'UNAVAILABLE')}; "
+        f"schedule data: {outlook.get('schedule_status', 'UNAVAILABLE')}."
+    )
+    for row in outlook.get("division_summaries") or []:
+        lines.append(
+            f"- {row.get('division_name') or row.get('division_id')}: "
+            f"{row.get('average_points', 'average unavailable')} average points; "
+            f"record {_compact(row.get('head_to_head_record') or {})}."
+        )
+    hardest = outlook.get("hardest_remaining_schedule") or {}
+    easiest = outlook.get("easiest_remaining_schedule") or {}
+    if hardest:
+        lines.append(f"- Hardest remaining schedule: {_compact(hardest)}")
+    if easiest:
+        lines.append(f"- Easiest remaining schedule: {_compact(easiest)}")
+
     lines.extend(["", "## REMAINING SCHEDULE STRENGTH", ""])
     schedule = packet.get("remaining_schedule_strength") or {}
     lines.append(f"Status: {schedule.get('status')}; Authority: {schedule.get('authority')}.")
@@ -996,6 +1048,12 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
     stat_rows = (((dossier.get("nfl_game_intelligence") or {}).get("stat_book") or {}).get("records") or [])
     signals = (dossier.get("nfl_game_intelligence") or {}).get("story_signals") or []
     team_stat_rows: dict[str, list[dict[str, Any]]] = {}
+    roster_by_id = {
+        int(row.get("roster_id") or 0): row
+        for row in snapshot.get("rosters") or []
+        if int(row.get("roster_id") or 0)
+    }
+    metadata = (snapshot.get("league") or {}).get("metadata") or {}
     for row in stat_rows:
         team_stat_rows.setdefault(str(row.get("fantasy_team") or ""), []).append(row)
 
@@ -1020,6 +1078,21 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
             for row in ordered
         )
         top_starter = _top_started_player_for_game(snapshot, team_names)
+        divisions = [
+            str(((roster_by_id.get(int(team.get("roster_id") or 0)) or {}).get("settings") or {}).get("division"))
+            if ((roster_by_id.get(int(team.get("roster_id") or 0)) or {}).get("settings") or {}).get("division") is not None
+            else None
+            for team in teams
+        ]
+        division_status = "UNAVAILABLE"
+        division_name = None
+        if len(divisions) == 2 and all(divisions):
+            if divisions[0] != divisions[1]:
+                division_status = "VERIFIED_NON_DIVISIONAL"
+            else:
+                division_name = metadata.get(f"division_{divisions[0]}")
+                if division_name:
+                    division_status = "VERIFIED_DIVISIONAL"
         games.append(
             {
                 "matchup_id": game.get("matchup_id"),
@@ -1032,9 +1105,32 @@ def _game_research(snapshot: dict[str, Any], dossier: dict[str, Any]) -> list[di
                 "starter_stat_lines": starter_stats,
                 "context_signals": signal_lines,
                 "top_started_player": top_starter,
+                "division_status": division_status,
+                **({"division_name": str(division_name)} if division_name else {}),
             }
         )
     return games
+
+
+def _division_outlook(
+    division_summaries: list[dict[str, Any]],
+    remaining_schedule_strength: dict[str, Any],
+) -> dict[str, Any]:
+    summaries = [dict(row) for row in division_summaries if isinstance(row, dict)]
+    schedule = dict(remaining_schedule_strength or {})
+    rows = [dict(row) for row in schedule.get("rows") or [] if isinstance(row, dict)]
+    rows.sort(key=lambda row: int(row.get("difficulty_rank") or 999))
+    division_status = "READY" if summaries else "UNAVAILABLE"
+    schedule_status = str(schedule.get("status") or "UNAVAILABLE")
+    return {
+        "status": "READY" if division_status == "READY" and schedule_status == "READY" and rows else "PARTIAL",
+        "division_status": division_status,
+        "division_summaries": summaries,
+        "schedule_status": schedule_status,
+        "remaining_schedule_strength": rows,
+        "hardest_remaining_schedule": rows[0] if rows else None,
+        "easiest_remaining_schedule": rows[-1] if rows else None,
+    }
 
 
 def _attach_beat_context_to_games(
@@ -1231,6 +1327,159 @@ def _season_team_score_top_three(
         )
     )
     return rows[:3]
+
+
+def _season_player_boards(
+    historical_rows: list[dict[str, Any]],
+    snapshot: dict[str, Any],
+) -> dict[str, Any]:
+    """Aggregate finalized weekly player scores without presenting gaps as full totals."""
+    from .weekly_features import _rostered_player_weeks
+
+    through_week = int(snapshot.get("week") or 0)
+    rosters = {
+        int(row.get("roster_id") or 0): row
+        for row in snapshot.get("rosters") or []
+        if int(row.get("roster_id") or 0)
+    }
+    team_names = _roster_team_names(snapshot)
+    players = snapshot.get("players") or {}
+
+    def display_player_name(player_id: str) -> str:
+        player = players.get(player_id) or {}
+        return str(player.get("full_name") or player.get("name") or player_id)
+
+    current_roster_by_player: dict[str, int] = {}
+    duplicate_current_players: set[str] = set()
+    for roster_id, roster in rosters.items():
+        for player_id in {
+            str(value)
+            for field in ("players", "taxi", "reserve")
+            for value in roster.get(field) or []
+        }:
+            if player_id in current_roster_by_player and current_roster_by_player[player_id] != roster_id:
+                duplicate_current_players.add(player_id)
+            current_roster_by_player[player_id] = roster_id
+
+    by_week_player: dict[tuple[int, str], dict[str, Any]] = {}
+    roster_coverage: dict[int, set[int]] = {}
+    conflicts: set[tuple[int, str]] = set()
+
+    def add_score(row: dict[str, Any], *, current: bool = False) -> None:
+        week = int(row.get("week") or 0)
+        roster_id = int(row.get("roster_id") or 0)
+        player_id = str(row.get("player_id") or "")
+        if not (0 < week <= through_week and roster_id in rosters and player_id):
+            return
+        roster_coverage.setdefault(week, set()).add(roster_id)
+        key = (week, player_id)
+        value = {
+            "week": week,
+            "roster_id": roster_id,
+            "player_id": player_id,
+            "position": row.get("position"),
+            "points": round(float(row.get("points") or 0), 2),
+        }
+        previous = by_week_player.get(key)
+        if previous and previous["roster_id"] != roster_id and previous["points"] != value["points"]:
+            conflicts.add(key)
+        if previous is None or current:
+            by_week_player[key] = value
+
+    for row in historical_rows:
+        if int(row.get("week") or 0) < through_week:
+            add_score(row)
+    for row in _rostered_player_weeks(snapshot):
+        add_score({**row, "week": through_week}, current=True)
+
+    expected_rosters = set(rosters)
+    missing_weeks = [
+        week
+        for week in range(1, through_week + 1)
+        if not expected_rosters.issubset(roster_coverage.get(week, set()))
+    ]
+    incomplete_players = {
+        player_id: [
+            week
+            for week in range(1, through_week + 1)
+            if (week, player_id) not in by_week_player
+        ]
+        for player_id in current_roster_by_player
+    }
+    incomplete_players = {
+        player_id: weeks
+        for player_id, weeks in incomplete_players.items()
+        if weeks
+    }
+    reasons = []
+    if missing_weeks:
+        reasons.append(
+            "missing finalized player scores for week(s) "
+            + ", ".join(str(value) for value in missing_weeks)
+        )
+    if incomplete_players:
+        names = []
+        for player_id, weeks in sorted(incomplete_players.items()):
+            missing = ", ".join(f"Week {week}" for week in weeks)
+            names.append(f"{display_player_name(player_id)} (missing {missing})")
+        reasons.append("incomplete fantasy-score history for " + "; ".join(names))
+    if conflicts:
+        reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
+    if duplicate_current_players:
+        reasons.append("one or more players are assigned to multiple current fantasy rosters")
+    status = "READY" if not reasons and through_week > 0 else "UNAVAILABLE"
+
+    totals: dict[str, float] = {}
+    for (_, player_id), row in by_week_player.items():
+        if player_id in current_roster_by_player:
+            totals[player_id] = totals.get(player_id, 0.0) + float(row["points"])
+
+    by_position: dict[str, list[dict[str, Any]]] = {}
+    rookie_by_position: dict[str, dict[str, Any]] = {}
+    if status == "READY":
+        for position in CORE_POSITIONS:
+            candidates = []
+            rookie_candidates = []
+            for player_id, points in totals.items():
+                player = players.get(player_id) or {}
+                player_position = str(player.get("position") or "").upper()
+                if not player_position:
+                    fantasy_positions = player.get("fantasy_positions") or []
+                    player_position = str(fantasy_positions[0] if fantasy_positions else "").upper()
+                if player_position != position:
+                    continue
+                roster_id = current_roster_by_player[player_id]
+                row = {
+                    "player_id": player_id,
+                    "player": display_player_name(player_id),
+                    "position": position,
+                    "points": round(points, 2),
+                    "fantasy_team": team_names.get(roster_id, f"Roster {roster_id}"),
+                }
+                candidates.append(row)
+                if player.get("years_exp") is not None and _safe_int(player.get("years_exp")) == 0:
+                    rookie_candidates.append(row)
+            candidates.sort(key=lambda row: (-row["points"], row["player"].casefold()))
+            rookie_candidates.sort(key=lambda row: (-row["points"], row["player"].casefold()))
+            by_position[position] = candidates[:3]
+            if rookie_candidates:
+                rookie_by_position[position] = rookie_candidates[0]
+
+    reason = "; ".join(reasons) if reasons else None
+    return {
+        "player_season_top_three": {
+            "status": status,
+            "through_week": through_week,
+            "reason": reason,
+            "by_position": by_position if status == "READY" else {},
+        },
+        "rookie_season_leaders": {
+            "status": status,
+            "through_week": through_week,
+            "reason": reason,
+            "by_position": rookie_by_position if status == "READY" else {},
+        },
+    }
 
 
 def _season_efficiency_top_three(

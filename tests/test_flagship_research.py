@@ -287,7 +287,8 @@ def test_flagship_contract_covers_all_eight_games_and_required_honors(tmp_path):
     )
 
     assert packet["validation"]["contract_valid"] is True
-    assert packet["validation"]["research_complete"] is True
+    assert packet["validation"]["research_complete"] is False
+    assert any("division" in row.casefold() for row in packet["validation"]["manual_verify"])
     assert len(packet["game_coverage"]["games"]) == 8
     assert all(game["division_status"] == "UNAVAILABLE" for game in packet["game_coverage"]["games"])
     assert packet["division_outlook"]["status"] == "PARTIAL"
@@ -335,13 +336,15 @@ def test_missing_tuesday_handoff_is_awaiting_input_not_data_failure(tmp_path):
 
     assert packet["validation"]["contract_valid"] is True
     assert packet["validation"]["research_complete"] is False
-    assert packet["validation"]["manual_verify"] == []
+    assert any("division" in row.casefold() for row in packet["validation"]["manual_verify"])
+    assert any("Player Season Top 3" in row for row in packet["validation"]["manual_verify"])
     waiting = " ".join(packet["validation"]["awaiting_tuesday_input"])
     assert "Power Rankings" in waiting
     assert "Playoff Odds" in waiting
     assert "WAR" not in waiting
     assert "cWAR" not in waiting
     assert "usage" not in waiting.lower()
+    assert "Division of Death" in waiting
 
 
 def test_internal_usage_makes_packet_complete_without_external_usage_war_or_cwar(tmp_path):
@@ -372,8 +375,8 @@ def test_internal_usage_makes_packet_complete_without_external_usage_war_or_cwar
         history_root=tmp_path,
     )
 
-    assert packet["validation"]["research_complete"] is True
-    assert packet["validation"]["awaiting_tuesday_input"] == []
+    assert packet["validation"]["research_complete"] is False
+    assert any("Division of Death" in row for row in packet["validation"]["awaiting_tuesday_input"])
     assert packet["usage_desk"]["status"] == "READY"
     assert packet["tuesday_external_inputs"]["war"]["status"] == "OPTIONAL_NOT_SUPPLIED"
     assert packet["tuesday_external_inputs"]["cwar"]["status"] == "OPTIONAL_NOT_SUPPLIED"
@@ -514,7 +517,7 @@ def test_ready_beat_news_is_rendered_with_source_attribution(tmp_path):
         },
     )
 
-    assert packet["validation"]["research_complete"] is True
+    assert packet["validation"]["research_complete"] is False
     assert any(
         game.get("beat_context")
         for game in packet["game_coverage"]["games"]
@@ -554,6 +557,40 @@ def test_rookie_watch_keeps_current_team_and_adds_ironbound_draft_context(tmp_pa
     text = render_flagship_research_packet(packet)
     assert "| Current Team | Ironbound Draft |" in text
     assert "1.03 — drafted by Team 2" in text
+
+
+def test_full_packet_validation_names_division_history_and_tuesday_gaps(tmp_path):
+    from editorial_desk.flagship_research import validate_flagship_research_packet
+
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+
+    validation = packet["validation"]
+    check_map = {row["name"]: row["passed"] for row in validation["checks"]}
+    assert check_map["game_division_evidence"] is True
+    assert check_map["player_season_history"] is False
+    assert check_map["rookie_season_history"] is False
+    assert any("division" in message.casefold() for message in validation["manual_verify"])
+    assert any("Player Season Top 3" in message for message in validation["manual_verify"])
+    assert any("Division of Death" in message for message in validation["awaiting_tuesday_input"])
+
+    rendered = render_flagship_research_packet(packet)
+    assert "Divisional matchup: unavailable" in rendered
+    assert "Rookie Disappointment — Editorial Candidates" in rendered
+    assert "Free Agent of the Week" in rendered
+    assert "Division of Death" in rendered
+    assert "Awaiting Tuesday Inputs" in rendered
+
+    packet["game_coverage"]["games"][0].pop("division_status")
+    invalid = validate_flagship_research_packet(packet)
+    assert invalid["contract_valid"] is False
 
 
 def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
@@ -599,6 +636,39 @@ def test_roster_keyed_tuesday_handoff_populates_power_board(tmp_path):
 def test_v07_contract_exposes_shared_flagship_spine_and_authoritative_forward_models(tmp_path):
     snapshot, dossier = _fixture()
     _write_history(tmp_path, dossier)
+    snapshot["league"]["metadata"] = {"division_1": "Forge", "division_2": "Anvil"}
+    for roster in snapshot["rosters"]:
+        roster["settings"]["division"] = 1 if int(roster["roster_id"]) % 2 else 2
+    dossier["divisions"] = [
+        {"division_id": "1", "division_name": "Forge"},
+        {"division_id": "2", "division_name": "Anvil"},
+    ]
+
+    class Chronicle:
+        def season_player_fantasy_finals(self, league_key, season):
+            return [
+                {
+                    "week": week,
+                    "roster_id": roster["roster_id"],
+                    "player_id": roster["players"][0],
+                    "position": snapshot["players"][roster["players"][0]]["position"],
+                    "points": 10 + roster["roster_id"],
+                }
+                for week in range(1, 4)
+                for roster in snapshot["rosters"]
+            ]
+
+        def season_efficiency(self, *args):
+            return []
+
+        def season_matchup_finals(self, *args):
+            return []
+
+        def identity_for_roster(self, *args):
+            return None
+
+        def league_events(self, *args):
+            return []
     rankings = tuple(
         OfficialPowerRanking(
             franchise_key=None,
@@ -657,6 +727,7 @@ def test_v07_contract_exposes_shared_flagship_spine_and_authoritative_forward_mo
         {"status": "available", "candidates": []},
         external,
         history_root=tmp_path,
+        chronicle=Chronicle(),
         roster_market={"status": "READY", "lineup_churn": [], "transactions": {}},
     )
 
@@ -675,6 +746,7 @@ def test_v07_contract_exposes_shared_flagship_spine_and_authoritative_forward_mo
     assert packet["weekly_matchup_forecast"]["rows"][0]["over_under"] == 245.5
     assert packet["editorial_style_guidance"]["stats_support_thesis"] is True
     assert packet["validation"]["research_complete"] is True
+    assert packet["weekly_honors"]["player_season_top_three"]["status"] == "READY"
 
 
 def test_flagship_brands_share_exact_page_functions_and_content_allocations():
@@ -701,6 +773,28 @@ def test_missing_page_fails_structural_contract_validation(tmp_path):
     packet = build_flagship_research_packet(snapshot, dossier, {}, _external(), history_root=tmp_path)
     packet['editorial_spine'].pop()
     assert validate_flagship_research_packet(packet)['research_complete'] is False
+    assert validate_flagship_research_packet(packet)['contract_valid'] is False
+
+
+def test_incorrect_game_report_allocation_fails_structural_contract_validation(tmp_path):
+    from editorial_desk.flagship_research import validate_flagship_research_packet
+
+    snapshot, dossier = _fixture()
+    _write_history(tmp_path, dossier)
+    packet = build_flagship_research_packet(
+        snapshot,
+        dossier,
+        {"status": "available", "candidates": []},
+        _external(),
+        history_root=tmp_path,
+    )
+    packet["editorial_spine"][4]["game_report_numbers"] = [1]
+
+    validation = validate_flagship_research_packet(packet)
+
+    assert validation["contract_valid"] is False
+    allocation = next(row for row in validation["checks"] if row["name"] == "game_report_allocation")
+    assert allocation["passed"] is False
 
 
 def test_game_research_marks_division_only_from_verified_roster_membership():

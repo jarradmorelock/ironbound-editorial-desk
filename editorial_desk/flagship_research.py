@@ -356,6 +356,29 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     if not spine_ok:
         manual.append("Shared flagship page structure is missing or inconsistent.")
 
+    report_pages = [
+        row for row in packet.get("editorial_spine") or [] if row.get("module") == "GAME_REPORTS"
+    ]
+    report_allocations = [row.get("game_report_numbers") for row in report_pages]
+    allocation_ok = (
+        report_allocations == [[1, 2], [3, 4], [5, 6]]
+        and len(report_pages) == 3
+        and int((packet.get("game_coverage") or {}).get("feature_slots") or 0) == 2
+        and int((packet.get("game_coverage") or {}).get("remaining_game_writeups") or 0) == 6
+    )
+    _check(
+        checks,
+        "game_report_allocation",
+        allocation_ok,
+        "three pages, two reports each, six non-feature writeups"
+        if allocation_ok
+        else "expected report pairs 1–2, 3–4, 5–6 and 2 feature slots",
+    )
+    if not allocation_ok:
+        manual.append(
+            "Weekly results must allocate six non-feature games as two reports on each of three pages."
+        )
+
     games = ((packet.get("game_coverage") or {}).get("games") or [])
     required_games = int((packet.get("game_coverage") or {}).get("required_matchups") or 8)
     _check(checks, "eight_matchups", len(games) == required_games, f"{len(games)}/{required_games} matchups present")
@@ -368,6 +391,29 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
     _check(checks, "unique_matchups", not duplicate_ids, "no duplicate matchup IDs" if not duplicate_ids else f"duplicates: {', '.join(duplicate_ids)}")
     if duplicate_ids:
         manual.append("Duplicate matchup coverage must be resolved before production.")
+
+    allowed_division_statuses = {
+        "VERIFIED_DIVISIONAL",
+        "VERIFIED_NON_DIVISIONAL",
+        "UNAVAILABLE",
+    }
+    explicit_divisions = len(games) == required_games and all(
+        game.get("division_status") in allowed_division_statuses for game in games
+    )
+    _check(
+        checks,
+        "game_division_evidence",
+        explicit_divisions,
+        "every matchup has an explicit division classification state"
+        if explicit_divisions
+        else "one or more matchup division states are missing/invalid",
+    )
+    if explicit_divisions and any(
+        game.get("division_status") == "UNAVAILABLE" for game in games
+    ):
+        manual.append(
+            "One or more matchup division identities are unavailable; verify league division data before labeling divisional games."
+        )
 
     for game in games:
         if not game.get("starter_stat_lines"):
@@ -440,6 +486,32 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         if not ok:
             manual.append(f"Weekly Honors: {key.replace('_', ' ')} is missing or empty.")
 
+    overall_id = str((honors.get("overall_player_of_the_week") or {}).get("player_id") or "")
+    positional_ids = [
+        str(row.get("player_id") or "")
+        for row in (honors.get("started_position_leaders") or {}).values()
+        if isinstance(row, dict)
+    ]
+    player_awards_distinct = bool(overall_id) and overall_id not in positional_ids and len(
+        positional_ids
+    ) == len(set(positional_ids)) and all(
+        isinstance((honors.get("started_position_leaders") or {}).get(position), dict)
+        and (honors.get("started_position_leaders") or {}).get(position, {}).get("player_id")
+        for position in CORE_POSITIONS
+    )
+    _check(
+        checks,
+        "weekly_player_award_distinctness",
+        player_awards_distinct,
+        "overall and positional starter awards name distinct players"
+        if player_awards_distinct
+        else "overall and positional starter awards are missing or overlap",
+    )
+    if not player_awards_distinct:
+        manual.append(
+            "Overall and positional player awards must identify distinct eligible starters."
+        )
+
     award_warnings = [f"{code}: {status.get('reason')}"
         for code, status in (honors.get("award_availability") or {}).items()
         if status.get("status") != "AVAILABLE"]
@@ -448,6 +520,37 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         award_warnings.append(
             "ROOKIE_DISAPPOINTMENT: "
             + str(rookie_disappointment_status.get("reason") or "projection evidence incomplete")
+        )
+
+    division_outlook = packet.get("division_outlook") or {}
+    division_summary_ready = division_outlook.get("division_status") == "READY" and bool(
+        division_outlook.get("division_summaries")
+    )
+    _check(
+        checks,
+        "division_outlook_evidence",
+        division_summary_ready,
+        "verified division summaries are present"
+        if division_summary_ready
+        else "verified division summaries are unavailable",
+    )
+    if not division_summary_ready:
+        manual.append(
+            "Division of Death needs verified division-level matchup context and standings inputs."
+        )
+
+    schedule = packet.get("remaining_schedule_strength") or {}
+    schedule_rows = schedule.get("rows") or []
+    schedule_ready = schedule.get("status") == "READY" and len(schedule_rows) == 16
+    _check(
+        checks,
+        "division_outlook_schedule",
+        schedule_ready,
+        f"{len(schedule_rows)}/16 teams with remaining-schedule strength",
+    )
+    if not schedule_ready:
+        awaiting.append(
+            "Division of Death / Road Ahead needs the complete 16-team remaining-schedule strength handoff."
         )
 
     season_week = int(packet.get("week") or 0)
@@ -489,6 +592,29 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         manual.append(
             "Cumulative team points board is incomplete in Chronicle/history; backfill or manually verify missing completed weeks."
         )
+
+    for key, check_name, label in (
+        ("player_season_top_three", "player_season_history", "Player Season Top 3"),
+        ("rookie_season_leaders", "rookie_season_history", "Rookie Season Leaders"),
+    ):
+        board = honors.get(key) or {}
+        has_applicable_positions = key == "rookie_season_leaders" or bool(
+            board.get("by_position")
+        )
+        board_ready = board.get("status") == "READY" and has_applicable_positions
+        _check(
+            checks,
+            check_name,
+            board_ready,
+            f"complete through Week {season_week}"
+            if board_ready
+            else str(board.get("reason") or board.get("status") or "unavailable"),
+        )
+        if not board_ready:
+            manual.append(
+                f"{label} requires complete per-player scoring history through Week {season_week}; "
+                + str(board.get("reason") or "source history unavailable")
+            )
 
     for key, label in (
         ("power_rankings_chart", "Power Rankings"),
@@ -564,7 +690,18 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
 
     ready = not manual and not awaiting
     return {
-        "contract_valid": not any(not row["passed"] for row in checks if row["name"] in {"eight_matchups", "unique_matchups"}),
+        "contract_valid": not any(
+            not row["passed"]
+            for row in checks
+            if row["name"]
+            in {
+                "flagship_spine",
+                "game_report_allocation",
+                "eight_matchups",
+                "unique_matchups",
+                "game_division_evidence",
+            }
+        ),
         "research_complete": ready,
         "checks": checks,
         "manual_verify": manual,

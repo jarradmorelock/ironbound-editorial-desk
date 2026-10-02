@@ -93,7 +93,7 @@ def build_dossier_email(
         else ""
     )
     message.set_content(
-        "The weekly reading packets are attached: Editor's Brief, Commissioner Requests, then Story Desk where applicable. Full evidence remains in the workflow artifacts.\n\n"
+        "The weekly reading packets and publication-complete factual packets are attached. The publication-complete JSON is the factual handoff for the local manuscript builder; no downstream research should be required.\n\n"
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
@@ -108,6 +108,18 @@ def build_dossier_email(
             content,
             subtype="markdown",
             filename=f"{league_key}-week-{week:02d}.md",
+        )
+    for markdown_path, _, dossier in packets:
+        complete_path = markdown_path.parent / "publication_complete_packet.json"
+        if not complete_path.exists():
+            continue
+        league = dossier.get("league") or {}
+        league_key = str(league.get("league_key") or markdown_path.parent.name)
+        message.add_attachment(
+            complete_path.read_bytes(),
+            maintype="application",
+            subtype="json",
+            filename=f"{league_key}-week-{week:02d}-publication-complete.json",
         )
     for path in publication_assets:
         message.add_attachment(

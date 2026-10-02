@@ -9,6 +9,7 @@ from .honors import research_honors
 from .weekly_features import _overall_player_of_week
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
+from .canonical_evidence import build_canonical_league_evidence
 
 
 FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -130,15 +131,14 @@ def build_flagship_research_packet(
     week = int(snapshot.get("week") or dossier.get("week") or 0)
     league_key = str(editorial.get("league_key") or "")
     history = _season_dossiers(history_root, season, league_key, week)
+    canonical_evidence = build_canonical_league_evidence(snapshot, chronicle)
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
-    player_score_rows = (
-        chronicle.season_player_fantasy_finals(league_key, season)
-        if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
-        else []
+    player_boards = _season_player_boards(
+        list(canonical_evidence.get("player_weeks") or []),
+        snapshot,
     )
-    player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
@@ -148,6 +148,7 @@ def build_flagship_research_packet(
         history,
         current_week=week,
         manager_of_the_week=honors_research.get("manager_of_the_week"),
+        entering_records=(canonical_evidence.get("entering_records") or {}).get(str(week)),
     )
     rookie_awards = _rookie_weekly_awards(weekly, snapshot, intelligence)
     health = dossier.get("roster_health") or {}
@@ -213,12 +214,9 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
-            "season_team_score_top_three": _season_team_score_top_three(
-                history,
-                snapshot=snapshot,
-                league_key=league_key,
-                season=season,
-                chronicle=chronicle,
+            "season_team_score_top_three": _canonical_team_score_top_three(
+                canonical_evidence,
+                through_week=week,
             ),
             **player_boards,
             "benchwarmer_of_the_week": _attach_stat_lines(
@@ -1567,6 +1565,30 @@ def _season_team_score_top_three(
     return rows[:3]
 
 
+def _canonical_team_score_top_three(
+    canonical_evidence: dict[str, Any],
+    *,
+    through_week: int,
+) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "team": row.get("team"),
+            "roster_id": row.get("roster_id"),
+            "score": float(row.get("points") or 0),
+            "weeks": int(row.get("through_week") or through_week),
+            "through_week": through_week,
+        }
+        for row in (canonical_evidence.get("team_season_totals") or {}).values()
+    ]
+    rows.sort(
+        key=lambda row: (
+            -float(row.get("score") or 0),
+            str(row.get("team") or "").casefold(),
+        )
+    )
+    return rows[:3]
+
+
 def _season_player_boards(
     historical_rows: list[dict[str, Any]],
     snapshot: dict[str, Any],
@@ -1636,31 +1658,12 @@ def _season_player_boards(
         for week in range(1, through_week + 1)
         if not expected_rosters.issubset(roster_coverage.get(week, set()))
     ]
-    incomplete_players = {
-        player_id: [
-            week
-            for week in range(1, through_week + 1)
-            if (week, player_id) not in by_week_player
-        ]
-        for player_id in current_roster_by_player
-    }
-    incomplete_players = {
-        player_id: weeks
-        for player_id, weeks in incomplete_players.items()
-        if weeks
-    }
     reasons = []
     if missing_weeks:
         reasons.append(
             "missing finalized player scores for week(s) "
             + ", ".join(str(value) for value in missing_weeks)
         )
-    if incomplete_players:
-        names = []
-        for player_id, weeks in sorted(incomplete_players.items()):
-            missing = ", ".join(f"Week {week}" for week in weeks)
-            names.append(f"{display_player_name(player_id)} (missing {missing})")
-        reasons.append("incomplete fantasy-score history for " + "; ".join(names))
     if conflicts:
         reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
     if duplicate_current_players:
@@ -1726,6 +1729,7 @@ def _manager_weekly_awards(
     *,
     current_week: int,
     manager_of_the_week: dict[str, Any] | None,
+    entering_records: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any]:
     lineup = list(dossier.get("lineup_efficiency") or [])
     winner_id = _safe_int((manager_of_the_week or {}).get("roster_id"))
@@ -1762,7 +1766,16 @@ def _manager_weekly_awards(
 
     expected_weeks = set(range(1, current_week))
     entering: dict[int, dict[str, int]] = {}
-    if expected_weeks:
+    if entering_records:
+        entering = {
+            int(roster_id): {
+                "wins": int((row or {}).get("wins") or 0),
+                "losses": int((row or {}).get("losses") or 0),
+                "ties": int((row or {}).get("ties") or 0),
+            }
+            for roster_id, row in entering_records.items()
+        }
+    elif expected_weeks:
         for roster_id, results in records.items():
             if set(results) != expected_weeks:
                 continue

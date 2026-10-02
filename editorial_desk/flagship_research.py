@@ -1678,12 +1678,50 @@ def _season_player_boards(
         for week in range(1, through_week + 1)
         if not expected_rosters.issubset(roster_coverage.get(week, set()))
     ]
+
+    publication_history = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
+    transaction_weeks = ((publication_history.get("transactions") or {}).get("weeks") or {})
+    acquired_week: dict[str, int] = {}
+    for raw_week, transactions in transaction_weeks.items():
+        try:
+            transaction_week = int(raw_week)
+        except (TypeError, ValueError):
+            continue
+        for transaction in transactions or []:
+            if transaction.get("status") != "complete":
+                continue
+            for player_id, roster_id in (transaction.get("adds") or {}).items():
+                player_id = str(player_id)
+                if current_roster_by_player.get(player_id) != _safe_int(roster_id):
+                    continue
+                acquired_week[player_id] = min(
+                    acquired_week.get(player_id, transaction_week),
+                    transaction_week,
+                )
+
+    incomplete_players = {}
+    for player_id in current_roster_by_player:
+        missing = [
+            week
+            for week in range(1, through_week + 1)
+            if (week, player_id) not in by_week_player
+            and week >= acquired_week.get(player_id, 1)
+        ]
+        if missing:
+            incomplete_players[player_id] = missing
+
     reasons = []
     if missing_weeks:
         reasons.append(
             "missing finalized player scores for week(s) "
             + ", ".join(str(value) for value in missing_weeks)
         )
+    if incomplete_players:
+        names = []
+        for player_id, weeks in sorted(incomplete_players.items()):
+            missing = ", ".join(f"Week {week}" for week in weeks)
+            names.append(f"{display_player_name(player_id)} (missing {missing})")
+        reasons.append("incomplete fantasy-score history for " + "; ".join(names))
     if conflicts:
         reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
     if duplicate_current_players:

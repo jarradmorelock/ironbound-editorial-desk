@@ -1,0 +1,27 @@
+{
+  "season": "2026",
+  "week": 3,
+  "required_matchups": 8,
+  "manager_honors": {
+    "bad_beat_team": "Martian Targaryen",
+    "escape_artist_team": "Granite Mountain Drakes",
+    "no_fear_team": "The Mad Hatters FC",
+    "no_fear_min_projected_deficit": 15
+  },
+  "player_honors": {
+    "overall": "Jahmyr Gibbs",
+    "benchwarmer": "Geno Smith"
+  },
+  "season_team_points_top_three": [
+    "Martian Targaryen",
+    "Madtown Coyotes",
+    "Frozen Tundraners"
+  ],
+  "division_averages": {
+    "Forge": 112.3608,
+    "Hammer": 107.1367,
+    "Anvil": 101.78,
+    "Crucible": 98.7117
+  },
+  "week_ahead_matchups": 8
+}

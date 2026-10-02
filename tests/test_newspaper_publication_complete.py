@@ -153,3 +153,17 @@ def test_volunteer_voice_packet_adds_king_of_the_hill_identity_and_forbids_divis
     assert honor["award_key"] == "KING_OF_THE_HILL"
     assert honor["display_name"] == "King of the Hill"
     assert "division_report" not in packet["required_departments"]
+
+
+def test_structural_newspaper_department_cannot_use_ready_no_items():
+    packet = _build(
+        "ballad_crier",
+        [_department("weekly_results", status="ready_no_items", data=[])],
+    )
+
+    assert packet["readiness"]["publication_ready"] is False
+    assert any(
+        gap["section"] == "weekly_results"
+        and gap["code"] == "INCOMPLETE_DEPARTMENT_EVIDENCE"
+        for gap in packet["readiness"]["blocking_gaps"]
+    )

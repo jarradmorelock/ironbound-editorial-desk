@@ -4,6 +4,7 @@ from editorial_desk.external_inputs import ExternalEditorialInputs, OfficialPowe
 from editorial_desk.flagship_research import (
     build_flagship_research_packet,
     render_flagship_research_packet,
+    _manager_weekly_awards,
 )
 
 
@@ -1036,3 +1037,62 @@ def test_free_agent_display_is_explicitly_unrostered():
     )
 
     assert result["fantasy_team"] == "UNROSTERED"
+
+
+def test_manager_weekly_awards_use_canonical_sleeper_entering_records_without_prior_dossiers():
+    dossier = {
+        "lineup_efficiency": [
+            {"roster_id": 1, "team": "Team 1", "efficiency": 0.9, "actual_points": 120},
+            {"roster_id": 2, "team": "Team 2", "efficiency": 0.8, "actual_points": 121},
+            {"roster_id": 3, "team": "Team 3", "efficiency": 0.7, "actual_points": 80},
+            {"roster_id": 4, "team": "Team 4", "efficiency": 0.6, "actual_points": 70},
+        ],
+        "scoreboard": [
+            {
+                "matchup_id": 1,
+                "teams": [
+                    {"roster_id": 1, "team": "Team 1", "points": 120.0},
+                    {"roster_id": 2, "team": "Team 2", "points": 121.0},
+                ],
+            },
+            {
+                "matchup_id": 2,
+                "teams": [
+                    {"roster_id": 3, "team": "Team 3", "points": 80.0},
+                    {"roster_id": 4, "team": "Team 4", "points": 70.0},
+                ],
+            },
+        ],
+    }
+    canonical = {
+        "entering_records": {
+            "3": {
+                "1": {"wins": 2, "losses": 0, "ties": 0},
+                "2": {"wins": 0, "losses": 2, "ties": 0},
+                "3": {"wins": 1, "losses": 1, "ties": 0},
+                "4": {"wins": 1, "losses": 1, "ties": 0},
+            }
+        }
+    }
+
+    result = _manager_weekly_awards(
+        dossier,
+        [],
+        current_week=3,
+        manager_of_the_week={"roster_id": 2},
+        canonical_evidence=canonical,
+    )
+
+    assert result["bad_beat"]["team"] == "Team 1"
+    assert result["bad_beat"]["entering_record"] == {
+        "wins": 2,
+        "losses": 0,
+        "ties": 0,
+    }
+    assert result["bad_beat"]["record_status"] == "VERIFIED"
+    assert result["escape_artist"]["team"] == "Team 3"
+    assert result["escape_artist"]["entering_record"] == {
+        "wins": 1,
+        "losses": 1,
+        "ties": 0,
+    }

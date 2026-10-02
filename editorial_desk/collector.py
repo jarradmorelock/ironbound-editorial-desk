@@ -230,15 +230,15 @@ def _collect_flagship_context(
         except (requests.RequestException, ValueError, KeyError) as exc:
             transaction_errors[str(schedule_week)] = str(exc)
 
-    drafts = _optional_list(client.drafts, league_id)
+    drafts = _optional_client_list(client, "drafts", league_id)
     draft_records: list[dict[str, Any]] = []
     draft_errors: dict[str, str] = {}
     for draft in drafts.get("records") or []:
         draft_id = str(draft.get("draft_id") or "")
         if not draft_id:
             continue
-        picks = _optional_list(client.draft_picks, draft_id)
-        traded = _optional_list(client.draft_traded_picks, draft_id)
+        picks = _optional_client_list(client, "draft_picks", draft_id)
+        traded = _optional_client_list(client, "draft_traded_picks", draft_id)
         draft_records.append(
             {
                 "draft": draft,
@@ -251,8 +251,8 @@ def _collect_flagship_context(
         if traded.get("status") != "available":
             draft_errors[f"{draft_id}:traded_picks"] = str(traded.get("error"))
 
-    winners = _optional_list(client.winners_bracket, league_id)
-    losers = _optional_list(client.losers_bracket, league_id)
+    winners = _optional_client_list(client, "winners_bracket", league_id)
+    losers = _optional_client_list(client, "losers_bracket", league_id)
 
     if week < 18:
         try:
@@ -325,6 +325,21 @@ def _collect_flagship_context(
         },
         "next_week_projections": next_week_projections,
     }
+
+
+def _optional_client_list(
+    client: Any,
+    method_name: str,
+    *args: Any,
+) -> dict[str, Any]:
+    fetcher = getattr(client, method_name, None)
+    if not callable(fetcher):
+        return {
+            "status": "unavailable",
+            "records": [],
+            "error": f"{method_name} is not supported by this Sleeper client",
+        }
+    return _optional_list(fetcher, *args)
 
 
 def _optional_list(fetcher: Any, *args: Any) -> dict[str, Any]:

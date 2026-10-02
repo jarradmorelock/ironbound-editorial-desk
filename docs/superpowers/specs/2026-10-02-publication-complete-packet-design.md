@@ -2,12 +2,13 @@
 
 **Date:** 2026-10-02  
 **Project:** Ironbound Editorial Desk  
-**Status:** Design for review  
-**Primary acceptance fixture:** `ironbound weekly 2026.04 week 03.pptx`
+**Status:** Approved design, amended for all publication profiles  
+**Primary flagship acceptance fixtures:** `ironbound weekly 2026.04 week 03.pptx` and the most recent completed regular-season Unbound Weekly issue  
+**Newspaper acceptance basis:** locked newspaper contracts plus recent completed regular-season issues where available
 
 ## 1. Purpose
 
-The Editorial Desk must produce a research package that is complete enough for a disconnected local manuscript builder to write every non-personal factual section of a publication without performing additional research.
+The Editorial Desk must produce a research package that is complete enough for a disconnected local manuscript builder to write every factual section of every supported publication without performing additional research. Ironbound Weekly and Unbound Weekly are equal flagship publications and must meet the same deep research standard. The five newspaper publications use the same hard offline boundary with smaller, profile-specific evidence requirements.
 
 The target workflow is:
 
@@ -26,7 +27,7 @@ A packet is publication-complete only when:
 
 > A disconnected manuscript builder can produce every non-personal factual page of the issue without additional retrieval, research, calculation, screenshots, or human-supplied facts.
 
-The finished Week 3 Ironbound magazine is the first gold-standard acceptance case. The pipeline is not considered flagship-ready until its research output can support the factual contents of that issue without the supplemental lookups that were required during manual production.
+The finished Week 3 Ironbound magazine is the first gold-standard acceptance case. A recent completed regular-season Unbound Weekly issue is the second flagship acceptance case. The flagship pipeline is not considered ready until both publications can be written from their own packets without supplemental lookups. The newspaper pipeline uses the same rule against downstream research, validated against each locked paper contract and recent regular-season issues where available.
 
 The personal `FROM_THE_IRONBOUND_DESK` page is intentionally excluded from this criterion. The publisher must reserve and render that page when approved user copy is supplied, but no automated system should invent its content.
 
@@ -91,7 +92,18 @@ The packet must not encode a permanent 22-, 24-, 25-, or 26-page magazine requir
 
 The issue plan supplies a page/module plan. The normal flagship structure may evolve or expand. Research completeness is defined by required departments and selected story assignments, not by a fixed number of pages.
 
-### 4.5 Ranking outputs remain authoritative
+### 4.5 Publication profiles share evidence, not requirements
+
+Canonical evidence is league factual infrastructure and must not be flagship-specific. Every publication-enabled league should expose the historical matchup, lineup, transaction, health, projection, and source evidence its publication profile may require.
+
+Publication profiles then decide which departments are blocking:
+
+- **Ironbound Weekly** and **Unbound Weekly** use the full flagship research contract.
+- **The Ballad Crier**, **The Stampede**, **The Volunteer Voice**, **The Saturday Standard**, and **The Hollywood Beat** use smaller newspaper contracts.
+- A missing specialized dependency may block one publication without blocking another.
+- Shared metrics such as lineup efficiency, matchup-flipping decisions, health status, transactions, and historical records must be calculated once and reused consistently.
+
+### 4.6 Ranking outputs remain authoritative
 
 The Ironbound Power Rankings system remains the authority for:
 
@@ -748,23 +760,71 @@ Tests must cover:
 - optional-source warnings;
 - packet/brief evidence-ID integrity.
 
-## 19. Newspapers
+## 19. Publication profiles
 
-The same boundary applies to newspapers:
+The same offline boundary applies to all seven weekly publications:
 
-> publication packet -> offline manuscript -> human approval -> PPTX.
+> publication-complete packet -> offline manuscript -> human approval -> PPTX.
 
-Newspapers may use a smaller department set and lighter enrichment than the two flagship magazines, but their manuscript builders receive publication-complete factual packets too.
+### 19.1 Equal flagship standard
 
-Implementation should first prove the contract with Ironbound Week 3, then apply the generic envelope/readiness machinery to Unbound and the newspaper profiles.
+**Ironbound Weekly** and **Unbound Weekly / Free Ironbound** are equal flagship publications.
 
-This avoids weakening the flagship acceptance case while keeping one common publishing architecture.
+They share the same Publication-Complete Packet envelope, canonical evidence resolver, source manifest, readiness semantics, and deep evidence standard. Their page structures, editorial emphasis, team identities, and branded departments may differ, but neither may rely on downstream research.
+
+The Unbound acceptance case must prove the packet supports its established regular-season departments, including game coverage, Usage Desk, honors and Rookie Watch, Power Board, authoritative forecast/ranking assets, forward-looking slate/division material, market, health, and sources/model notes.
+
+### 19.2 Newspaper standard
+
+The five newspapers use the same canonical evidence core and hard offline boundary, but each has a smaller profile-specific readiness contract:
+
+- **The Ballad Crier:** matchup/median facts, result-flipping Weekly Rounds, standings/rankings, honors, Waiver Star, Ward Report, Record Watch, next card.
+- **The Stampede:** standings/power movement, lineup and award evidence, waiver/transactions, real-NFL workload lines for Heavy Lifting, health, Record Watch, next shift.
+- **The Volunteer Voice:** family-league results/median, manager-decision evidence, league-wide honors, efficiency, notebook awards, health, Record Watch, next-week scouting. Dormant Sleeper divisions are forbidden.
+- **The Saturday Standard:** offense and IDP as equal first-class evidence, active divisions/polls, lineup decisions, dynasty market, transactions, rookie/recruiting evidence, future picks, health, next-week slate.
+- **The Hollywood Beat:** Box Office/standings, late-window context, honors, lineup flips, efficiency, transaction impact, health, weekly briefs, next bill.
+
+A publication is blocked only by evidence required by its own profile. Optional flagship enrichments do not become newspaper blockers unless that paper's contract explicitly requires them.
+
+### 19.3 Newspaper readiness must validate evidence, not labels
+
+The current newspaper validator's presence check is insufficient for local automated writing.
+
+Future readiness must verify the contents needed to write the department. Examples:
+
+- `health_status` is ready only when required player/team/status/reserve/timestamp evidence is present as of the cutoff;
+- `lineup_flip_candidates` is ready only when legal alternatives and resulting score flips were actually evaluated;
+- `transactions` is ready only when applicable players/picks/FAAB/teams are normalized;
+- `standings` is ready only when records, points, and any median result required by league rules are complete;
+- `weekly_honors` is ready only when every required honor is either deterministically resolved or explicitly `ready_no_items` under the paper's rules.
+
+### 19.4 Volunteer Voice correction and flavor
+
+The current Rocky Top Rumble configuration has no active publication divisions. Older design language about Division Pulse, divisional MVPs, and a gold-foil divisional winner is superseded.
+
+The league-wide top **STARTED** player honor is:
+
+- internal key: `KING_OF_THE_HILL`
+- display label: **King of the Hill**
+
+This replaces the temporary **Mountain MVP** label and deliberately references the Church Hill local setting. It is a flavor/label change only; the underlying calculation remains the highest-scoring started player in the league for the reviewed week.
+
+### 19.5 Newspaper acceptance references
+
+Use recent completed regular-season issues as factual acceptance references where available:
+
+- Ballad Crier regular-season issue;
+- Volunteer Voice regular-season issue;
+- Saturday Standard regular-season issue;
+- Hollywood Beat regular-season issue.
+
+Until a representative regular-season Stampede issue is available, the locked Stampede weekly contract is the acceptance authority. Existing published papers are references, not runtime dependencies and are not retroactively regenerated.
 
 ## 20. Migration strategy
 
-### Phase 1: Canonical historical league facts
+### Phase 1: Shared canonical league evidence
 
-Implement canonical objects for:
+Implement canonical objects for every publication-enabled league:
 
 - historical matchups;
 - submitted starters;
@@ -772,45 +832,60 @@ Implement canonical objects for:
 - entering records;
 - cumulative team scoring;
 - cumulative player scoring;
-- division records/scoring.
+- standings/median results where league rules require them;
+- division records/scoring only when divisions are active;
+- lineup efficiency and legal optimal lineup;
+- result-flipping lineup decisions.
 
-Use Sleeper history already captured in the flagship snapshot before adding redundant new collection.
+Historical Sleeper collection that is currently flagship-only should become shared publication evidence, with profile-driven optional depth rather than duplicated collectors.
 
-### Phase 2: Transactions and projection-dependent honors
+### Phase 2: Transactions, projections, and honors
 
-Normalize:
+Normalize for all applicable publication profiles:
 
 - complete transactions;
 - pick provenance;
+- FAAB;
 - recent acquisition impact;
 - retained same-week projections;
-- candidate-specific award qualification.
+- candidate-specific award qualification;
+- weekly/static honors and cumulative boards.
 
 ### Phase 3: Health/news and source manifest
 
 Unify:
 
 - current roster health;
-- injury/practice observations;
+- Sleeper reserve/IR state;
+- injury/practice observations when available;
 - accepted beat/news context;
 - source freshness/status;
 - explicit information cutoff.
 
-### Phase 4: Publication-Complete Packet and hard validator
+### Phase 4: Common Publication-Complete Packet envelope and profile validators
 
-Build the new artifact from the normalized research.
+Build one generic artifact envelope and profile-driven readiness machinery.
 
-Do not declare `publication_ready=true` until all required flagship departments pass.
+Do not declare `publication_ready=true` until every department required by that publication profile passes.
 
-### Phase 5: Week 3 offline acceptance case
+### Phase 5: Dual flagship offline acceptance
 
-Recreate the required factual capability of the finished Week 3 issue using only the packet.
+Prove:
 
-Close any remaining research gaps upstream.
+1. Ironbound Week 3 can reproduce the factual capabilities of the finished Week 3 issue without new research.
+2. A completed regular-season Unbound issue can be supported to the same offline standard.
 
-### Phase 6: Local editorial contracts
+Close all recurring flagship research gaps upstream.
 
-Implement:
+### Phase 6: Newspaper contract audit and offline acceptance
+
+Upgrade all five newspaper validators from section-presence checks to evidence-completeness checks.
+
+Validate against recent regular-season issues where available and the locked weekly contract otherwise. Formalize the Volunteer Voice no-division rule and `KING_OF_THE_HILL` label.
+
+### Phase 7: Local editorial contracts
+
+After every publication profile can emit a publication-complete factual packet, implement:
 
 - editorial brief;
 - issue plan;
@@ -818,9 +893,9 @@ Implement:
 - structured manuscript;
 - continuity validator.
 
-### Phase 7: PPTX publisher
+### Phase 8: PPTX publisher
 
-Only after the offline manuscript path is proven, connect the approved manuscript to the editable PowerPoint production templates.
+Only after the offline manuscript path is proven, connect approved manuscripts to editable PowerPoint production templates.
 
 ## 21. Non-goals for this implementation cycle
 
@@ -838,14 +913,17 @@ This design does not require:
 
 ## 22. Definition of done
 
-The flagship research architecture is ready for local publishing when all of the following are true:
+The research architecture is ready for local publishing when all of the following are true:
 
-1. Week 3 Ironbound can generate a Publication-Complete Packet with no unresolved required research gaps except limitations that genuinely did not exist by the configured cutoff.
-2. Every factual element needed for the non-personal Week 3 magazine departments is present or deterministically derivable inside that packet.
-3. The local manuscript builder can run with research/network clients disabled.
-4. The manuscript builder performs no factual calculations beyond formatting already-normalized values.
-5. The commissioner can edit/approve the manuscript and insert From the Ironbound Desk.
-6. The PowerPoint publisher can build the issue from the approved manuscript and packaged assets without research access.
-7. The same contract can be applied to Unbound, then to newspaper profiles with smaller required-department sets.
+1. Ironbound and Unbound each generate Publication-Complete Packets with no unresolved required research gaps except limitations that genuinely did not exist by the configured cutoff.
+2. The Ironbound Week 3 acceptance fixture and the selected completed Unbound regular-season fixture both pass offline factual-capability tests.
+3. Every newspaper publication profile validates actual evidence completeness, not merely section presence.
+4. Ballad Crier, Volunteer Voice, Saturday Standard, and Hollywood Beat pass representative regular-season offline acceptance fixtures; Stampede passes its locked weekly contract until a representative regular-season issue exists.
+5. Every factual element needed for each publication's required departments is present or deterministically derivable inside that publication's packet.
+6. Downstream local manuscript consumers can run with research/network clients disabled.
+7. Downstream manuscript consumers perform no factual calculations beyond formatting already-normalized values.
+8. The commissioner can edit/approve the manuscript; the personal **From the Ironbound Desk** column remains a deliberate manual insertion for Ironbound.
+9. The PowerPoint publisher can build each issue from the approved manuscript and packaged assets without research access.
+10. The Volunteer Voice league-wide started-player honor renders as **King of the Hill** and dormant division evidence remains suppressed.
 
 That is the boundary the project should optimize for going forward.

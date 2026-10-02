@@ -243,3 +243,43 @@ def test_newspaper_health_renderer_drops_bare_active_noise():
     assert "Questionable Star" in text
     assert "Hamstring" in text
     assert "Healthy Star" not in text
+
+
+def test_newspaper_research_exposes_shared_canonical_history():
+    week1 = [
+        {"roster_id": 1, "matchup_id": 1, "points": 100.0, "players": ["p1"], "starters": ["p1"], "players_points": {"p1": 10.0}},
+        {"roster_id": 2, "matchup_id": 1, "points": 90.0, "players": ["p2"], "starters": ["p2"], "players_points": {"p2": 9.0}},
+    ]
+    week2 = [
+        {"roster_id": 1, "matchup_id": 1, "points": 110.0, "players": ["p1"], "starters": ["p1"], "players_points": {"p1": 20.0}},
+        {"roster_id": 2, "matchup_id": 1, "points": 95.0, "players": ["p2"], "starters": ["p2"], "players_points": {"p2": 11.0}},
+    ]
+    snapshot = {
+        "week": 2,
+        "league": {"season": "2026"},
+        "editorial": {"league_key": "paper", "publication_enabled": True},
+        "users": [
+            {"user_id": "u1", "display_name": "One"},
+            {"user_id": "u2", "display_name": "Two"},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1"},
+            {"roster_id": 2, "owner_id": "u2"},
+        ],
+        "players": {"p1": {"full_name": "One"}, "p2": {"full_name": "Two"}},
+        "matchups": week2,
+        "publication_sleeper": {
+            "schedule": {"status": "available", "weeks": {"1": week1, "2": week2}, "errors": {}}
+        },
+        "next_matchups": {"status": "available"},
+        "nfl_context": {},
+    }
+
+    research = build_newspaper_research_packet(
+        snapshot,
+        {"roster_health": {"status": "available"}},
+        _packet("ballad_crier", []),
+    )
+
+    assert research["canonical_evidence"]["coverage"]["status"] == "READY"
+    assert research["canonical_evidence"]["entering_records"]["2"]["1"]["wins"] == 1

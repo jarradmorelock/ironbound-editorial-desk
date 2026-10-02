@@ -139,3 +139,34 @@ def test_award_audit_explains_qualified_and_failed_rules():
         and row["metrics"]["threshold"] == 50.0
         for row in hammer_rows
     )
+
+
+def test_unprojected_fringe_bench_player_does_not_disable_evaluable_awards():
+    snapshot = _snapshot()
+    snapshot["players"]["fringe"] = {"position": "WR", "full_name": "Fringe Bench"}
+    snapshot["rosters"][0]["players"].append("fringe")
+    snapshot["matchups"][0]["players"].append("fringe")
+    snapshot["matchups"][0]["players_points"]["fringe"] = 1.0
+
+    result = _evaluate(snapshot)
+
+    assert result["award_availability"]["IRON_BALLS"]["status"] == "AVAILABLE"
+    assert result["award_availability"]["NO_FEAR"]["status"] == "AVAILABLE"
+    assert "IRON_BALLS" in _types(result)
+    assert "NO_FEAR" in _types(result)
+
+
+def test_full_forge_is_roster_specific_when_other_roster_projection_is_missing():
+    snapshot = _snapshot()
+    # Team 1 starter has a verified projection and beats it.
+    snapshot["matchups"][0]["players_points"]["a"] = 21.0
+    snapshot["matchups"][0]["points"] = 21.0
+    # Remove only the opponent starter's projection. Team 1 can still be
+    # evaluated for Full Forge even though the matchup cannot support No Fear.
+    del snapshot["ranking_inputs"]["sleeper_projections"]["players"]["o"]
+
+    result = _evaluate(snapshot)
+
+    assert result["award_availability"]["FULL_FORGE"]["status"] in {"AVAILABLE", "PARTIAL"}
+    assert "FULL_FORGE" in _types(result)
+    assert result["award_availability"]["NO_FEAR"]["status"] in {"PARTIAL", "UNAVAILABLE"}

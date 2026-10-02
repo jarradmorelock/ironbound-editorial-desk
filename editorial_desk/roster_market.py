@@ -6,6 +6,7 @@ from typing import Any
 from .market_rates import timestamp
 from .beat_news import _reporting_window
 from .chronicle_queries import ChronicleQueries
+from .transaction_evidence import build_transaction_evidence
 
 
 def build_network_market_context(
@@ -89,24 +90,27 @@ def build_roster_market_report(
     team_names = _roster_team_names(snapshot)
     week = int(snapshot.get("week") or dossier.get("week") or 0)
 
-    current = _current_transactions(snapshot)
-    all_transactions = _all_transactions(snapshot)
+    transaction_evidence = build_transaction_evidence(snapshot, chronicle)
+    all_transactions = list(transaction_evidence.get("transactions") or [])
     normalized_current = [
-        _normalize_transaction(tx, players, team_names)
-        for tx in current
+        dict(tx)
+        for tx in all_transactions
+        if int(tx.get("week") or 0) == week
     ]
 
     movement_counts: Counter[str] = Counter()
     movement_kinds: dict[str, Counter[str]] = defaultdict(Counter)
     for tx in all_transactions:
-        for player_id in set(tx.get("adds") or {}) | set(tx.get("drops") or {}):
-            movement_counts[str(player_id)] += 1
-        for player_id in (tx.get("adds") or {}):
-            pid = str(player_id)
-            movement_kinds[pid]["adds"] += 1
-        for player_id in (tx.get("drops") or {}):
-            pid = str(player_id)
-            movement_kinds[pid]["drops"] += 1
+        player_rows = (tx.get("players") or {}).get("all") or []
+        for player in player_rows:
+            player_id = str(player.get("player_id") or "")
+            if not player_id:
+                continue
+            movement_counts[player_id] += 1
+            if player.get("to_roster_id") is not None:
+                movement_kinds[player_id]["adds"] += 1
+            if player.get("from_roster_id") is not None:
+                movement_kinds[player_id]["drops"] += 1
 
     repeated = [
         {
@@ -152,8 +156,9 @@ def build_roster_market_report(
         ),
     )
 
+    publication_context = _publication_context(snapshot)
     source_coverage = {
-        key: ((snapshot.get("flagship_sleeper") or {}).get(key) or {}).get("status", "unknown")
+        key: (publication_context.get(key) or {}).get("status", "unknown")
         for key in ("transactions", "schedule")
     }
     missing_required = any(value in {"unavailable", "partial"} for value in source_coverage.values())
@@ -168,6 +173,9 @@ def build_roster_market_report(
             "current_week": normalized_current,
             "current_week_count": len(normalized_current),
             "season_event_count": len(all_transactions),
+            "coverage": dict(transaction_evidence.get("coverage") or {}),
+            "pick_provenance_status": transaction_evidence.get("pick_provenance_status"),
+            "warnings": list(transaction_evidence.get("warnings") or []),
         },
         "repeated_asset_movement": repeated[:20],
         "roster_architecture": architecture,
@@ -191,10 +199,18 @@ def build_roster_market_report(
     }
 
 
+def _publication_context(snapshot: dict[str, Any]) -> dict[str, Any]:
+    return (
+        snapshot.get("publication_sleeper")
+        or snapshot.get("flagship_sleeper")
+        or {}
+    )
+
+
 def _current_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
     week = str(int(snapshot.get("week") or 0))
-    flagship = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {})
-    weeks = flagship.get("weeks") or {}
+    transactions = (_publication_context(snapshot).get("transactions") or {})
+    weeks = transactions.get("weeks") or {}
     rows = []
     if isinstance(weeks, dict) and (week in weeks or int(week) in weeks):
         rows = weeks.get(week, weeks.get(int(week), []))
@@ -204,8 +220,8 @@ def _current_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _all_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    flagship = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {})
-    weeks = flagship.get("weeks") or {}
+    transactions = (_publication_context(snapshot).get("transactions") or {})
+    weeks = transactions.get("weeks") or {}
     rows: list[dict[str, Any]] = []
     if isinstance(weeks, dict):
         for tx_week, values in weeks.items():
@@ -282,7 +298,7 @@ def _lineup_churn(
         int(row.get("roster_id") or 0): {str(pid) for pid in row.get("starters") or [] if pid and str(pid) != "0"}
         for row in snapshot.get("matchups") or []
     }
-    schedule = ((snapshot.get("flagship_sleeper") or {}).get("schedule") or {})
+    schedule = (_publication_context(snapshot).get("schedule") or {})
     weeks = schedule.get("weeks") or {}
     previous_rows = weeks.get(str(week - 1)) or weeks.get(week - 1) or []
     previous = {

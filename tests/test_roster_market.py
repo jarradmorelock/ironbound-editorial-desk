@@ -260,3 +260,41 @@ def test_status_history_survives_news_outage_and_player_drop(tmp_path):
     report = build_roster_market_report(snapshot, {}, {'status': 'UNAVAILABLE'}, None,
                                        chronicle=ChronicleQueries(tmp_path))
     assert [e['event_id'] for e in report['status_timeline']['events']] == ['dropped-injury']
+
+
+def test_roster_market_transaction_desk_preserves_complete_trade_compensation():
+    snapshot = _snapshot()
+    snapshot["users"].append(
+        {"user_id": "u2", "display_name": "Other", "metadata": {"team_name": "Other Team"}}
+    )
+    snapshot["rosters"].append(
+        {"roster_id": 2, "owner_id": "u2", "players": ["p4"]}
+    )
+    snapshot["players"]["p4"] = {"full_name": "Player Four", "position": "RB"}
+    trade = {
+        "transaction_id": "tx-trade",
+        "type": "trade",
+        "status": "complete",
+        "roster_ids": [1, 2],
+        "adds": {"p2": 1, "p4": 2},
+        "drops": {"p2": 2, "p4": 1},
+        "draft_picks": [
+            {
+                "season": "2027",
+                "round": 1,
+                "roster_id": 1,
+                "previous_owner_id": 1,
+                "owner_id": 2,
+            }
+        ],
+    }
+    snapshot["transactions"] = [trade]
+    snapshot["flagship_sleeper"]["transactions"]["weeks"]["3"] = [trade]
+
+    report = build_roster_market_report(snapshot, {}, None, None)
+    row = report["transactions"]["current_week"][0]
+
+    assert row["transaction_id"] == "tx-trade"
+    assert row["draft_picks"][0]["original_team"] == "Blue Moose"
+    assert row["draft_picks"][0]["new_owner_team"] == "Other Team"
+    assert row["players"]["received_by"]["Blue Moose"][0]["player"] == "Quarterback Two"

@@ -228,3 +228,38 @@ def test_newspaper_renderer_never_emits_json_only_placeholder():
     assert "Structured evidence is present" not in text
     assert "team=Alpha" in text
     assert "value=42" in text
+
+
+def test_season_score_board_uses_canonical_sleeper_totals_without_chronicle():
+    snapshot = {
+        "week": 3,
+        "users": [
+            {"user_id": "u1", "display_name": "One", "metadata": {"team_name": "Team One"}},
+            {"user_id": "u2", "display_name": "Two", "metadata": {"team_name": "Team Two"}},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1"},
+            {"roster_id": 2, "owner_id": "u2"},
+        ],
+        "matchups": [],
+    }
+    canonical = {
+        "team_season_totals_status": "READY",
+        "team_season_totals": {
+            "1": {"roster_id": 1, "team": "Team One", "points": 330.0, "weeks": 3, "through_week": 3},
+            "2": {"roster_id": 2, "team": "Team Two", "points": 285.0, "weeks": 3, "through_week": 3},
+        },
+    }
+
+    rows = _season_team_score_top_three(
+        [],
+        snapshot=snapshot,
+        league_key="test",
+        season="2026",
+        chronicle=None,
+        canonical_evidence=canonical,
+    )
+
+    assert rows[0]["team"] == "Team One"
+    assert rows[0]["score"] == 330.0
+    assert rows[0]["weeks"] == 3

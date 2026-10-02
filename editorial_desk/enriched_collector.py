@@ -19,6 +19,7 @@ from .flagship_research import (
 )
 from .publication_packets import build_publication_packet
 from .publication_render import write_publication_packet
+from .publication_sources import build_source_manifest, health_evidence
 from .newspaper_research import (
     build_newspaper_research_packet,
     write_newspaper_research_packet,
@@ -166,6 +167,13 @@ def collect_all(
                     issue_network,
                     chronicle=ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None,
                 )
+                support_evidence = _publication_support_evidence(
+                    snapshot,
+                    dossier,
+                    external_inputs,
+                    beat_report=beat_report,
+                    publication_assets=publication_assets,
+                )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,
                     dossier,
@@ -182,6 +190,12 @@ def collect_all(
                     roster_market=roster_market,
                 )
                 if flagship_packet is not None:
+                    flagship_packet["publication_source_manifest"] = support_evidence[
+                        "source_manifest"
+                    ]
+                    flagship_packet["publication_health_evidence"] = support_evidence[
+                        "health_evidence"
+                    ]
                     honors = flagship_packet["weekly_honors"]
                     dossier.setdefault("awards", {})["manager_of_the_week"] = honors["manager_of_the_week"]
                     dossier["awards"]["exceptional_loss_review"] = honors["exceptional_loss_review"]
@@ -196,6 +210,33 @@ def collect_all(
         generated.append(reading_path)
 
     return generated
+
+
+def _publication_support_evidence(
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    external_inputs,
+    *,
+    beat_report: dict[str, Any] | None,
+    publication_assets: dict[str, Any] | None,
+) -> dict[str, Any]:
+    source_manifest = build_source_manifest(
+        snapshot,
+        dossier,
+        external_inputs,
+        beat_report=beat_report,
+        publication_assets=publication_assets,
+    )
+    cutoff = source_manifest.get("information_cutoff")
+    return {
+        "source_manifest": source_manifest,
+        "health_evidence": health_evidence(
+            snapshot,
+            dossier,
+            beat_report,
+            cutoff,
+        ),
+    }
 
 
 def _materialize_publication_assets(

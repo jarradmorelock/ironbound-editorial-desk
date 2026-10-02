@@ -113,7 +113,7 @@ PROFILE_CONTRACTS: dict[str, dict[str, Any]] = {
         "editorial_notes": [
             "Rocky Top Rumble divisions are disabled. Treat any Sleeper division metadata as dormant configuration, not publication evidence.",
             "Keep the family-league packet compact: lead result, decision desk, table/median, league-wide honors, efficiency, notebook, and next-week support.",
-            "Mountain MVP is the league-wide top started-player honor; do not manufacture divisional or gold-foil awards from dormant divisions.",
+            "King of the Hill is the league-wide top started-player honor; do not manufacture divisional or gold-foil awards from dormant divisions.",
         ],
         "forbid_divisions": True,
     },

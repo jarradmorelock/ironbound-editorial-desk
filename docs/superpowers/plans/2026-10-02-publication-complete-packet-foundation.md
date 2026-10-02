@@ -582,7 +582,7 @@ def test_unbound_regular_season_gold_standard_is_publication_ready_without_exter
     assert acceptance_matches(packet, load_unbound_acceptance_manifest())
 ```
 
-- [ ] **Step 2: Run the Week 3 acceptance test and verify RED**
+- [ ] **Step 2: Run both flagship acceptance tests and verify RED**
 
 Run:
 
@@ -590,7 +590,7 @@ Run:
 pytest tests/test_flagship_publication_acceptance.py -q
 ```
 
-Expected: FAIL on whichever factual department is not yet supplied completely by Tasks 1-5. Treat those failures as upstream research-contract defects, not reasons to weaken the acceptance manifest.
+Expected: FAIL on whichever factual department is not yet supplied completely by Tasks 1-5 for either flagship. Treat those failures as upstream research-contract defects, not reasons to weaken either acceptance manifest.
 
 - [ ] **Step 3: Close only the upstream gaps exposed by the fixture**
 
@@ -604,7 +604,7 @@ Rules:
 - if the source fixture genuinely lacks an evidence field that production already collects, add that field to the compact local input fixture;
 - if production does not collect a required recurring fact, add the collection to the existing upstream collector, not the packet writer.
 
-- [ ] **Step 4: Run Week 3 acceptance plus all related department tests**
+- [ ] **Step 4: Run dual-flagship acceptance plus all related department tests**
 
 Run:
 
@@ -736,7 +736,7 @@ git commit -m "feat: enforce publication-complete newspaper contracts"
 
 **Interfaces:**
 - No new research interface.
-- Production workflow must package and deliver `publication_complete_packet.json` with the flagship dossier artifacts.
+- Production workflow must package and deliver each publication's `publication_complete_packet.json` with that publication's dossier/research artifacts.
 - The local-builder boundary is represented by a test consumer that receives a packet object/path only and has no research clients.
 
 - [ ] **Step 1: Write failing offline/workflow tests**
@@ -744,12 +744,12 @@ git commit -m "feat: enforce publication-complete newspaper contracts"
 Create an offline test that patches/fails all known research entry points and then performs packet-to-consumer validation:
 
 ```python
-def test_publication_packet_consumer_requires_no_research_clients(monkeypatch, week3_packet):
+def test_publication_packet_consumer_requires_no_research_clients(monkeypatch, representative_packet):
     monkeypatch.setattr(SleeperClient, "get_json", fail_if_called)
     monkeypatch.setattr(NFLVerseClient, "player_stats", fail_if_called)
     monkeypatch.setattr(ChronicleQueries, "league_events", fail_if_called)
 
-    summary = validate_offline_consumability(week3_packet)
+    summary = validate_offline_consumability(representative_packet)
 
     assert summary["research_calls"] == 0
     assert summary["required_departments_ready"] is True
@@ -758,9 +758,10 @@ def test_publication_packet_consumer_requires_no_research_clients(monkeypatch, w
 Extend `tests/test_workflow_integration.py`:
 
 ```python
-def test_tuesday_delivery_packages_publication_complete_packet():
+def test_tuesday_delivery_packages_publication_complete_packet_for_all_enabled_publications():
     text = _text(WEEKLY)
     assert "publication_complete_packet.json" in text
+    assert "newspaper_research_packet.json" in text or "publication-complete" in text
 ```
 
 - [ ] **Step 2: Run boundary/workflow tests and verify RED**
@@ -787,7 +788,7 @@ Update:
 
 - `enriched_collector.py` generated-path list so new packet files are included in artifacts;
 - `reading_packet.py` to point editors/builders to `publication_complete_packet.json` as the factual source of truth while retaining current reading packet compatibility;
-- Tuesday workflow artifact/email packaging so the publication-complete packet is included in the delivered flagship package;
+- Tuesday workflow artifact/email packaging so each enabled publication's publication-complete packet is included in its delivered package;
 - README to document the boundary: research finishes before local writing begins.
 
 Do not make a partial Week 3 beat-news coverage warning fail the entire production run unless a required factual department actually lacks evidence.
@@ -805,7 +806,8 @@ Expected:
 
 - full pytest suite PASS;
 - compileall exits 0;
-- Week 3 gold-standard fixture reports `publication_ready=true`;
+- Ironbound and Unbound flagship fixtures report `publication_ready=true`;
+- representative newspaper profile fixtures pass their profile readiness contracts;
 - no offline-consumer test performs a research call.
 
 - [ ] **Step 5: Commit**
@@ -826,7 +828,7 @@ After all eight tasks:
 3. Generate Ironbound and Unbound publication-complete packets from their checked-in fixtures and save test output/logs showing `publication_ready=true` for both.
 4. Review both flagship generated `publication_complete_packet.json` files manually for:
    - eight matchups;
-   - complete Week 1-3 cumulative facts;
+   - complete cumulative facts through the reviewed week;
    - complete normalized major trades/picks;
    - honors candidates and audit;
    - season player/rookie boards;

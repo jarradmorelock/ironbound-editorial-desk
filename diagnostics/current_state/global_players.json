@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-02T00:45:16.529180+00:00",
+  "observed_at": "2026-10-02T07:03:11.721464+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -722,7 +722,7 @@
       "status": "Active"
     },
     "12573": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "12574": {
@@ -2099,7 +2099,7 @@
     },
     "8127": {
       "injury_status": "Doubtful",
-      "status": "Inactive"
+      "status": "Active"
     },
     "8130": {
       "injury_status": null,

@@ -166,3 +166,15 @@ def test_readme_documents_story_desk_manual_inputs_without_owning_rankings_workf
     assert "power rankings" in text
     assert "manual" in text or "user-supplied" in text
     assert "does not fetch" in text or "does not own" in text or "separate workflow" in text
+
+
+def test_tuesday_delivery_verifies_publication_complete_packets_before_email():
+    text = _text(WEEKLY)
+    assert "Verify publication-complete packet delivery" in text
+    assert "publication_complete_packet.json" in text
+    _assert_order(
+        text,
+        "Collect complete weekly dossiers",
+        "Verify publication-complete packet delivery",
+        "Email complete publication dossiers",
+    )

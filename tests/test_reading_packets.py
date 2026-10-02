@@ -312,16 +312,21 @@ def test_flagship_reading_packet_exposes_manual_stat_verification_gaps():
     assert "Do not assume zero production" in text
 
 
-def test_reading_packet_prefers_publication_complete_handoff(tmp_path):
+def test_reading_packet_keeps_rich_research_and_points_to_publication_complete_json(tmp_path):
     from editorial_desk.reading_packet import reading_packet_from_artifacts
 
-    (tmp_path / "flagship_research_packet.md").write_text("OLD FLAGSHIP PACKET", encoding="utf-8")
+    (tmp_path / "flagship_research_packet.md").write_text("RICH FLAGSHIP PACKET", encoding="utf-8")
     (tmp_path / "publication_complete_packet.md").write_text(
         "# PUBLICATION COMPLETE\nPublication ready: **YES**\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "publication_complete_packet.json").write_text(
+        '{"readiness": {"publication_ready": true}}',
         encoding="utf-8",
     )
 
     text = reading_packet_from_artifacts(tmp_path, {})
 
-    assert "PUBLICATION COMPLETE" in text
-    assert "OLD FLAGSHIP PACKET" not in text
+    assert "RICH FLAGSHIP PACKET" in text
+    assert "publication_complete_packet.json" in text
+    assert "factual handoff" in text

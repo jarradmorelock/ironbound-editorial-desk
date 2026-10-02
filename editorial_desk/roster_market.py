@@ -210,8 +210,9 @@ def _current_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _all_transactions(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-    flagship = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {})
-    weeks = flagship.get("weeks") or {}
+    publication = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
+    transactions = publication.get("transactions") or {}
+    weeks = transactions.get("weeks") or {}
     rows: list[dict[str, Any]] = []
     if isinstance(weeks, dict):
         for tx_week, values in weeks.items():

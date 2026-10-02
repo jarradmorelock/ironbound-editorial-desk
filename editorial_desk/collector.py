@@ -255,21 +255,36 @@ def _collect_flagship_context(
     losers = _optional_client_list(client, "losers_bracket", league_id)
 
     if week < 18:
-        try:
-            next_week_projections = {
-                "status": "available",
-                "season": season,
-                "week": week + 1,
-                "players": client.projections(season, week + 1),
-            }
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        projection_fetcher = getattr(client, "projections", None)
+        if not callable(projection_fetcher):
             next_week_projections = {
                 "status": "unavailable",
                 "season": season,
                 "week": week + 1,
                 "players": {},
-                "error": str(exc),
+                "error": "projections is not supported by this Sleeper client",
             }
+        else:
+            try:
+                next_week_projections = {
+                    "status": "available",
+                    "season": season,
+                    "week": week + 1,
+                    "players": projection_fetcher(season, week + 1),
+                }
+            except (
+                requests.RequestException,
+                ValueError,
+                KeyError,
+                AttributeError,
+            ) as exc:
+                next_week_projections = {
+                    "status": "unavailable",
+                    "season": season,
+                    "week": week + 1,
+                    "players": {},
+                    "error": str(exc),
+                }
     else:
         next_week_projections = {
             "status": "not_applicable",

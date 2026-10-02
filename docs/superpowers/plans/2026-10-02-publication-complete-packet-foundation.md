@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the deterministic Publication-Complete Packet, readiness gate, and Week 3 offline acceptance case so a later local manuscript builder can write the flagship issue without further research.
+**Goal:** Build shared canonical publication evidence, profile-specific Publication-Complete Packets, and offline acceptance gates so later local manuscript builders can write both flagships and all five newspapers without further research.
 
-**Architecture:** Keep the existing collector, Chronicle, flagship research packet, beat/news handoff, and ranking handoff intact. Add a canonical evidence layer that reconciles historical league facts and transactions, then compile a publication-facing packet whose required departments are validated before downstream use. Prove the boundary with a checked-in Week 3 Ironbound acceptance fixture and a network-free integration test.
+**Architecture:** Keep the existing collectors, Chronicle, flagship/newspaper research contracts, beat/news handoff, and ranking handoff intact. Generalize historical publication evidence that is currently flagship-only, reconcile it once in a shared canonical layer, then compile one common Publication-Complete Packet envelope with profile-specific readiness rules. Prove equal flagship readiness with Ironbound and Unbound acceptance fixtures, then upgrade the five newspaper profiles to the same offline boundary with smaller evidence contracts.
 
 **Tech Stack:** Python 3.11+, pytest, existing requests-based Sleeper/nflverse clients, existing Chronicle JSONL/materialized query layer, JSON artifacts.
 
@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - After `publication_complete_packet.json` is emitted, downstream manuscript and slide builders may not call Sleeper, nflverse, Chronicle, GitHub, web search, screenshots, prior magazines, or any other research source.
-- The finished Week 3 Ironbound magazine is the first flagship acceptance case.
+- The finished Week 3 Ironbound magazine is the first flagship acceptance case; a completed regular-season Unbound Weekly issue is the second, and both must meet the same offline standard.
 - `FROM_THE_IRONBOUND_DESK` remains intentionally manual and is excluded from publication-readiness requirements.
 - Do not lock the magazine to a permanent 22-, 24-, 25-, or 26-page count.
 - Ironbound Power Rankings remains authoritative for rank, movement, supplied model outputs, and supplied ranking/playoff graphics; Editorial Desk must not recompute them.
@@ -21,7 +21,9 @@
 - Sleeper retained same-season/week projections are valid historical projection evidence and are scored with the league's Sleeper scoring settings.
 - Required-source conflicts must produce `MANUAL_VERIFY`/blocking evidence, never silent source selection.
 - Optional enrichment failures must be warnings unless a required selected department explicitly depends on them.
-- Preserve existing flagship research artifacts for compatibility; the new packet is additive.
+- Preserve existing flagship and newspaper research artifacts for compatibility; the new packet is additive.
+- Canonical evidence is shared infrastructure for every publication-enabled league; profile validators decide which evidence is blocking.
+- The Volunteer Voice has no active publication divisions. Its league-wide top-started-player honor uses internal key `KING_OF_THE_HILL` and display label `King of the Hill`.
 - Use TDD for every task and run the entire pytest suite before branch completion.
 
 ## Review Focus
@@ -34,16 +36,18 @@
 
 ---
 
-### Task 1: Canonical Historical League Evidence
+### Task 1: Shared Canonical Historical League Evidence
 
 **Files:**
 - Create: `editorial_desk/canonical_evidence.py`
+- Modify: `editorial_desk/collector.py`
 - Modify: `editorial_desk/flagship_research.py`
+- Modify: `editorial_desk/newspaper_research.py`
 - Test: `tests/test_canonical_evidence.py`
 - Modify test: `tests/test_week2_completeness_fixes.py`
 
 **Interfaces:**
-- Consumes: enriched `snapshot: dict[str, Any]`, optional `ChronicleQueries`.
+- Consumes: enriched `snapshot: dict[str, Any]` from any publication-enabled league, optional `ChronicleQueries`.
 - Produces: `build_canonical_league_evidence(snapshot: dict[str, Any], chronicle: ChronicleQueries | None = None) -> dict[str, Any]`.
 - Produces evidence keys: `historical_matchups`, `player_weeks`, `entering_records`, `team_season_totals`, `player_season_totals`, `division_summary`, `evidence_index`, `conflicts`, `coverage`.
 - Produces stable IDs through `evidence_id(kind: str, season: str, week: int | None, *parts: object) -> str`.
@@ -103,7 +107,8 @@ def build_canonical_league_evidence(
 
 Required behavior:
 
-- Read current and prior completed weeks from `snapshot["flagship_sleeper"]["schedule"]["weeks"]`; include the current `snapshot["matchups"]` as authoritative current-week rows.
+- Generalize the collector's current flagship-only historical Sleeper context into shared publication evidence for every publication-enabled league. Preserve compatibility with the existing `flagship_sleeper` key during migration, but canonical evidence must not require `tier == flagship`.
+- Read current and prior completed weeks from the shared publication history; include the current `snapshot["matchups"]` as authoritative current-week rows.
 - Build one canonical roster-week record per team and one canonical player-week record per rostered player using Sleeper `players_points` / `players_points_custom`.
 - Use Chronicle finalized matchup/player events only to corroborate or fill genuinely absent Sleeper historical rows.
 - Record a conflict when both authoritative sources exist for the same roster/player-week and materially disagree.
@@ -112,7 +117,7 @@ Required behavior:
 - Compute division membership and pooled internal/cross-division W-L, total PF, team-game count, and scoring average using roster division settings plus league metadata.
 - Return explicit status/reason fields instead of treating partial history as full history.
 
-Modify `flagship_research.py` to use this canonical evidence for season team score and player boards rather than requiring Chronicle-only historical player events.
+Modify `flagship_research.py` to use this canonical evidence for season team score and player boards rather than requiring Chronicle-only historical player events. Expose the same canonical object to newspaper research so median/standings/history/lineup-flip departments can reuse it instead of recomputing league facts.
 
 - [ ] **Step 4: Run canonical and flagship regression tests**
 
@@ -127,7 +132,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add editorial_desk/canonical_evidence.py editorial_desk/flagship_research.py tests/test_canonical_evidence.py tests/test_week2_completeness_fixes.py
+git add editorial_desk/canonical_evidence.py editorial_desk/collector.py editorial_desk/flagship_research.py editorial_desk/newspaper_research.py tests/test_canonical_evidence.py tests/test_week2_completeness_fixes.py
 git commit -m "feat: add canonical historical league evidence"
 ```
 
@@ -142,7 +147,7 @@ git commit -m "feat: add canonical historical league evidence"
 - Modify test: `tests/test_roster_market.py`
 
 **Interfaces:**
-- Consumes: `snapshot: dict[str, Any]`, optional `ChronicleQueries`.
+- Consumes: `snapshot: dict[str, Any]` for any publication-enabled league, optional `ChronicleQueries`.
 - Produces: `build_transaction_evidence(snapshot: dict[str, Any], chronicle: ChronicleQueries | None = None) -> dict[str, Any]`.
 - Produces normalized `transactions: list[dict[str, Any]]` with `transaction_id`, `week`, `type`, `completed_at`, `teams`, `players`, `draft_picks`, `faab`, `evidence_ids`.
 - Produces `pick_provenance_status` and `coverage`.
@@ -200,7 +205,7 @@ def build_transaction_evidence(
 
 Rules:
 
-- Read every completed transaction through the reviewed week from `flagship_sleeper.transactions.weeks`; fall back to current snapshot transactions only when the flagship history block is absent.
+- Read every completed transaction through the reviewed week from the shared publication transaction history; retain compatibility with `flagship_sleeper.transactions.weeks` while migration is in progress. Fall back to current snapshot transactions only when historical publication transaction data is absent.
 - Dedupe by `transaction_id`.
 - Resolve team/player names from snapshot users/rosters/player directory.
 - Preserve raw Sleeper draft-pick fields required for provenance, including original roster ID and previous/new owner IDs when supplied.
@@ -391,7 +396,7 @@ git commit -m "feat: add publication source and cutoff evidence"
 
 ---
 
-### Task 5: Compile and Validate the Publication-Complete Packet
+### Task 5: Compile the Common Packet Envelope and Profile-Specific Readiness
 
 **Files:**
 - Create: `editorial_desk/publication_complete.py`
@@ -405,13 +410,14 @@ git commit -m "feat: add publication source and cutoff evidence"
 - Produces: `write_publication_complete_packet(directory: Path, packet: dict[str, Any]) -> tuple[Path, ...]`.
 - File output: `publication_complete_packet.json` and compact `publication_complete_packet.md`.
 - Contract version: `publication-complete-v1`.
+- Produces profile readiness for `ironbound_weekly`, `unbound_weekly`, `ballad_crier`, `the_stampede`, `volunteer_voice`, `saturday_standard`, and `hollywood_beat`.
 
 - [ ] **Step 1: Write failing packet/readiness tests**
 
 Create tests for exact top-level contract:
 
 ```python
-def test_complete_flagship_packet_contains_writer_ready_departments():
+def test_complete_ironbound_packet_contains_writer_ready_departments():
     packet = build_complete_fixture_packet()
     assert packet["contract_version"] == "publication-complete-v1"
     assert set(packet) >= {
@@ -469,7 +475,9 @@ Department rules:
 
 Readiness rules:
 
-- require exactly eight completed flagship matchups for the 16-team flagship profile;
+- dispatch required departments through an explicit publication-profile registry;
+- Ironbound Weekly and Unbound Weekly share the full flagship validator and equal evidence depth;
+- require exactly eight completed matchups for each 16-team flagship profile;
 - require complete reviewed-week submitted lineup/player-score evidence;
 - require complete prior weeks needed for entering records and cumulative boards;
 - require complete normalized reporting-window transactions used by the Transaction Desk;
@@ -480,6 +488,7 @@ Readiness rules:
 - require current rankings/playoff/SOS handoff and required ranking assets;
 - require all eight next-week matchup forecast rows when the issue contains a Full Slate department;
 - classify genuinely optional enrichments as warnings/optional gaps.
+- newspaper validators must validate required evidence fields/status, not merely the presence of a named section; newspaper-specific implementation is completed in Task 7.
 
 `write_publication_complete_packet` writes JSON plus a compact human-readable readiness/source summary. Do not duplicate the full manuscript-like flagship research Markdown.
 
@@ -504,17 +513,20 @@ git commit -m "feat: emit publication-complete flagship packet"
 
 ---
 
-### Task 6: Add Week 3 Ironbound Gold-Standard Acceptance Fixture
+### Task 6: Add Dual Flagship Gold-Standard Acceptance Fixtures
 
 **Files:**
 - Create: `tests/fixtures/ironbound_week3_publication_input.json`
 - Create: `tests/fixtures/ironbound_week3_publication_acceptance.json`
-- Create: `tests/test_ironbound_week3_publication_acceptance.py`
+- Create: `tests/fixtures/unbound_regular_season_publication_input.json`
+- Create: `tests/fixtures/unbound_regular_season_publication_acceptance.json`
+- Create: `tests/test_flagship_publication_acceptance.py`
 - Modify: `docs/superpowers/specs/2026-10-02-publication-complete-packet-design.md` only if implementation reveals an ambiguity that must be clarified before the test can be written.
 
 **Interfaces:**
-- The input fixture is a compact, deterministic extraction of the Week 3 workflow evidence required for the acceptance claims; it must not depend on the user's PPTX file at test runtime.
-- The acceptance manifest records the factual capabilities expected from the finished Week 3 issue.
+- The Ironbound input fixture is a compact deterministic extraction of the Week 3 workflow evidence required for the acceptance claims; it must not depend on the user's PPTX file at test runtime.
+- The Unbound fixture is a compact deterministic extraction of a completed regular-season issue and its research evidence; it must not depend on the PDF at test runtime.
+- Acceptance manifests record factual capabilities expected from each finished flagship issue.
 - Test consumes only local fixture JSON and production packet-building functions.
 
 - [ ] **Step 1: Create the acceptance manifest and failing integration test**
@@ -556,11 +568,18 @@ Also include acceptance checks that the normalized transaction evidence contains
 Write:
 
 ```python
-def test_week3_gold_standard_is_publication_ready_without_external_research():
-    packet = build_week3_packet_from_local_fixture()
+def test_ironbound_week3_gold_standard_is_publication_ready_without_external_research():
+    packet = build_ironbound_week3_packet_from_local_fixture()
     assert packet["readiness"]["publication_ready"] is True
     assert len(packet["game_dossiers"]) == 8
-    assert acceptance_matches(packet, load_acceptance_manifest())
+    assert acceptance_matches(packet, load_ironbound_acceptance_manifest())
+
+
+def test_unbound_regular_season_gold_standard_is_publication_ready_without_external_research():
+    packet = build_unbound_packet_from_local_fixture()
+    assert packet["readiness"]["publication_ready"] is True
+    assert len(packet["game_dossiers"]) == 8
+    assert acceptance_matches(packet, load_unbound_acceptance_manifest())
 ```
 
 - [ ] **Step 2: Run the Week 3 acceptance test and verify RED**
@@ -568,7 +587,7 @@ def test_week3_gold_standard_is_publication_ready_without_external_research():
 Run:
 
 ```bash
-pytest tests/test_ironbound_week3_publication_acceptance.py -q
+pytest tests/test_flagship_publication_acceptance.py -q
 ```
 
 Expected: FAIL on whichever factual department is not yet supplied completely by Tasks 1-5. Treat those failures as upstream research-contract defects, not reasons to weaken the acceptance manifest.
@@ -590,7 +609,7 @@ Rules:
 Run:
 
 ```bash
-pytest   tests/test_ironbound_week3_publication_acceptance.py   tests/test_canonical_evidence.py   tests/test_transaction_evidence.py   tests/test_honors_registry.py   tests/test_publication_sources.py   tests/test_publication_complete.py -q
+pytest   tests/test_flagship_publication_acceptance.py   tests/test_canonical_evidence.py   tests/test_transaction_evidence.py   tests/test_honors_registry.py   tests/test_publication_sources.py   tests/test_publication_complete.py -q
 ```
 
 Expected: PASS and `publication_ready == true` for the Week 3 gold-standard fixture.
@@ -598,13 +617,114 @@ Expected: PASS and `publication_ready == true` for the Week 3 gold-standard fixt
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tests/fixtures/ironbound_week3_publication_input.json tests/fixtures/ironbound_week3_publication_acceptance.json tests/test_ironbound_week3_publication_acceptance.py editorial_desk
+git add tests/fixtures/ironbound_week3_publication_input.json tests/fixtures/ironbound_week3_publication_acceptance.json tests/test_flagship_publication_acceptance.py editorial_desk
 git commit -m "test: prove week 3 publication-complete research"
 ```
 
 ---
 
-### Task 7: Enforce the Offline Boundary and Integrate Production Output
+### Task 7: Upgrade Newspaper Contracts to Evidence-Complete Offline Packets
+
+**Files:**
+- Modify: `editorial_desk/newspaper_research.py`
+- Modify: `editorial_desk/publication_complete.py`
+- Modify: `editorial_desk/publication_policy.py` if profile metadata needs explicit required-field contracts
+- Modify: `docs/superpowers/specs/2026-09-16-weekly-newspaper-feature-contracts.md`
+- Create: `tests/test_newspaper_publication_complete.py`
+- Create: `tests/fixtures/newspaper_acceptance/` manifests/inputs for representative regular-season issues where available
+- Modify: existing newspaper contract tests as needed
+
+**Interfaces:**
+- Consumes: shared canonical evidence and existing newspaper publication packet/feature rows.
+- Produces: the same `publication_complete_packet.json` envelope with profile-specific `readiness`.
+- Produces explicit department statuses: `ready`, `ready_no_items`, `unavailable`, and blocking/manual verification when required evidence is incomplete.
+
+- [ ] **Step 1: Write failing profile-readiness tests**
+
+Add tests that prove:
+
+```python
+def test_ballad_lineup_flip_department_requires_evaluated_legal_substitutions():
+    packet = build_ballad_packet_with_named_but_empty_flip_section()
+    assert packet["readiness"]["publication_ready"] is False
+    assert any(gap["section"] == "lineup_flip_candidates" for gap in packet["readiness"]["blocking_gaps"])
+
+
+def test_volunteer_voice_forbids_divisions_and_uses_king_of_the_hill():
+    packet = build_volunteer_packet()
+    assert packet["readiness"]["publication_ready"] is True
+    assert packet["weekly_honors"]["league_wide_started_mvp"]["award_key"] == "KING_OF_THE_HILL"
+    assert packet["weekly_honors"]["league_wide_started_mvp"]["display_name"] == "King of the Hill"
+    assert "division_report" not in packet["required_departments"]
+
+
+def test_saturday_standard_blocks_when_required_idp_evidence_is_missing():
+    packet = build_saturday_standard_without_idp_board()
+    assert packet["readiness"]["publication_ready"] is False
+    assert any(gap["section"] == "idp_position_metrics" for gap in packet["readiness"]["blocking_gaps"])
+
+
+def test_healthy_newspaper_health_department_is_ready_no_items_not_unavailable():
+    packet = build_healthy_roster_newspaper_packet()
+    assert packet["departments"]["health_status"]["status"] == "ready_no_items"
+```
+
+Also add representative offline acceptance manifests for:
+- Ballad Crier regular-season issue;
+- Volunteer Voice regular-season issue;
+- Saturday Standard regular-season issue;
+- Hollywood Beat regular-season issue.
+
+For Stampede, use the locked weekly contract until a representative regular-season issue exists.
+
+- [ ] **Step 2: Run newspaper tests and verify RED**
+
+Run:
+
+```bash
+pytest tests/test_newspaper_publication_complete.py tests/test_newspaper_research.py -q
+```
+
+Expected: FAIL because current validation checks department presence rather than evidence completeness.
+
+- [ ] **Step 3: Implement profile-specific evidence validators**
+
+Upgrade `PROFILE_CONTRACTS` or a companion registry so every required newspaper department defines the evidence fields/status it needs.
+
+Rules:
+
+- reuse canonical facts rather than recalculate them by theme;
+- retain each paper's current thematic labels;
+- preserve `ready_no_items` as a valid non-blocking state;
+- Ballad Crier requires complete median/standings/Weekly Rounds/Ward Report evidence;
+- Stampede requires real-NFL workload evidence for Heavy Lifting;
+- Volunteer Voice forbids divisions and uses league-wide `KING_OF_THE_HILL`;
+- Saturday Standard treats offensive and IDP evidence as equally required;
+- Hollywood Beat requires late-window/game-window evidence where its Industry/Late Show department is included;
+- optional/conditional departments block only when active for that issue/profile.
+
+Update the old locked newspaper spec with a superseding Volunteer Voice note so the documentation no longer instructs future work to build dormant division/gold-foil logic.
+
+- [ ] **Step 4: Run newspaper acceptance and profile tests**
+
+Run:
+
+```bash
+pytest tests/test_newspaper_publication_complete.py tests/test_newspaper_research.py tests/test_publication_contracts.py -q
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add editorial_desk/newspaper_research.py editorial_desk/publication_complete.py editorial_desk/publication_policy.py docs/superpowers/specs/2026-09-16-weekly-newspaper-feature-contracts.md tests/test_newspaper_publication_complete.py tests/fixtures/newspaper_acceptance
+git commit -m "feat: enforce publication-complete newspaper contracts"
+```
+
+---
+
+### Task 8: Enforce the Offline Boundary and Integrate Production Output
 
 **Files:**
 - Create: `tests/test_publication_offline_boundary.py`
@@ -699,12 +819,12 @@ git commit -m "feat: enforce publication-complete offline boundary"
 
 ## Branch Completion Verification
 
-After all seven tasks:
+After all eight tasks:
 
 1. Run `pytest -q`.
 2. Run `python -m compileall editorial_desk`.
-3. Generate a Week 3 publication-complete packet from the checked-in fixture and save the test output/log showing `publication_ready=true`.
-4. Review the generated `publication_complete_packet.json` manually for:
+3. Generate Ironbound and Unbound publication-complete packets from their checked-in fixtures and save test output/logs showing `publication_ready=true` for both.
+4. Review both flagship generated `publication_complete_packet.json` files manually for:
    - eight matchups;
    - complete Week 1-3 cumulative facts;
    - complete normalized major trades/picks;
@@ -714,8 +834,9 @@ After all seven tasks:
    - eight Week 4 forecast rows;
    - source manifest and cutoff;
    - no fixed-page-count requirement.
-5. Request fresh whole-branch code review before merge.
-6. Merge only after CI is green and review findings are resolved.
+5. Run all newspaper profile acceptance tests and confirm that required evidence failures block only the affected publication profile.
+6. Request fresh whole-branch code review before merge.
+7. Merge only after CI is green and review findings are resolved.
 
 ## Follow-on Plans
 

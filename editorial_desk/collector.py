@@ -214,7 +214,7 @@ def _collect_publication_context(
                 if schedule_week == week
                 else client.matchups(league_id, schedule_week)
             )
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        except (requests.RequestException, ValueError, KeyError, AttributeError, TypeError) as exc:
             schedule_errors[str(schedule_week)] = str(exc)
         try:
             transaction_weeks[str(schedule_week)] = (
@@ -225,15 +225,15 @@ def _collect_publication_context(
         except (requests.RequestException, ValueError, KeyError) as exc:
             transaction_errors[str(schedule_week)] = str(exc)
 
-    drafts = _optional_list(client.drafts, league_id)
+    drafts = _optional_list(getattr(client, "drafts", None), league_id)
     draft_records: list[dict[str, Any]] = []
     draft_errors: dict[str, str] = {}
     for draft in drafts.get("records") or []:
         draft_id = str(draft.get("draft_id") or "")
         if not draft_id:
             continue
-        picks = _optional_list(client.draft_picks, draft_id)
-        traded = _optional_list(client.draft_traded_picks, draft_id)
+        picks = _optional_list(getattr(client, "draft_picks", None), draft_id)
+        traded = _optional_list(getattr(client, "draft_traded_picks", None), draft_id)
         draft_records.append(
             {
                 "draft": draft,
@@ -246,8 +246,8 @@ def _collect_publication_context(
         if traded.get("status") != "available":
             draft_errors[f"{draft_id}:traded_picks"] = str(traded.get("error"))
 
-    winners = _optional_list(client.winners_bracket, league_id)
-    losers = _optional_list(client.losers_bracket, league_id)
+    winners = _optional_list(getattr(client, "winners_bracket", None), league_id)
+    losers = _optional_list(getattr(client, "losers_bracket", None), league_id)
 
     if week < 18:
         try:
@@ -323,6 +323,8 @@ def _collect_publication_context(
 
 
 def _optional_list(fetcher: Any, *args: Any) -> dict[str, Any]:
+    if fetcher is None:
+        return {"status": "unavailable", "records": [], "error": "endpoint unavailable"}
     try:
         records = fetcher(*args)
         if not isinstance(records, list):

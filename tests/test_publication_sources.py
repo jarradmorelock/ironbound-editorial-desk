@@ -169,3 +169,19 @@ def test_partial_beat_history_is_a_nonblocking_source_warning():
     assert manifest["beat_news"]["blocking"] is False
     assert manifest["beat_news"]["durable_since"] == "2026-09-28T04:07:46+00:00"
     assert any("beat" in row["source"] for row in manifest["warnings"])
+
+
+def test_enriched_collector_builds_source_and_health_objects_once_for_flagship():
+    from editorial_desk.enriched_collector import _publication_support_evidence
+
+    support = _publication_support_evidence(
+        _snapshot(),
+        _dossier(),
+        _external(),
+        beat_report=_beat(),
+        publication_assets=None,
+    )
+
+    assert support["source_manifest"]["information_cutoff"] == "2026-09-30T18:00:00+00:00"
+    assert support["health_evidence"]["information_cutoff"] == "2026-09-30T18:00:00+00:00"
+    assert [row["event_id"] for row in support["health_evidence"]["news_events"]] == ["before-cutoff"]

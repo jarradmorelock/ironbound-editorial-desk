@@ -123,12 +123,120 @@ def _sources_and_notes(
     }
 
 
-def _newspaper_departments(research: dict[str, Any]) -> dict[str, dict[str, Any]]:
-    return {
-        str(row.get("feature") or ""): dict(row)
-        for row in (research.get("sections") or research.get("departments") or [])
-        if isinstance(row, dict) and row.get("feature")
-    }
+def _newspaper_departments(
+    publication_key: str,
+    research: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    departments: dict[str, dict[str, Any]] = {}
+    for raw in research.get("sections") or research.get("departments") or []:
+        if not isinstance(raw, dict) or not raw.get("feature"):
+            continue
+        row = dict(raw)
+        feature = str(row.get("feature") or "")
+        if publication_key == "volunteer_voice" and feature == "league_wide_started_mvp":
+            row["display_name"] = "King of the Hill"
+            data = row.get("data")
+            if isinstance(data, dict):
+                row["data"] = {
+                    **data,
+                    "award_key": "KING_OF_THE_HILL",
+                    "display_name": "King of the Hill",
+                }
+        departments[feature] = row
+    return departments
+
+
+def _newspaper_required_departments(
+    publication_key: str,
+    departments: dict[str, dict[str, Any]],
+) -> list[str]:
+    from .newspaper_research import PROFILE_CONTRACTS
+
+    contract = PROFILE_CONTRACTS.get(publication_key) or {}
+    required = list(contract.get("required") or [])
+    conditional = set(contract.get("conditional") or [])
+    for feature in conditional:
+        row = departments.get(feature)
+        if row and row.get("required_in_phase", True):
+            required.append(feature)
+    return list(dict.fromkeys(required))
+
+
+def _newspaper_department_problem(
+    feature: str,
+    row: dict[str, Any],
+) -> str | None:
+    status = str(row.get("status") or "").lower()
+    if status == "ready_no_items":
+        return None
+    if status != "ready":
+        return str(row.get("reason") or status or "department missing")
+
+    data = row.get("data")
+    if feature == "lineup_flip_candidates":
+        if not isinstance(data, list) or not data:
+            return "ready lineup-flip department contains no evaluated decisions; use ready_no_items for a true quiet week"
+        required = {
+            "started_player",
+            "bench_player",
+            "started_points",
+            "bench_points",
+            "hypothetical_team_points",
+            "would_flip_result",
+        }
+        for item in data:
+            if not isinstance(item, dict) or not required <= set(item) or item.get("would_flip_result") is not True:
+                return "lineup-flip evidence must include legal starter/bench points, hypothetical final, and would_flip_result=true"
+        return None
+
+    if feature == "health_status":
+        if not isinstance(data, list) or not data:
+            return "ready health department contains no rows; use ready_no_items when the roster is healthy"
+        for item in data:
+            if not isinstance(item, dict):
+                return "health evidence contains a non-object row"
+            if not (item.get("player") or item.get("player_id")):
+                return "health evidence is missing player identity"
+            if not (item.get("team") or item.get("fantasy_team")):
+                return "health evidence is missing fantasy team"
+            if not any(
+                item.get(key) not in (None, "", False)
+                for key in (
+                    "status",
+                    "injury_status",
+                    "game_designation",
+                    "injury",
+                    "practice_participation",
+                    "on_ir",
+                    "on_reserve",
+                )
+            ):
+                return "health evidence has no status, injury, practice, or reserve signal"
+        return None
+
+    if feature == "league_wide_started_mvp":
+        if not isinstance(data, dict) or not data:
+            return "league-wide started-player honor is missing"
+        if str(data.get("status") or "").upper() != "STARTED":
+            return "league-wide honor must identify a started player"
+        for field in ("player", "team", "points"):
+            if data.get(field) in (None, ""):
+                return f"league-wide honor is missing {field}"
+        return None
+
+    if feature == "league_median":
+        if not isinstance(data, dict) or data.get("points") is None:
+            return "median department is missing the computed median line"
+        return None
+
+    if feature in {"idp_position_metrics", "workload_stat_lines"}:
+        if not isinstance(data, dict) or not data:
+            return f"{feature} is marked ready without any metric rows"
+        return None
+
+    if data in (None, {}, [], ()):
+        return "department is marked ready but contains no evidence; use ready_no_items when collection succeeded with no qualifying items"
+    return None
 
 
 def build_publication_complete_packet(
@@ -199,16 +307,12 @@ def build_publication_complete_packet(
             }
         )
     else:
-        departments = _newspaper_departments(research_packet)
+        departments = _newspaper_departments(key, research_packet)
         packet.update(
             {
                 "profile_tier": "newspaper",
                 "departments": departments,
-                "required_departments": [
-                    key
-                    for key, row in departments.items()
-                    if row.get("required_in_phase", True)
-                ],
+                "required_departments": _newspaper_required_departments(key, departments),
                 "sources_and_model_notes": _sources_and_notes(source_manifest, research_packet),
             }
         )
@@ -351,22 +455,67 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
 def _newspaper_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     blocking: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
-    for key in packet.get("required_departments") or []:
-        row = (packet.get("departments") or {}).get(key) or {}
-        status = str(row.get("status") or "").lower()
-        if status not in {"ready", "ready_no_items"}:
+    required = list(packet.get("required_departments") or [])
+    departments = packet.get("departments") or {}
+
+    for feature in required:
+        row = departments.get(feature)
+        if row is None:
             _block(
                 blocking,
-                key,
-                "DEPARTMENT_NOT_READY",
-                str(row.get("reason") or status or "missing"),
+                feature,
+                "MISSING_REQUIRED_DEPARTMENT",
+                "required publication department is absent from the research packet",
             )
+            continue
+        problem = _newspaper_department_problem(feature, row)
+        if problem:
+            _block(
+                blocking,
+                feature,
+                "INCOMPLETE_DEPARTMENT_EVIDENCE",
+                problem,
+            )
+
     canonical = packet.get("canonical_league_evidence") or {}
     if (canonical.get("coverage") or {}).get("status") not in {"READY", "NOT_APPLICABLE"}:
-        _block(blocking, "historical_league_facts", "INCOMPLETE_HISTORY", str((canonical.get("coverage") or {}).get("reason") or "unavailable"))
+        _block(
+            blocking,
+            "historical_league_facts",
+            "INCOMPLETE_HISTORY",
+            str((canonical.get("coverage") or {}).get("reason") or "unavailable"),
+        )
+
+    transaction_features = {"waiver_impact", "transactions", "future_picks", "rookie_draft"}
+    if transaction_features.intersection(required):
+        transactions = packet.get("transaction_desk") or {}
+        if (transactions.get("coverage") or {}).get("status") != "READY":
+            _block(
+                blocking,
+                "transaction_desk",
+                "INCOMPLETE_TRANSACTION_HISTORY",
+                str((transactions.get("coverage") or {}).get("status") or "unavailable"),
+            )
+
+    if "health_status" in required:
+        health = packet.get("roster_health") or {}
+        if health.get("status") not in {"READY", "READY_NO_ITEMS"}:
+            _block(
+                blocking,
+                "health_status",
+                "HEALTH_NOT_READY",
+                str(health.get("status") or "unavailable"),
+            )
+
     beat = (packet.get("source_manifest") or {}).get("beat_news") or {}
     if beat.get("status") == "PARTIAL":
-        warnings.append({"section": "beat_news", "code": "PARTIAL_HISTORY", "detail": "Beat history is partial."})
+        warnings.append(
+            {
+                "section": "beat_news",
+                "code": "PARTIAL_HISTORY",
+                "detail": "Beat history is partial.",
+            }
+        )
     return {
         "publication_ready": not blocking,
         "status": "READY" if not blocking else "BLOCKED",

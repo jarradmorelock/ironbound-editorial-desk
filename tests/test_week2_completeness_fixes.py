@@ -6,6 +6,7 @@ from editorial_desk.feature_producers import game_window_context
 from editorial_desk.flagship_research import (
     _attach_rookie_draft_context,
     _season_team_score_top_three,
+    _season_player_boards,
 )
 from editorial_desk.newspaper_research import render_newspaper_research_packet
 from editorial_desk.nfl_enrichment import _build_flagship_stat_book
@@ -228,3 +229,46 @@ def test_newspaper_renderer_never_emits_json_only_placeholder():
     assert "Structured evidence is present" not in text
     assert "team=Alpha" in text
     assert "value=42" in text
+
+
+def test_season_player_board_does_not_require_current_acquisition_to_have_prior_week_scores():
+    snapshot = {
+        "week": 2,
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "players": ["p1", "new"]},
+            {"roster_id": 2, "owner_id": "u2", "players": ["p2"]},
+        ],
+        "users": [
+            {"user_id": "u1", "display_name": "One", "metadata": {"team_name": "One"}},
+            {"user_id": "u2", "display_name": "Two", "metadata": {"team_name": "Two"}},
+        ],
+        "players": {
+            "p1": {"full_name": "Player One", "position": "QB", "years_exp": 2},
+            "p2": {"full_name": "Player Two", "position": "QB", "years_exp": 2},
+            "new": {"full_name": "New Player", "position": "WR", "years_exp": 1},
+        },
+        "matchups": [
+            {
+                "roster_id": 1,
+                "players": ["p1", "new"],
+                "starters": ["p1", "new"],
+                "players_points": {"p1": 20.0, "new": 10.0},
+            },
+            {
+                "roster_id": 2,
+                "players": ["p2"],
+                "starters": ["p2"],
+                "players_points": {"p2": 15.0},
+            },
+        ],
+    }
+    historical = [
+        {"week": 1, "roster_id": 1, "player_id": "p1", "points": 18.0},
+        {"week": 1, "roster_id": 2, "player_id": "p2", "points": 12.0},
+    ]
+
+    boards = _season_player_boards(historical, snapshot)
+
+    assert boards["player_season_top_three"]["status"] == "READY"
+    assert boards["player_season_top_three"]["by_position"]["WR"][0]["player"] == "New Player"
+    assert boards["player_season_top_three"]["by_position"]["WR"][0]["points"] == 10.0

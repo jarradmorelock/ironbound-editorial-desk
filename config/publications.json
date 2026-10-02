@@ -534,7 +534,7 @@
         "Official Table",
         "Median Result",
         "Rankings Wire",
-        "Mountain MVP",
+        "King of the Hill",
         "Manager of the Week",
         "Benchwarmer",
         "Rookie of the Week",
@@ -596,7 +596,7 @@
           },
           {
             "feature": "league_wide_started_mvp",
-            "display_name": "Mountain MVP",
+            "display_name": "King of the Hill",
             "required_in_phase": true
           },
           {

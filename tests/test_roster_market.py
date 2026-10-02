@@ -260,3 +260,45 @@ def test_status_history_survives_news_outage_and_player_drop(tmp_path):
     report = build_roster_market_report(snapshot, {}, {'status': 'UNAVAILABLE'}, None,
                                        chronicle=ChronicleQueries(tmp_path))
     assert [e['event_id'] for e in report['status_timeline']['events']] == ['dropped-injury']
+
+
+def test_roster_market_uses_shared_transaction_evidence_and_preserves_trade_picks():
+    snapshot = _snapshot()
+    snapshot["publication_sleeper"] = snapshot.pop("flagship_sleeper")
+    snapshot["publication_sleeper"]["transactions"]["weeks"]["3"] = [
+        {
+            "transaction_id": "trade-pick",
+            "type": "trade",
+            "status": "complete",
+            "roster_ids": [1],
+            "adds": {"p2": 1},
+            "drops": {},
+            "draft_picks": [
+                {
+                    "season": "2027",
+                    "round": 1,
+                    "roster_id": 1,
+                    "previous_owner_id": 1,
+                    "owner_id": 1,
+                }
+            ],
+        }
+    ]
+
+    report = build_roster_market_report(snapshot, {}, None, None)
+
+    assert report["status"] == "READY"
+    assert report["transactions"]["current_week"][0]["transaction_id"] == "trade-pick"
+    assert report["transactions"]["current_week"][0]["draft_picks"][0]["season"] == "2027"
+    assert report["transaction_evidence"]["pick_provenance_status"] == "READY"
+
+
+def test_publication_history_preserves_repeated_asset_movement_across_weeks():
+    snapshot = _snapshot()
+    snapshot["publication_sleeper"] = snapshot.pop("flagship_sleeper")
+
+    report = build_roster_market_report(snapshot, {}, None, None)
+
+    jordan = next(row for row in report["repeated_asset_movement"] if row["player_id"] == "p1")
+    assert jordan["transaction_events"] == 2
+    assert report["transactions"]["season_event_count"] == 3

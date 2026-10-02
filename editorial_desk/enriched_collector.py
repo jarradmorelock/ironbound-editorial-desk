@@ -30,6 +30,13 @@ from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
 from .chronicle_queries import ChronicleQueries
+from .canonical_evidence import build_canonical_league_evidence
+from .transaction_evidence import build_transaction_evidence
+from .publication_sources import build_source_manifest, health_evidence
+from .publication_complete import (
+    build_publication_complete_packet,
+    write_publication_complete_packet,
+)
 
 
 def collect_all(
@@ -113,6 +120,12 @@ def collect_all(
             profile = publications.get(config.publication_profile or "")
             if profile is None:
                 continue
+            chronicle_queries = (
+                ChronicleQueries(Path(chronicle_root))
+                if chronicle_root is not None
+                else None
+            )
+            beat_report = build_beat_report(snapshot, beat_source)
             if profile.tier == "newspaper":
                 generated.extend(
                     _write_newspaper_packet(
@@ -121,6 +134,8 @@ def collect_all(
                         dossier,
                         profile,
                         phase="weekly",
+                        chronicle=chronicle_queries,
+                        beat_report=beat_report,
                     )
                 )
             if profile.story_desk and chronicle_root is not None:
@@ -153,7 +168,6 @@ def collect_all(
                     if story_path.exists()
                     else {}
                 )
-                beat_report = build_beat_report(snapshot, beat_source)
                 issue_network = dict(network_market)
                 issue_network["sleeper_platform_rates"] = load_market_rates(
                     Path(external_inputs_dir) / "sleeper_market_rates.json" if external_inputs_dir else None,
@@ -164,7 +178,7 @@ def collect_all(
                     dossier,
                     beat_report,
                     issue_network,
-                    chronicle=ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None,
+                    chronicle=chronicle_queries,
                 )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,
@@ -172,11 +186,7 @@ def collect_all(
                     story,
                     external_inputs,
                     history_root=output_root,
-                    chronicle=(
-                        ChronicleQueries(Path(chronicle_root))
-                        if chronicle_root is not None
-                        else None
-                    ),
+                    chronicle=chronicle_queries,
                     publication_assets=publication_assets,
                     beat_report=beat_report,
                     roster_market=roster_market,
@@ -189,6 +199,18 @@ def collect_all(
                     (directory / "dossier.md").write_text(render_editorial_review(dossier), encoding="utf-8")
                     generated.extend(
                         write_flagship_research_packet(directory, flagship_packet)
+                    )
+                    generated.extend(
+                        _write_publication_complete_artifacts(
+                            directory,
+                            snapshot,
+                            dossier,
+                            flagship_packet,
+                            external_inputs,
+                            publication_assets=publication_assets,
+                            beat_report=beat_report,
+                            chronicle=chronicle_queries,
+                        )
                     )
 
         reading_path = directory / "reading_packet.md"
@@ -257,6 +279,8 @@ def _write_newspaper_packet(
     publication: PublicationConfig,
     *,
     phase: str = "weekly",
+    chronicle: ChronicleQueries | None = None,
+    beat_report: dict[str, Any] | None = None,
 ) -> tuple[Path, ...]:
     packet = build_publication_packet(
         snapshot,
@@ -267,7 +291,62 @@ def _write_newspaper_packet(
     generated = list(write_publication_packet(directory, packet))
     research = build_newspaper_research_packet(snapshot, dossier, packet)
     generated.extend(write_newspaper_research_packet(directory, research))
+    external = load_external_inputs(None, publication.key)
+    generated.extend(
+        _write_publication_complete_artifacts(
+            directory,
+            snapshot,
+            dossier,
+            research,
+            external,
+            publication_assets=None,
+            beat_report=beat_report,
+            chronicle=chronicle,
+        )
+    )
     return tuple(generated)
+
+
+def _write_publication_complete_artifacts(
+    directory: Path,
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    research_packet: dict[str, Any],
+    external_inputs,
+    *,
+    publication_assets: dict[str, Any] | None,
+    beat_report: dict[str, Any] | None,
+    chronicle: ChronicleQueries | None,
+) -> tuple[Path, Path]:
+    """Compile the immutable factual handoff after all research has completed."""
+    canonical = build_canonical_league_evidence(snapshot, chronicle)
+    transactions = build_transaction_evidence(snapshot, chronicle)
+    manifest = build_source_manifest(
+        snapshot,
+        dossier,
+        external_inputs,
+        beat_report=beat_report,
+        publication_assets=publication_assets,
+        information_cutoff=dossier.get("information_current_through"),
+    )
+    health = health_evidence(
+        snapshot,
+        dossier,
+        beat_report,
+        manifest.get("information_cutoff"),
+    )
+    complete = build_publication_complete_packet(
+        snapshot,
+        dossier,
+        research_packet,
+        external_inputs,
+        canonical_evidence=canonical,
+        transaction_evidence=transactions,
+        source_manifest=manifest,
+        health=health,
+        publication_assets=publication_assets,
+    )
+    return write_publication_complete_packet(directory, complete)
 
 
 def _collect_deep_nfl_context(

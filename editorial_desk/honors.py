@@ -222,9 +222,9 @@ def _prior_weeks(snapshot, history=(), chronicle=None):
             if 0 < int(row["week"]) < week:
                 grouped[int(row["week"])].append(row)
         weeks.update(grouped)
+    publication_history = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
     for raw, rows in (
-        ((snapshot.get("flagship_sleeper") or {}).get("schedule") or {}).get("weeks")
-        or {}
+        ((publication_history.get("schedule") or {}).get("weeks") or {})
     ).items():
         if 0 < int(raw) < week:
             weeks[int(raw)] = rows
@@ -437,9 +437,8 @@ def _transactions(snapshot, chronicle=None):
     """Same-week additions are recent; prior drops/trades support former-player stories."""
     current = int(snapshot.get("week") or 0)
     rows = {}
-    weeks = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {}).get(
-        "weeks"
-    ) or {}
+    publication_history = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
+    weeks = ((publication_history.get("transactions") or {}).get("weeks") or {})
     for raw, transactions in {
         **weeks,
         str(current): snapshot.get("transactions") or weeks.get(str(current), []),
@@ -583,25 +582,43 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
         }
     }
     missing = sorted(p for p in needed if projections.get(p) is None)
-    player_ready = not projection_error and not missing
-    if not player_ready:
+    if projection_error:
         for code in PLAYER_PROJECTION_RULES:
             availability[code] = {
                 "status": "UNAVAILABLE",
-                "reason": projection_error
-                or "Frozen pregame player projections missing for: "
-                + ", ".join(missing),
+                "reason": projection_error,
             }
-    matchup_ready = not projection_error and all(
-        matchup_projections.get(str(m["roster_id"])) is not None
-        for m in snapshot.get("matchups") or []
-    )
-    if not matchup_ready:
         for code in ("NO_FEAR", "AGAINST_ALL_ODDS"):
             availability[code] = {
                 "status": "UNAVAILABLE",
-                "reason": projection_error
-                or "Missing frozen pregame matchup projection totals for completed-week rosters.",
+                "reason": projection_error,
+            }
+    elif missing:
+        for code in PLAYER_PROJECTION_RULES:
+            availability[code] = {
+                "status": "PARTIAL",
+                "reason": (
+                    "Some active-roster players lack scoreable retained projections; "
+                    "eligible candidates are evaluated only when their own required "
+                    "starter/alternative evidence is complete. Missing: "
+                    + ", ".join(missing)
+                ),
+            }
+
+    missing_matchup_projection_rosters = sorted(
+        int(m["roster_id"])
+        for m in snapshot.get("matchups") or []
+        if matchup_projections.get(str(m["roster_id"])) is None
+    )
+    if not projection_error and missing_matchup_projection_rosters:
+        for code in ("NO_FEAR", "AGAINST_ALL_ODDS"):
+            availability[code] = {
+                "status": "PARTIAL",
+                "reason": (
+                    "Some completed-week rosters lack a complete submitted-starter "
+                    "projection total; evaluable matchups still qualify. Roster IDs: "
+                    + ", ".join(map(str, missing_matchup_projection_rosters))
+                ),
             }
     if any(
         _entering_rank(external, int(m["roster_id"]), names.get(int(m["roster_id"])))
@@ -614,9 +631,8 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
         }
         if availability["AGAINST_ALL_ODDS"]["status"] == "AVAILABLE":
             availability["AGAINST_ALL_ODDS"] = dict(availability["GIANT_KILLER"])
-    transaction_source = (snapshot.get("flagship_sleeper") or {}).get(
-        "transactions"
-    ) or {}
+    publication_history = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
+    transaction_source = publication_history.get("transactions") or {}
     transaction_weeks = transaction_source.get("weeks") or {}
     current_week = int(snapshot.get("week") or 0)
     current_transactions_known = (
@@ -706,7 +722,7 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 "opponent_roster_id": oid,
             }
             decisions = []
-            if player_ready and slots and len(starters) == len(slots):
+            if not projection_error and slots and len(starters) == len(slots):
                 for starter in starters:
                     for alternative in bench:
                         if (
@@ -795,7 +811,7 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 and projections[p] >= 10
                 and points.get(p) == 0
             ]
-            if player_ready and zeros:
+            if not projection_error and zeros:
                 qualifying = [p for p in zeros if won or margin <= projections[p]]
                 if qualifying:
                     add(
@@ -813,9 +829,16 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 and opp_rank is not None
                 and own_rank - opp_rank >= 8
             )
+            own_matchup_projection = matchup_projections.get(str(rid))
+            opponent_matchup_projection = matchup_projections.get(str(oid))
+            fear_ready = (
+                not projection_error
+                and own_matchup_projection is not None
+                and opponent_matchup_projection is not None
+            )
             fear = (
-                matchup_ready
-                and matchup_projections[str(oid)] - matchup_projections[str(rid)] >= 15
+                fear_ready
+                and opponent_matchup_projection - own_matchup_projection >= 15
             )
             if giant or fear:
                 add(
@@ -830,9 +853,8 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                         "entering_power_rank": own_rank,
                         "opponent_entering_power_rank": opp_rank,
                         "projected_deficit": (
-                            matchup_projections.get(str(oid), 0)
-                            - matchup_projections.get(str(rid), 0)
-                            if matchup_ready
+                            opponent_matchup_projection - own_matchup_projection
+                            if fear_ready
                             else None
                         ),
                         **facts,
@@ -847,9 +869,13 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 and len(starters) == len(slots)
                 and all(points.get(p) is not None for p in starters)
             )
-            if (
-                player_ready
+            full_forge_ready = (
+                not projection_error
                 and complete
+                and all(projections.get(p) is not None for p in starters)
+            )
+            if (
+                full_forge_ready
                 and all(points[p] >= projections[p] for p in starters)
             ):
                 add("FULL_FORGE", rid, event + ":lineup", facts)

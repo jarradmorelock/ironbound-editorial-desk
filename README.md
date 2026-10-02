@@ -34,6 +34,35 @@ Leagues marked as data-only still receive a raw snapshot and machine-readable
 analysis, including ranking inputs, but no publication dossier or Markdown
 draft. Don't Tell My Wife I'm In This is intentionally configured this way.
 
+## Publication-complete handoff
+
+Every publication-enabled league now ends its research run with
+`publication_complete_packet.json` plus a compact Markdown readiness summary.
+This artifact is the factual boundary for local publishing: the manuscript
+builder and PowerPoint builder must not call Sleeper, nflverse, Chronicle,
+GitHub, web search, screenshots, prior issues, or calculate missing league
+facts after the packet is emitted.
+
+The collector first builds shared canonical evidence for historical matchups,
+submitted lineups, player fantasy scores, entering records, cumulative totals,
+transactions, projections, health/source provenance, and other reusable league
+facts. Publication profiles then decide which departments are required.
+Ironbound Weekly and Unbound Weekly use the same deep flagship readiness
+standard. Ballad Crier, The Stampede, The Volunteer Voice, The Saturday
+Standard, and The Hollywood Beat use smaller paper-specific contracts while
+keeping the same offline boundary.
+
+`PUBLICATION READY: YES` means every factual dependency required by that
+publication profile is present or has a valid `ready_no_items` result.
+Structural departments such as scores and standings cannot pass as
+`ready_no_items`. A missing specialized dependency blocks only the
+publication that requires it.
+
+The weekly email attaches both the human-readable handoff and the corresponding
+publication-complete JSON so the latter can be passed directly to the local
+manuscript builder. The Tuesday workflow also fails before email delivery if
+any publication dossier is missing its publication-complete JSON.
+
 The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
 bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping
@@ -52,12 +81,13 @@ settings. Dynasty Daddy supplies current-season starter ranks and dynasty market
 values. If either optional source is unavailable, collection continues and the
 dossier clearly marks the missing input.
 
-Ironbound Weekly and Unbound Weekly receive an additional flagship Sleeper
-sourcebook. For those two magazines only, each run collects all 18 schedule
-weeks and transaction rounds, every current-league draft and draft-pick record,
-the winner and consolation brackets, the future-pick ledger, next-week
-projections, and expanded player availability and depth-chart fields. The
-human-readable email attachment turns those sources into:
+Every publication-enabled league receives durable weekly Sleeper context
+needed to finish its own publication contract, including historical schedule
+and transaction rounds, current-league draft records, bracket context, and
+next-week matchup/projection evidence when available. Ironbound Weekly and
+Unbound Weekly additionally receive the deeper NFL usage and magazine
+enrichment required by their flagship departments. The human-readable
+flagship handoff can therefore include:
 
 - starter-by-starter **actual NFL box-score and usage evidence**, including completions/attempts, passing/rushing/receiving yards and touchdowns, catches/targets, offensive snap share, target share, carry share, and high-value opportunities when the relevant source is available;
 - team and division strength-of-schedule comparisons;

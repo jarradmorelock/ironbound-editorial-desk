@@ -87,8 +87,8 @@ def collect_league(
     matchups = client.matchups(config.sleeper_league_id, week)
     transactions = client.transactions(config.sleeper_league_id, week)
     traded_picks = client.traded_picks(config.sleeper_league_id)
-    flagship_context = (
-        _collect_flagship_context(
+    publication_context = (
+        _collect_publication_context(
             client,
             config.sleeper_league_id,
             str(state.get("season") or league.get("season") or "unknown"),
@@ -96,7 +96,7 @@ def collect_league(
             matchups,
             transactions,
         )
-        if config.tier == "flagship"
+        if config.publication_enabled
         else None
     )
 
@@ -116,16 +116,16 @@ def collect_league(
         rostered_ids.update(
             str(player_id) for player_id in (roster.get("players") or [])
         )
-    if flagship_context:
+    if publication_context:
         for rows in (
-            (flagship_context.get("schedule") or {}).get("weeks") or {}
+            (publication_context.get("schedule") or {}).get("weeks") or {}
         ).values():
             for matchup in rows:
                 rostered_ids.update(
                     str(player_id) for player_id in (matchup.get("players") or [])
                 )
         for records in (
-            (flagship_context.get("transactions") or {}).get("weeks") or {}
+            (publication_context.get("transactions") or {}).get("weeks") or {}
         ).values():
             for transaction in records:
                 rostered_ids.update(
@@ -134,21 +134,21 @@ def collect_league(
                 rostered_ids.update(
                     str(player_id) for player_id in (transaction.get("drops") or {})
                 )
-        for draft in (flagship_context.get("drafts") or {}).get("records") or []:
+        for draft in (publication_context.get("drafts") or {}).get("records") or []:
             rostered_ids.update(
                 str(pick["player_id"])
                 for pick in draft.get("picks") or []
                 if pick.get("player_id") is not None
             )
-        next_week = flagship_context.get("next_week_projections") or {}
-        flagship_context["next_week_projections"] = _trim_ranking_sources(
+        next_week = publication_context.get("next_week_projections") or {}
+        publication_context["next_week_projections"] = _trim_ranking_sources(
             {"sleeper_projections": next_week},
             rostered_ids,
         )["sleeper_projections"]
     players = {
         player_id: _trim_player(
             player_directory.get(player_id) or {},
-            include_editorial_context=config.tier == "flagship",
+            include_editorial_context=config.publication_enabled,
         )
         for player_id in sorted(rostered_ids)
     }
@@ -190,11 +190,12 @@ def collect_league(
             rostered_ids,
         ),
         "nfl_context": _trim_nfl_context(nfl_context or {}, players),
-        "flagship_sleeper": flagship_context,
+        "publication_sleeper": publication_context,
+        "flagship_sleeper": publication_context if config.tier == "flagship" else None,
     }
 
 
-def _collect_flagship_context(
+def _collect_publication_context(
     client: SleeperClient,
     league_id: str,
     season: str,
@@ -213,7 +214,7 @@ def _collect_flagship_context(
                 if schedule_week == week
                 else client.matchups(league_id, schedule_week)
             )
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        except (requests.RequestException, ValueError, KeyError, AttributeError, TypeError) as exc:
             schedule_errors[str(schedule_week)] = str(exc)
         try:
             transaction_weeks[str(schedule_week)] = (
@@ -224,15 +225,15 @@ def _collect_flagship_context(
         except (requests.RequestException, ValueError, KeyError) as exc:
             transaction_errors[str(schedule_week)] = str(exc)
 
-    drafts = _optional_list(client.drafts, league_id)
+    drafts = _optional_list(getattr(client, "drafts", None), league_id)
     draft_records: list[dict[str, Any]] = []
     draft_errors: dict[str, str] = {}
     for draft in drafts.get("records") or []:
         draft_id = str(draft.get("draft_id") or "")
         if not draft_id:
             continue
-        picks = _optional_list(client.draft_picks, draft_id)
-        traded = _optional_list(client.draft_traded_picks, draft_id)
+        picks = _optional_list(getattr(client, "draft_picks", None), draft_id)
+        traded = _optional_list(getattr(client, "draft_traded_picks", None), draft_id)
         draft_records.append(
             {
                 "draft": draft,
@@ -245,18 +246,21 @@ def _collect_flagship_context(
         if traded.get("status") != "available":
             draft_errors[f"{draft_id}:traded_picks"] = str(traded.get("error"))
 
-    winners = _optional_list(client.winners_bracket, league_id)
-    losers = _optional_list(client.losers_bracket, league_id)
+    winners = _optional_list(getattr(client, "winners_bracket", None), league_id)
+    losers = _optional_list(getattr(client, "losers_bracket", None), league_id)
 
     if week < 18:
         try:
+            projection_fetcher = getattr(client, "projections", None)
+            if projection_fetcher is None:
+                raise AttributeError("projection endpoint unavailable")
             next_week_projections = {
                 "status": "available",
                 "season": season,
                 "week": week + 1,
-                "players": client.projections(season, week + 1),
+                "players": projection_fetcher(season, week + 1),
             }
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        except (requests.RequestException, ValueError, KeyError, AttributeError, TypeError) as exc:
             next_week_projections = {
                 "status": "unavailable",
                 "season": season,
@@ -322,6 +326,8 @@ def _collect_flagship_context(
 
 
 def _optional_list(fetcher: Any, *args: Any) -> dict[str, Any]:
+    if fetcher is None:
+        return {"status": "unavailable", "records": [], "error": "endpoint unavailable"}
     try:
         records = fetcher(*args)
         if not isinstance(records, list):

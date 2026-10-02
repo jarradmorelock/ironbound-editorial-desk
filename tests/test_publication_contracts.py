@@ -36,7 +36,7 @@ def test_volunteer_voice_contract_has_no_division_features_or_labels():
     assert all("division" not in row.display_name.casefold() for row in weekly)
     assert _features(publications["volunteer_voice"], "weekly")[
         "league_wide_started_mvp"
-    ].display_name == "Mountain MVP"
+    ].display_name == "King of the Hill"
 
 
 def test_saturday_standard_keeps_divisions_and_idp_first_class():

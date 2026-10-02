@@ -243,3 +243,58 @@ def test_newspaper_health_renderer_drops_bare_active_noise():
     assert "Questionable Star" in text
     assert "Hamstring" in text
     assert "Healthy Star" not in text
+
+
+def test_newspaper_research_exposes_shared_canonical_history():
+    features = [
+        "weekly_results",
+        "league_median",
+        "game_window_context",
+        "final_scorecard",
+        "lineup_flip_candidates",
+        "standings",
+        "ranking_movement",
+        "weekly_honors",
+        "player_position_leaders",
+        "waiver_impact",
+        "health_status",
+        "record_watch",
+        "next_matchups",
+    ]
+    snapshot = {
+        "week": 2,
+        "league": {"season": "2026"},
+        "editorial": {"league_key": "ballad"},
+        "users": [
+            {"user_id": "u1", "display_name": "One"},
+            {"user_id": "u2", "display_name": "Two"},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1"},
+            {"roster_id": 2, "owner_id": "u2"},
+        ],
+        "matchups": [
+            {"matchup_id": 1, "roster_id": 1, "points": 120, "players": ["p1"], "players_points": {"p1": 20}},
+            {"matchup_id": 1, "roster_id": 2, "points": 100, "players": ["p2"], "players_points": {"p2": 10}},
+        ],
+        "publication_sleeper": {
+            "schedule": {
+                "status": "available",
+                "weeks": {
+                    "1": [
+                        {"matchup_id": 1, "roster_id": 1, "points": 90, "players": ["p1"], "players_points": {"p1": 15}},
+                        {"matchup_id": 1, "roster_id": 2, "points": 80, "players": ["p2"], "players_points": {"p2": 12}},
+                    ],
+                    "2": [],
+                },
+            }
+        },
+    }
+    research = build_newspaper_research_packet(
+        snapshot,
+        {"roster_health": {"status": "available"}},
+        _packet("ballad_crier", features),
+    )
+
+    assert research["canonical_evidence"]["coverage"]["status"] == "READY"
+    assert research["canonical_evidence"]["entering_records"]["2"]["1"]["wins"] == 1

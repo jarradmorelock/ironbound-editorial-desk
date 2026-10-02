@@ -1,0 +1,89 @@
+{
+  "publication_key": "ironbound_weekly",
+  "league_key": "ironbound_sixteen",
+  "season": "2026",
+  "week": 3,
+  "teams": [
+    "Martian Targaryen",
+    "Madtown Coyotes",
+    "Frozen Tundraners",
+    "The Buckaneers",
+    "Chicken",
+    "San Carlos FC",
+    "Granite Mountain Drakes",
+    "The Mad Hatters FC",
+    "Team 9",
+    "Team 10",
+    "Team 11",
+    "Team 12",
+    "Team 13",
+    "Team 14",
+    "Team 15",
+    "Team 16"
+  ],
+  "games": [
+    {
+      "matchup_id": 1,
+      "left_roster_id": 1,
+      "right_roster_id": 2
+    },
+    {
+      "matchup_id": 2,
+      "left_roster_id": 3,
+      "right_roster_id": 4
+    },
+    {
+      "matchup_id": 3,
+      "left_roster_id": 5,
+      "right_roster_id": 6
+    },
+    {
+      "matchup_id": 4,
+      "left_roster_id": 7,
+      "right_roster_id": 8
+    },
+    {
+      "matchup_id": 5,
+      "left_roster_id": 9,
+      "right_roster_id": 10
+    },
+    {
+      "matchup_id": 6,
+      "left_roster_id": 11,
+      "right_roster_id": 12
+    },
+    {
+      "matchup_id": 7,
+      "left_roster_id": 13,
+      "right_roster_id": 14
+    },
+    {
+      "matchup_id": 8,
+      "left_roster_id": 15,
+      "right_roster_id": 16
+    }
+  ],
+  "manager_honors": {
+    "manager_of_the_week": "Madtown Coyotes",
+    "bad_beat": "Martian Targaryen",
+    "escape_artist": "Granite Mountain Drakes",
+    "no_fear": "The Mad Hatters FC",
+    "no_fear_projected_deficit": 18
+  },
+  "player_honors": {
+    "overall": "Jahmyr Gibbs",
+    "benchwarmer": "Geno Smith"
+  },
+  "season_team_points_top_three": [
+    "Martian Targaryen",
+    "Madtown Coyotes",
+    "Frozen Tundraners"
+  ],
+  "division_averages": {
+    "Forge": 112.3608,
+    "Hammer": 107.1367,
+    "Anvil": 101.78,
+    "Crucible": 98.7117
+  },
+  "week_ahead_matchups": 8
+}

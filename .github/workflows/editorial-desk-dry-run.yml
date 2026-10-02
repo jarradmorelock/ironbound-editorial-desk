@@ -253,6 +253,32 @@ jobs:
           --beat-ledger beat-inputs/events.jsonl
           --beat-ledger-revision "${{ steps.beat_news.outputs.revision }}"
 
+      - name: Verify publication-complete packet delivery
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: app
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path("../output/primary")
+          dossiers = sorted(root.glob("*/week-*/*/dossier.json"))
+          if not dossiers:
+              raise SystemExit("No publication dossiers were generated.")
+
+          missing = [
+              path.parent
+              for path in dossiers
+              if not (path.parent / "publication_complete_packet.json").is_file()
+          ]
+          if missing:
+              raise SystemExit(
+                  "Missing publication_complete_packet.json for: "
+                  + ", ".join(str(path) for path in missing)
+              )
+          print(f"Verified {len(dossiers)} publication-complete packets.")
+          PY
+
       - name: Write Tuesday Chronicle baseline
         if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
         working-directory: app

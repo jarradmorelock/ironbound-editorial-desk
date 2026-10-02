@@ -6,6 +6,8 @@ from editorial_desk.feature_producers import game_window_context
 from editorial_desk.flagship_research import (
     _attach_rookie_draft_context,
     _season_team_score_top_three,
+    _season_player_boards,
+    _manager_weekly_awards,
 )
 from editorial_desk.newspaper_research import render_newspaper_research_packet
 from editorial_desk.nfl_enrichment import _build_flagship_stat_book
@@ -228,3 +230,108 @@ def test_newspaper_renderer_never_emits_json_only_placeholder():
     assert "Structured evidence is present" not in text
     assert "team=Alpha" in text
     assert "value=42" in text
+
+
+def test_season_player_board_does_not_require_current_acquisition_to_have_prior_week_scores():
+    snapshot = {
+        "week": 2,
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "players": ["p1", "new"]},
+            {"roster_id": 2, "owner_id": "u2", "players": ["p2"]},
+        ],
+        "users": [
+            {"user_id": "u1", "display_name": "One", "metadata": {"team_name": "One"}},
+            {"user_id": "u2", "display_name": "Two", "metadata": {"team_name": "Two"}},
+        ],
+        "players": {
+            "p1": {"full_name": "Player One", "position": "QB", "years_exp": 2},
+            "p2": {"full_name": "Player Two", "position": "QB", "years_exp": 2},
+            "new": {"full_name": "New Player", "position": "WR", "years_exp": 1},
+        },
+        "matchups": [
+            {
+                "roster_id": 1,
+                "players": ["p1", "new"],
+                "starters": ["p1", "new"],
+                "players_points": {"p1": 20.0, "new": 10.0},
+            },
+            {
+                "roster_id": 2,
+                "players": ["p2"],
+                "starters": ["p2"],
+                "players_points": {"p2": 15.0},
+            },
+        ],
+        "publication_sleeper": {
+            "transactions": {
+                "weeks": {
+                    "2": [
+                        {
+                            "transaction_id": "new-add",
+                            "status": "complete",
+                            "type": "free_agent",
+                            "adds": {"new": 1},
+                            "drops": {},
+                        }
+                    ]
+                }
+            }
+        },
+    }
+    historical = [
+        {"week": 1, "roster_id": 1, "player_id": "p1", "points": 18.0},
+        {"week": 1, "roster_id": 2, "player_id": "p2", "points": 12.0},
+    ]
+
+    boards = _season_player_boards(historical, snapshot)
+
+    assert boards["player_season_top_three"]["status"] == "READY"
+    assert boards["player_season_top_three"]["by_position"]["WR"][0]["player"] == "New Player"
+    assert boards["player_season_top_three"]["by_position"]["WR"][0]["points"] == 10.0
+
+
+def test_manager_weekly_awards_accept_verified_canonical_entering_records_without_prior_dossiers():
+    dossier = {
+        "lineup_efficiency": [
+            {"roster_id": 1, "team": "Winner", "actual_points": 90.0, "optimal_points": 100.0, "efficiency": 0.9},
+            {"roster_id": 2, "team": "Loser", "actual_points": 110.0, "optimal_points": 115.0, "efficiency": 0.9565},
+            {"roster_id": 3, "team": "Other Winner", "actual_points": 100.0, "optimal_points": 105.0, "efficiency": 0.9524},
+            {"roster_id": 4, "team": "Other Loser", "actual_points": 80.0, "optimal_points": 100.0, "efficiency": 0.8},
+        ],
+        "scoreboard": [
+            {
+                "matchup_id": 1,
+                "teams": [
+                    {"roster_id": 1, "team": "Winner", "points": 90.0},
+                    {"roster_id": 4, "team": "Other Loser", "points": 80.0},
+                ],
+                "winner": {"roster_id": 1},
+            },
+            {
+                "matchup_id": 2,
+                "teams": [
+                    {"roster_id": 3, "team": "Other Winner", "points": 120.0},
+                    {"roster_id": 2, "team": "Loser", "points": 110.0},
+                ],
+                "winner": {"roster_id": 3},
+            },
+        ],
+    }
+    entering = {
+        "1": {"wins": 0, "losses": 2, "ties": 0},
+        "2": {"wins": 2, "losses": 0, "ties": 0},
+        "3": {"wins": 1, "losses": 1, "ties": 0},
+        "4": {"wins": 1, "losses": 1, "ties": 0},
+    }
+
+    result = _manager_weekly_awards(
+        dossier,
+        [],
+        current_week=3,
+        manager_of_the_week={"roster_id": 3},
+        entering_records=entering,
+    )
+
+    assert result["bad_beat"]["roster_id"] == 2
+    assert result["bad_beat"]["record_status"] == "VERIFIED"
+    assert result["escape_artist"]["record_status"] == "VERIFIED"

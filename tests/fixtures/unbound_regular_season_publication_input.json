@@ -1,0 +1,83 @@
+{
+  "publication_key": "unbound_weekly",
+  "league_key": "free_ironbound_sixteen",
+  "season": "2026",
+  "week": 2,
+  "teams": [
+    "The #1 Loser",
+    "nkroeze20",
+    "Prescott Pussybacks",
+    "The Blacksmith",
+    "Rainman",
+    "The fraudinals",
+    "Chiefbighill",
+    "Barangay 828",
+    "Dropswitch Legion MMXXVI",
+    "The MusCATeers",
+    "Lemon scented Pearsall",
+    "Mr. Loveland's Club",
+    "Walker Texas Ranger",
+    "FullMetalJacketRequired",
+    "Campbell's Kneecap Soup",
+    "Roadkill"
+  ],
+  "games": [
+    {
+      "matchup_id": 1,
+      "left_roster_id": 1,
+      "right_roster_id": 2
+    },
+    {
+      "matchup_id": 2,
+      "left_roster_id": 3,
+      "right_roster_id": 4
+    },
+    {
+      "matchup_id": 3,
+      "left_roster_id": 5,
+      "right_roster_id": 6
+    },
+    {
+      "matchup_id": 4,
+      "left_roster_id": 7,
+      "right_roster_id": 8
+    },
+    {
+      "matchup_id": 5,
+      "left_roster_id": 9,
+      "right_roster_id": 10
+    },
+    {
+      "matchup_id": 6,
+      "left_roster_id": 11,
+      "right_roster_id": 12
+    },
+    {
+      "matchup_id": 7,
+      "left_roster_id": 13,
+      "right_roster_id": 14
+    },
+    {
+      "matchup_id": 8,
+      "left_roster_id": 15,
+      "right_roster_id": 16
+    }
+  ],
+  "manager_honors": {
+    "manager_of_the_week": "Prescott Pussybacks",
+    "bad_beat": "Dropswitch Legion MMXXVI",
+    "escape_artist": "Rainman"
+  },
+  "player_honors": {
+    "overall": "Josh Allen",
+    "benchwarmer": "Jared Goff"
+  },
+  "rookie_watch_top_five": [
+    "Denzel Boston",
+    "Jonah Coleman",
+    "Jeremiyah Love",
+    "Jadarian Price",
+    "Germie Bernard"
+  ],
+  "week_ahead_matchups": 8
+}

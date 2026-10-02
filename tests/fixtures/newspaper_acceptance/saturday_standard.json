@@ -1,0 +1,38 @@
+{
+  "publication_key": "saturday_standard",
+  "source_issue": "The Saturday Standard 2026.02.pdf",
+  "required_departments": [
+    "weekly_results",
+    "opening_statement_inputs",
+    "game_window_context",
+    "weekly_ledger",
+    "division_metrics",
+    "ranking_movement",
+    "lineup_efficiency",
+    "lineup_flip_candidates",
+    "waiver_impact",
+    "divisional_started_mvps",
+    "manager_of_week",
+    "idp_position_metrics",
+    "weekly_desk_honors",
+    "dynasty_market_values",
+    "health_status"
+  ],
+  "observed_printed": [
+    "weekly_results",
+    "opening_statement_inputs",
+    "game_window_context",
+    "weekly_ledger",
+    "division_metrics",
+    "ranking_movement",
+    "lineup_efficiency",
+    "lineup_flip_candidates",
+    "waiver_impact",
+    "divisional_started_mvps",
+    "manager_of_week",
+    "idp_position_metrics",
+    "weekly_desk_honors",
+    "dynasty_market_values"
+  ],
+  "note": "IDP remains first-class. Health research remains required even when the compact issue does not print a health block."
+}

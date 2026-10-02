@@ -262,6 +262,21 @@ def test_season_player_board_does_not_require_current_acquisition_to_have_prior_
                 "players_points": {"p2": 15.0},
             },
         ],
+        "publication_sleeper": {
+            "transactions": {
+                "weeks": {
+                    "2": [
+                        {
+                            "transaction_id": "new-add",
+                            "status": "complete",
+                            "type": "free_agent",
+                            "adds": {"new": 1},
+                            "drops": {},
+                        }
+                    ]
+                }
+            }
+        },
     }
     historical = [
         {"week": 1, "roster_id": 1, "player_id": "p1", "points": 18.0},

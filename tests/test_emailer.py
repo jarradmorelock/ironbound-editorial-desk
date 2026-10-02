@@ -298,3 +298,31 @@ def test_build_dossier_email_attaches_authoritative_ranking_assets(tmp_path):
     assert "Use them unchanged" in message.get_body().get_content()
     image_parts = attachments[1:]
     assert all(part.get_content_type() == "image/png" for part in image_parts)
+
+
+def test_build_dossier_email_attaches_publication_complete_json(tmp_path):
+    publication_root = _weekly_packet(tmp_path)
+    (publication_root / "publication_complete_packet.md").write_text(
+        "# Publication Complete\n", encoding="utf-8"
+    )
+    (publication_root / "publication_complete_packet.json").write_text(
+        json.dumps({
+            "contract_version": "publication-complete-v1",
+            "readiness": {"publication_ready": True},
+        }),
+        encoding="utf-8",
+    )
+
+    message = build_dossier_email(
+        tmp_path,
+        1,
+        "desk@example.com",
+        "reader@example.com",
+    )
+
+    filenames = [part.get_filename() for part in message.iter_attachments()]
+    assert filenames == [
+        "ironbound-week-01.md",
+        "ironbound-week-01-publication-complete.json",
+    ]
+    assert "publication-complete factual packets" in message.get_body().get_content().lower()

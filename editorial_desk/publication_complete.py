@@ -162,13 +162,34 @@ def _newspaper_required_departments(
     return list(dict.fromkeys(required))
 
 
+_NEWSPAPER_READY_NO_ITEMS_ALLOWED = {
+    "lineup_flip_candidates",
+    "waiver_impact",
+    "health_status",
+    "game_window_context",
+    "weekly_briefs",
+    "transactions",
+    "future_picks",
+    "rookie_draft",
+    "free_agent_of_week",
+    "bad_beat",
+    "escape_artist",
+    "bench_blast",
+}
+
+
 def _newspaper_department_problem(
     feature: str,
     row: dict[str, Any],
 ) -> str | None:
     status = str(row.get("status") or "").lower()
     if status == "ready_no_items":
-        return None
+        if feature in _NEWSPAPER_READY_NO_ITEMS_ALLOWED:
+            return None
+        return (
+            "this structural department requires concrete evidence and cannot "
+            "be satisfied by ready_no_items"
+        )
     if status != "ready":
         return str(row.get("reason") or status or "department missing")
 

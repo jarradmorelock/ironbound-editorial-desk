@@ -308,16 +308,24 @@ def read_optional_artifact(directory: Path, name: str) -> dict[str, Any] | None:
 
 
 def reading_packet_from_artifacts(directory: Path, dossier: dict[str, Any]) -> str:
-    publication_complete_path = Path(directory) / "publication_complete_packet.md"
-    if publication_complete_path.exists():
-        return publication_complete_path.read_text(encoding="utf-8")
-    flagship_path = Path(directory) / "flagship_research_packet.md"
+    directory = Path(directory)
+    complete_json = directory / "publication_complete_packet.json"
+    handoff_note = ""
+    if complete_json.exists():
+        handoff_note = (
+            "# PUBLICATION-COMPLETE HANDOFF\n\n"
+            "The adjacent **publication_complete_packet.json** is the factual handoff "
+            "for the local manuscript builder. Research ends at that packet boundary; "
+            "the material below remains the rich human-readable research packet.\n\n"
+        )
+
+    flagship_path = directory / "flagship_research_packet.md"
     if flagship_path.exists():
-        return flagship_path.read_text(encoding="utf-8")
-    newspaper_path = Path(directory) / "newspaper_research_packet.md"
+        return handoff_note + flagship_path.read_text(encoding="utf-8")
+    newspaper_path = directory / "newspaper_research_packet.md"
     if newspaper_path.exists():
-        return newspaper_path.read_text(encoding="utf-8")
-    return render_reading_packet(
+        return handoff_note + newspaper_path.read_text(encoding="utf-8")
+    return handoff_note + render_reading_packet(
         dossier,
         packet=read_optional_artifact(directory, "publication_packet.json"),
         story=read_optional_artifact(directory, "story_desk.json"),

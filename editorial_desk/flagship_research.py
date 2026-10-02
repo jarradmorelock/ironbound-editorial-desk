@@ -146,6 +146,7 @@ def build_flagship_research_packet(
         history,
         current_week=week,
         manager_of_the_week=honors_research.get("manager_of_the_week"),
+        canonical_evidence=canonical_evidence,
     )
     rookie_awards = _rookie_weekly_awards(weekly, snapshot, intelligence)
     health = dossier.get("roster_health") or {}
@@ -1750,6 +1751,7 @@ def _manager_weekly_awards(
     *,
     current_week: int,
     manager_of_the_week: dict[str, Any] | None,
+    canonical_evidence: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     lineup = list(dossier.get("lineup_efficiency") or [])
     winner_id = _safe_int((manager_of_the_week or {}).get("roster_id"))
@@ -1767,34 +1769,58 @@ def _manager_weekly_awards(
         default=None,
     )
 
-    records: dict[int, dict[int, float]] = {}
-    for prior in history:
-        week = _safe_int(prior.get("week"))
-        if week is None or not 0 < week < current_week:
-            continue
-        for game in prior.get("scoreboard") or []:
-            teams = game.get("teams") or []
-            if len(teams) != 2:
-                continue
-            scores = [(_safe_int(team.get("roster_id")), _safe_float(team.get("points"))) for team in teams]
-            if any(rid is None or points is None for rid, points in scores):
-                continue
-            (left_id, left_score), (right_id, right_score) = scores
-            result = 0.5 if left_score == right_score else (1.0 if left_score > right_score else 0.0)
-            records.setdefault(left_id, {})[week] = result
-            records.setdefault(right_id, {})[week] = 1.0 - result if result != 0.5 else 0.5
+    canonical_entering = (
+        ((canonical_evidence or {}).get("entering_records") or {}).get(
+            str(current_week), {}
+        )
+    )
+    entering: dict[int, dict[str, int]] = {
+        int(roster_id): {
+            "wins": int((record or {}).get("wins") or 0),
+            "losses": int((record or {}).get("losses") or 0),
+            "ties": int((record or {}).get("ties") or 0),
+        }
+        for roster_id, record in canonical_entering.items()
+        if str(roster_id).isdigit()
+    }
 
-    expected_weeks = set(range(1, current_week))
-    entering: dict[int, dict[str, int]] = {}
-    if expected_weeks:
-        for roster_id, results in records.items():
-            if set(results) != expected_weeks:
+    if not entering:
+        records: dict[int, dict[int, float]] = {}
+        for prior in history:
+            week = _safe_int(prior.get("week"))
+            if week is None or not 0 < week < current_week:
                 continue
-            entering[roster_id] = {
-                "wins": sum(value == 1.0 for value in results.values()),
-                "losses": sum(value == 0.0 for value in results.values()),
-                "ties": sum(value == 0.5 for value in results.values()),
-            }
+            for game in prior.get("scoreboard") or []:
+                teams = game.get("teams") or []
+                if len(teams) != 2:
+                    continue
+                scores = [
+                    (_safe_int(team.get("roster_id")), _safe_float(team.get("points")))
+                    for team in teams
+                ]
+                if any(rid is None or points is None for rid, points in scores):
+                    continue
+                (left_id, left_score), (right_id, right_score) = scores
+                result = (
+                    0.5
+                    if left_score == right_score
+                    else (1.0 if left_score > right_score else 0.0)
+                )
+                records.setdefault(left_id, {})[week] = result
+                records.setdefault(right_id, {})[week] = (
+                    1.0 - result if result != 0.5 else 0.5
+                )
+
+        expected_weeks = set(range(1, current_week))
+        if expected_weeks:
+            for roster_id, results in records.items():
+                if set(results) != expected_weeks:
+                    continue
+                entering[roster_id] = {
+                    "wins": sum(value == 1.0 for value in results.values()),
+                    "losses": sum(value == 0.0 for value in results.values()),
+                    "ties": sum(value == 0.5 for value in results.values()),
+                }
 
     losses: list[dict[str, Any]] = []
     wins: list[dict[str, Any]] = []

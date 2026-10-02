@@ -216,7 +216,7 @@ Refactor `roster_market.py` to consume the normalized transaction evidence for c
 Run:
 
 ```bash
-pytest tests/test_transaction_evidence.py tests/test_roster_market.py tests/test_flagship_roster_market.py -q
+pytest tests/test_transaction_evidence.py tests/test_roster_market.py -q
 ```
 
 Expected: PASS.
@@ -235,7 +235,7 @@ git commit -m "feat: normalize publication transaction evidence"
 **Files:**
 - Modify: `editorial_desk/honors.py`
 - Modify: `editorial_desk/flagship_research.py`
-- Test: `tests/test_honors.py`
+- Test: `tests/test_honors_registry.py`
 - Test: `tests/test_historical_projection_awards.py`
 - Test: `tests/test_canonical_evidence.py`
 
@@ -270,7 +270,7 @@ def test_bad_beat_and_escape_artist_use_sleeper_historical_entering_records():
 Run:
 
 ```bash
-pytest tests/test_honors.py tests/test_historical_projection_awards.py -q
+pytest tests/test_honors_registry.py tests/test_historical_projection_awards.py -q
 ```
 
 Expected: at least the sparse-projection and entering-record tests fail on current behavior.
@@ -298,7 +298,7 @@ Do not change any award threshold.
 Run:
 
 ```bash
-pytest tests/test_honors.py tests/test_historical_projection_awards.py tests/test_flagship_research*.py -q
+pytest tests/test_honors_registry.py tests/test_historical_projection_awards.py tests/test_flagship_research*.py -q
 ```
 
 Expected: PASS.
@@ -306,7 +306,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add editorial_desk/honors.py editorial_desk/flagship_research.py tests/test_honors.py tests/test_historical_projection_awards.py
+git add editorial_desk/honors.py editorial_desk/flagship_research.py tests/test_honors_registry.py tests/test_historical_projection_awards.py
 git commit -m "fix: evaluate honors from complete candidate evidence"
 ```
 
@@ -490,7 +490,7 @@ Wire `enriched_collector.py` so every flagship run emits the new files next to `
 Run:
 
 ```bash
-pytest tests/test_publication_complete.py tests/test_reading_packets.py tests/test_enriched_collector.py tests/test_ranking_asset_handoff.py -q
+pytest tests/test_publication_complete.py tests/test_reading_packets.py tests/test_flagship_research.py tests/test_ranking_asset_handoff.py -q
 ```
 
 Expected: PASS.
@@ -590,7 +590,7 @@ Rules:
 Run:
 
 ```bash
-pytest   tests/test_ironbound_week3_publication_acceptance.py   tests/test_canonical_evidence.py   tests/test_transaction_evidence.py   tests/test_honors.py   tests/test_publication_sources.py   tests/test_publication_complete.py -q
+pytest   tests/test_ironbound_week3_publication_acceptance.py   tests/test_canonical_evidence.py   tests/test_transaction_evidence.py   tests/test_honors_registry.py   tests/test_publication_sources.py   tests/test_publication_complete.py -q
 ```
 
 Expected: PASS and `publication_ready == true` for the Week 3 gold-standard fixture.

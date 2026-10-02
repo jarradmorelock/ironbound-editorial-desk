@@ -291,3 +291,14 @@ def test_roster_market_uses_shared_transaction_evidence_and_preserves_trade_pick
     assert report["transactions"]["current_week"][0]["transaction_id"] == "trade-pick"
     assert report["transactions"]["current_week"][0]["draft_picks"][0]["season"] == "2027"
     assert report["transaction_evidence"]["pick_provenance_status"] == "READY"
+
+
+def test_publication_history_preserves_repeated_asset_movement_across_weeks():
+    snapshot = _snapshot()
+    snapshot["publication_sleeper"] = snapshot.pop("flagship_sleeper")
+
+    report = build_roster_market_report(snapshot, {}, None, None)
+
+    jordan = next(row for row in report["repeated_asset_movement"] if row["player_id"] == "p1")
+    assert jordan["transaction_events"] == 2
+    assert report["transactions"]["season_event_count"] == 3

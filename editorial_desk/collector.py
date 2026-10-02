@@ -87,7 +87,7 @@ def collect_league(
     matchups = client.matchups(config.sleeper_league_id, week)
     transactions = client.transactions(config.sleeper_league_id, week)
     traded_picks = client.traded_picks(config.sleeper_league_id)
-    flagship_context = (
+    publication_context = (
         _collect_flagship_context(
             client,
             config.sleeper_league_id,
@@ -96,8 +96,11 @@ def collect_league(
             matchups,
             transactions,
         )
-        if config.tier == "flagship"
+        if config.publication_enabled
         else None
+    )
+    flagship_context = (
+        publication_context if config.tier == "flagship" else None
     )
 
     rostered_ids = {
@@ -116,16 +119,16 @@ def collect_league(
         rostered_ids.update(
             str(player_id) for player_id in (roster.get("players") or [])
         )
-    if flagship_context:
+    if publication_context:
         for rows in (
-            (flagship_context.get("schedule") or {}).get("weeks") or {}
+            (publication_context.get("schedule") or {}).get("weeks") or {}
         ).values():
             for matchup in rows:
                 rostered_ids.update(
                     str(player_id) for player_id in (matchup.get("players") or [])
                 )
         for records in (
-            (flagship_context.get("transactions") or {}).get("weeks") or {}
+            (publication_context.get("transactions") or {}).get("weeks") or {}
         ).values():
             for transaction in records:
                 rostered_ids.update(
@@ -134,21 +137,21 @@ def collect_league(
                 rostered_ids.update(
                     str(player_id) for player_id in (transaction.get("drops") or {})
                 )
-        for draft in (flagship_context.get("drafts") or {}).get("records") or []:
+        for draft in (publication_context.get("drafts") or {}).get("records") or []:
             rostered_ids.update(
                 str(pick["player_id"])
                 for pick in draft.get("picks") or []
                 if pick.get("player_id") is not None
             )
-        next_week = flagship_context.get("next_week_projections") or {}
-        flagship_context["next_week_projections"] = _trim_ranking_sources(
+        next_week = publication_context.get("next_week_projections") or {}
+        publication_context["next_week_projections"] = _trim_ranking_sources(
             {"sleeper_projections": next_week},
             rostered_ids,
         )["sleeper_projections"]
     players = {
         player_id: _trim_player(
             player_directory.get(player_id) or {},
-            include_editorial_context=config.tier == "flagship",
+            include_editorial_context=config.publication_enabled,
         )
         for player_id in sorted(rostered_ids)
     }
@@ -190,6 +193,9 @@ def collect_league(
             rostered_ids,
         ),
         "nfl_context": _trim_nfl_context(nfl_context or {}, players),
+        "publication_sleeper": (
+            publication_context if config.tier != "flagship" else None
+        ),
         "flagship_sleeper": flagship_context,
     }
 

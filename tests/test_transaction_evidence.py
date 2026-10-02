@@ -93,3 +93,39 @@ def test_transactions_across_sleeper_week_legs_are_not_dropped():
         "tx-week3",
     }
     assert result["coverage"]["status"] == "READY"
+
+
+def test_transaction_evidence_attaches_reviewed_week_impact_for_acquired_players():
+    snapshot = _snapshot()
+    snapshot["matchups"] = [
+        {
+            "roster_id": 1,
+            "matchup_id": 1,
+            "players": ["london", "bernard"],
+            "starters": ["london"],
+            "players_points": {"london": 22.4, "bernard": 4.0},
+            "points": 110.0,
+        },
+        {
+            "roster_id": 2,
+            "matchup_id": 1,
+            "players": ["odunze"],
+            "starters": ["odunze"],
+            "players_points": {"odunze": 17.6},
+            "points": 100.0,
+        },
+    ]
+
+    trade = next(
+        row
+        for row in build_transaction_evidence(snapshot, None)["transactions"]
+        if row["transaction_id"] == "tx-week3"
+    )
+
+    impact = {row["player"]: row for row in trade["reviewed_week_impact"]}
+    assert impact["Drake London"]["to_team"] == "The Buckaneers"
+    assert impact["Drake London"]["started"] is True
+    assert impact["Drake London"]["fantasy_points"] == 22.4
+    assert impact["Rome Odunze"]["to_team"] == "Chicken"
+    assert impact["Rome Odunze"]["started"] is True
+    assert impact["Rome Odunze"]["fantasy_points"] == 17.6

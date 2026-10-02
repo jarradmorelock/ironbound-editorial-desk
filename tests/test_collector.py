@@ -233,3 +233,42 @@ def test_flagship_collection_adds_full_sleeper_editorial_context():
     assert set(result["players"]) == {"p1", "p2", "p3", "p4"}
     assert result["players"]["p1"]["age"] == 25
     assert result["players"]["p1"]["college"] == "Test University"
+
+
+def test_publication_enabled_newspaper_collects_shared_sleeper_history():
+    league = LeagueConfig(
+        key="paper",
+        name="Paper League",
+        sleeper_league_id="456",
+        publication="Paper",
+        publication_profile=None,
+        tier="standard",
+        league_format="redraft",
+        ranking_model="redraft",
+        publication_enabled=True,
+    )
+    players = {
+        player_id: {
+            "player_id": player_id,
+            "full_name": f"Player {player_id}",
+            "position": "QB",
+            "fantasy_positions": ["QB"],
+            "age": 25,
+            "college": "Test University",
+        }
+        for player_id in ("p1", "p2", "p3", "p4")
+    }
+
+    result = collect_league(
+        league,
+        1,
+        {"season": "2026"},
+        players,
+        FlagshipSleeperClient(),
+        ranking_sources={},
+    )
+
+    assert result["publication_sleeper"]["schedule"]["status"] == "available"
+    assert len(result["publication_sleeper"]["schedule"]["weeks"]) == 18
+    assert result["flagship_sleeper"] is None
+    assert result["players"]["p1"]["age"] == 25

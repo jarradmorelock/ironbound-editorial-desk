@@ -6,6 +6,7 @@ from typing import Any
 
 from .publication_policy import publication_view
 from .reading_packet import fact_lines
+from .canonical_evidence import build_canonical_league_evidence
 
 
 PROFILE_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -169,6 +170,8 @@ def build_newspaper_research_packet(
             publication_packet,
         )
 
+    canonical_evidence = build_canonical_league_evidence(snapshot, None)
+
     raw_encoded = json.dumps(publication_packet, sort_keys=True).casefold()
     raw_division_leak = (
         any(
@@ -192,6 +195,7 @@ def build_newspaper_research_packet(
             "sections": list(publication_packet.get("departments") or []),
             "health": dossier.get("roster_health") or {},
             "source_status": _source_status(snapshot, dossier),
+            "canonical_evidence": canonical_evidence,
             "input_forbidden_group_leak": raw_division_leak,
         },
         publication_packet,

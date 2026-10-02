@@ -132,13 +132,19 @@ def build_flagship_research_packet(
     league_key = str(editorial.get("league_key") or "")
     history = _season_dossiers(history_root, season, league_key, week)
     canonical_evidence = build_canonical_league_evidence(snapshot, chronicle)
+    canonical_ready = (canonical_evidence.get("coverage") or {}).get("status") == "READY"
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
-    player_boards = _season_player_boards(
-        list(canonical_evidence.get("player_weeks") or []),
-        snapshot,
-    )
+    if canonical_ready:
+        player_score_rows = list(canonical_evidence.get("player_weeks") or [])
+    else:
+        player_score_rows = (
+            chronicle.season_player_fantasy_finals(league_key, season)
+            if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
+            else []
+        )
+    player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
@@ -148,7 +154,11 @@ def build_flagship_research_packet(
         history,
         current_week=week,
         manager_of_the_week=honors_research.get("manager_of_the_week"),
-        entering_records=(canonical_evidence.get("entering_records") or {}).get(str(week)),
+        entering_records=(
+            (canonical_evidence.get("entering_records") or {}).get(str(week))
+            if canonical_ready
+            else None
+        ),
     )
     rookie_awards = _rookie_weekly_awards(weekly, snapshot, intelligence)
     health = dossier.get("roster_health") or {}
@@ -214,9 +224,19 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
-            "season_team_score_top_three": _canonical_team_score_top_three(
-                canonical_evidence,
-                through_week=week,
+            "season_team_score_top_three": (
+                _canonical_team_score_top_three(
+                    canonical_evidence,
+                    through_week=week,
+                )
+                if canonical_ready
+                else _season_team_score_top_three(
+                    history,
+                    snapshot=snapshot,
+                    league_key=league_key,
+                    season=season,
+                    chronicle=chronicle,
+                )
             ),
             **player_boards,
             "benchwarmer_of_the_week": _attach_stat_lines(

@@ -159,8 +159,8 @@ def test_unprojected_fringe_bench_player_does_not_disable_evaluable_awards():
 def test_full_forge_is_roster_specific_when_other_roster_projection_is_missing():
     snapshot = _snapshot()
     # Team 1 starter has a verified projection and beats it.
-    snapshot["matchups"][0]["players_points"]["a"] = 20.0
-    snapshot["matchups"][0]["points"] = 20.0
+    snapshot["matchups"][0]["players_points"]["a"] = 21.0
+    snapshot["matchups"][0]["points"] = 21.0
     # Remove only the opponent starter's projection. Team 1 can still be
     # evaluated for Full Forge even though the matchup cannot support No Fear.
     del snapshot["ranking_inputs"]["sleeper_projections"]["players"]["o"]

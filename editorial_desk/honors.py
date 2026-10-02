@@ -222,9 +222,13 @@ def _prior_weeks(snapshot, history=(), chronicle=None):
             if 0 < int(row["week"]) < week:
                 grouped[int(row["week"])].append(row)
         weeks.update(grouped)
-    for raw, rows in (
-        ((snapshot.get("flagship_sleeper") or {}).get("schedule") or {}).get("weeks")
+    publication_context = (
+        snapshot.get("publication_sleeper")
+        or snapshot.get("flagship_sleeper")
         or {}
+    )
+    for raw, rows in (
+        (publication_context.get("schedule") or {}).get("weeks") or {}
     ).items():
         if 0 < int(raw) < week:
             weeks[int(raw)] = rows
@@ -437,9 +441,12 @@ def _transactions(snapshot, chronicle=None):
     """Same-week additions are recent; prior drops/trades support former-player stories."""
     current = int(snapshot.get("week") or 0)
     rows = {}
-    weeks = ((snapshot.get("flagship_sleeper") or {}).get("transactions") or {}).get(
-        "weeks"
-    ) or {}
+    publication_context = (
+        snapshot.get("publication_sleeper")
+        or snapshot.get("flagship_sleeper")
+        or {}
+    )
+    weeks = (publication_context.get("transactions") or {}).get("weeks") or {}
     for raw, transactions in {
         **weeks,
         str(current): snapshot.get("transactions") or weeks.get(str(current), []),
@@ -571,37 +578,17 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
         "status": "MANUAL_REVIEW",
         "reason": "No established substantial-FAAB threshold; positive spend with <=1 point immediate return is review evidence only.",
     }
-    needed = {
-        str(p)
-        for m in snapshot.get("matchups") or []
-        for p in m.get("players") or []
-        if str(p)
-        not in {
-            str(p)
-            for k in ("reserve", "taxi")
-            for p in rosters.get(int(m["roster_id"]), {}).get(k) or []
-        }
-    }
-    missing = sorted(p for p in needed if projections.get(p) is None)
-    player_ready = not projection_error and not missing
-    if not player_ready:
-        for code in PLAYER_PROJECTION_RULES:
+    def mark_partial(code, reason):
+        current = availability.get(code) or {"status": "AVAILABLE"}
+        if current.get("status") == "AVAILABLE":
+            availability[code] = {"status": "PARTIAL", "reason": reason}
+
+    projection_source_ready = projection_error is None
+    if not projection_source_ready:
+        for code in PLAYER_PROJECTION_RULES | {"NO_FEAR", "AGAINST_ALL_ODDS"}:
             availability[code] = {
                 "status": "UNAVAILABLE",
-                "reason": projection_error
-                or "Frozen pregame player projections missing for: "
-                + ", ".join(missing),
-            }
-    matchup_ready = not projection_error and all(
-        matchup_projections.get(str(m["roster_id"])) is not None
-        for m in snapshot.get("matchups") or []
-    )
-    if not matchup_ready:
-        for code in ("NO_FEAR", "AGAINST_ALL_ODDS"):
-            availability[code] = {
-                "status": "UNAVAILABLE",
-                "reason": projection_error
-                or "Missing frozen pregame matchup projection totals for completed-week rosters.",
+                "reason": projection_error,
             }
     if any(
         _entering_rank(external, int(m["roster_id"]), names.get(int(m["roster_id"])))
@@ -614,9 +601,12 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
         }
         if availability["AGAINST_ALL_ODDS"]["status"] == "AVAILABLE":
             availability["AGAINST_ALL_ODDS"] = dict(availability["GIANT_KILLER"])
-    transaction_source = (snapshot.get("flagship_sleeper") or {}).get(
-        "transactions"
-    ) or {}
+    publication_context = (
+        snapshot.get("publication_sleeper")
+        or snapshot.get("flagship_sleeper")
+        or {}
+    )
+    transaction_source = publication_context.get("transactions") or {}
     transaction_weeks = transaction_source.get("weeks") or {}
     current_week = int(snapshot.get("week") or 0)
     current_transactions_known = (
@@ -706,25 +696,33 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 "opponent_roster_id": oid,
             }
             decisions = []
-            if player_ready and slots and len(starters) == len(slots):
+            decision_projection_gap = False
+            lineup_shape_complete = bool(slots) and len(starters) == len(slots)
+            if projection_source_ready and lineup_shape_complete:
                 for starter in starters:
                     for alternative in bench:
+                        replacement = [p for p in starters if p != starter] + [
+                            alternative
+                        ]
+                        _, assignment = optimal_lineup(
+                            replacement,
+                            {p: 1.0 for p in replacement},
+                            slots,
+                            players,
+                        )
+                        # Missing projections matter only for a bench alternative
+                        # that can actually produce a legal submitted lineup.
+                        if len(assignment) != len(slots):
+                            continue
                         if (
                             projections.get(starter) is None
                             or projections.get(alternative) is None
                             or points.get(starter) is None
                             or points.get(alternative) is None
                         ):
+                            decision_projection_gap = True
                             continue
                         if projections[starter] >= projections[alternative]:
-                            continue
-                        replacement = [p for p in starters if p != starter] + [
-                            alternative
-                        ]
-                        _, assignment = optimal_lineup(
-                            replacement, {p: 1.0 for p in replacement}, slots, players
-                        )
-                        if len(assignment) != len(slots):
                             continue
                         swing = round(points[starter] - points[alternative], 2)
                         if (won and swing > 0 and swing >= margin) or (
@@ -740,6 +738,17 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                                     "legal_assignment": assignment,
                                 }
                             )
+                if decision_projection_gap:
+                    for code in (
+                        "IRON_BALLS",
+                        "MAD_BLACKSMITH",
+                        "BONE_HEAD",
+                        "LEFT_ON_THE_ANVIL",
+                    ):
+                        mark_partial(
+                            code,
+                            "One or more legally relevant start/sit alternatives lack a verified same-week projection or actual score.",
+                        )
                 if decisions:
                     # Independent decisions require different starters AND different alternatives.
                     independent = False
@@ -782,28 +791,57 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                     - float(lineup.get(rid, {}).get("actual_points") or 0)
                     > margin
                 ):
-                    add(
-                        "LEFT_ON_THE_ANVIL",
-                        rid,
-                        event + ":lineup",
-                        {"optimal_points": lineup[rid]["optimal_points"], **facts},
+                    if decision_projection_gap:
+                        add(
+                            "LEFT_ON_THE_ANVIL",
+                            rid,
+                            event + ":lineup",
+                            {
+                                "optimal_points": lineup[rid]["optimal_points"],
+                                "bone_head_exclusion_status": "UNVERIFIED",
+                                **facts,
+                            },
+                            status="MANUAL_REVIEW",
+                        )
+                    else:
+                        add(
+                            "LEFT_ON_THE_ANVIL",
+                            rid,
+                            event + ":lineup",
+                            {"optimal_points": lineup[rid]["optimal_points"], **facts},
+                        )
+            if projection_source_ready:
+                zero_projection_gap = any(
+                    points.get(p) == 0 and projections.get(p) is None
+                    for p in starters
+                )
+                if zero_projection_gap:
+                    mark_partial(
+                        "GOOSED",
+                        "At least one zero-point starter lacks a verified same-week projection.",
                     )
-            zeros = [
-                p
-                for p in starters
-                if projections.get(p) is not None
-                and projections[p] >= 10
-                and points.get(p) == 0
-            ]
-            if player_ready and zeros:
-                qualifying = [p for p in zeros if won or margin <= projections[p]]
-                if qualifying:
-                    add(
-                        "TEMPERED" if won else "GOOSED",
-                        rid,
-                        event + ":zero",
-                        {"players": qualifying, **facts},
+                    mark_partial(
+                        "TEMPERED",
+                        "At least one zero-point starter lacks a verified same-week projection.",
                     )
+                zeros = [
+                    p
+                    for p in starters
+                    if projections.get(p) is not None
+                    and projections[p] >= 10
+                    and points.get(p) == 0
+                ]
+                if zeros:
+                    qualifying = [
+                        p for p in zeros if won or margin <= projections[p]
+                    ]
+                    if qualifying:
+                        add(
+                            "TEMPERED" if won else "GOOSED",
+                            rid,
+                            event + ":zero",
+                            {"players": qualifying, **facts},
+                        )
             if not won:
                 continue
             own_rank = _entering_rank(external, rid, names.get(rid))
@@ -813,9 +851,25 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 and opp_rank is not None
                 and own_rank - opp_rank >= 8
             )
+            own_matchup_projection = matchup_projections.get(str(rid))
+            opponent_matchup_projection = matchup_projections.get(str(oid))
+            matchup_projection_ready = (
+                projection_source_ready
+                and own_matchup_projection is not None
+                and opponent_matchup_projection is not None
+            )
+            if projection_source_ready and not matchup_projection_ready:
+                mark_partial(
+                    "NO_FEAR",
+                    "This matchup lacks a complete submitted-starter projection total.",
+                )
+                mark_partial(
+                    "AGAINST_ALL_ODDS",
+                    "This matchup lacks a complete submitted-starter projection total.",
+                )
             fear = (
-                matchup_ready
-                and matchup_projections[str(oid)] - matchup_projections[str(rid)] >= 15
+                matchup_projection_ready
+                and opponent_matchup_projection - own_matchup_projection >= 15
             )
             if giant or fear:
                 add(
@@ -830,9 +884,8 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                         "entering_power_rank": own_rank,
                         "opponent_entering_power_rank": opp_rank,
                         "projected_deficit": (
-                            matchup_projections.get(str(oid), 0)
-                            - matchup_projections.get(str(rid), 0)
-                            if matchup_ready
+                            opponent_matchup_projection - own_matchup_projection
+                            if matchup_projection_ready
                             else None
                         ),
                         **facts,
@@ -847,12 +900,17 @@ def research_honors(snapshot, dossier, external, history=(), chronicle=None):
                 and len(starters) == len(slots)
                 and all(points.get(p) is not None for p in starters)
             )
-            if (
-                player_ready
-                and complete
-                and all(points[p] >= projections[p] for p in starters)
-            ):
-                add("FULL_FORGE", rid, event + ":lineup", facts)
+            if projection_source_ready and complete:
+                missing_starter_projections = [
+                    p for p in starters if projections.get(p) is None
+                ]
+                if missing_starter_projections:
+                    mark_partial(
+                        "FULL_FORGE",
+                        "One or more submitted starters on a roster lack a verified same-week projection.",
+                    )
+                elif all(points[p] >= projections[p] for p in starters):
+                    add("FULL_FORGE", rid, event + ":lineup", facts)
             if complete:
                 total = sum(points[p] for p in starters)
                 dominant = [

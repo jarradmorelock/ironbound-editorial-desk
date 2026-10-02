@@ -139,3 +139,17 @@ def test_award_audit_explains_qualified_and_failed_rules():
         and row["metrics"]["threshold"] == 50.0
         for row in hammer_rows
     )
+
+
+def test_unprojected_fringe_bench_player_does_not_disable_evaluable_awards():
+    snapshot = _snapshot()
+    snapshot["players"]["x"] = {"position": "QB", "full_name": "Fringe X"}
+    snapshot["rosters"][0]["players"].append("x")
+    snapshot["matchups"][0]["players"].append("x")
+    snapshot["matchups"][0]["players_points"]["x"] = 0.0
+
+    result = _evaluate(snapshot)
+
+    assert "IRON_BALLS" in _types(result)
+    assert result["award_availability"]["IRON_BALLS"]["status"] in {"AVAILABLE", "PARTIAL"}
+    assert "NO_FEAR" in _types(result)

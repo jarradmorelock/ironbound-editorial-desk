@@ -1,0 +1,23 @@
+{
+  "publication_key": "the_stampede",
+  "source_issue": null,
+  "acceptance_basis": "locked weekly contract until a representative regular-season issue exists",
+  "required_departments": [
+    "weekly_results",
+    "standings",
+    "ranking_movement",
+    "lineup_efficiency",
+    "manager_of_week",
+    "bad_beat",
+    "escape_artist",
+    "bench_leaders",
+    "lineup_flip_candidates",
+    "waiver_impact",
+    "workload_stat_lines",
+    "health_status",
+    "record_watch",
+    "next_matchups"
+  ],
+  "observed_printed": [],
+  "note": "The preseason issue establishes identity; weekly acceptance is contract-driven until a regular-season issue is available."
+}

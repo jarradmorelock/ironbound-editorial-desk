@@ -251,13 +251,16 @@ def _collect_publication_context(
 
     if week < 18:
         try:
+            projection_fetcher = getattr(client, "projections", None)
+            if projection_fetcher is None:
+                raise AttributeError("projection endpoint unavailable")
             next_week_projections = {
                 "status": "available",
                 "season": season,
                 "week": week + 1,
-                "players": client.projections(season, week + 1),
+                "players": projection_fetcher(season, week + 1),
             }
-        except (requests.RequestException, ValueError, KeyError) as exc:
+        except (requests.RequestException, ValueError, KeyError, AttributeError, TypeError) as exc:
             next_week_projections = {
                 "status": "unavailable",
                 "season": season,

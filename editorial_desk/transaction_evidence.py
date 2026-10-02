@@ -119,6 +119,68 @@ def _normalize_players(
     }
 
 
+def _matchup_rows_for_week(
+    snapshot: dict[str, Any],
+    week: int,
+) -> dict[int, dict[str, Any]]:
+    current_week = int(snapshot.get("week") or 0)
+    if week == current_week:
+        rows = snapshot.get("matchups") or []
+    else:
+        history = _history(snapshot)
+        weeks = ((history.get("schedule") or {}).get("weeks") or {})
+        rows = weeks.get(str(week)) or weeks.get(week) or []
+    return {
+        int(row.get("roster_id") or 0): dict(row)
+        for row in rows
+        if isinstance(row, dict) and int(row.get("roster_id") or 0) > 0
+    }
+
+
+def _reviewed_week_impact(
+    snapshot: dict[str, Any],
+    week: int,
+    players: dict[str, Any],
+) -> list[dict[str, Any]]:
+    matchup_rows = _matchup_rows_for_week(snapshot, week)
+    impact: list[dict[str, Any]] = []
+    for team, received in (players.get("received_by") or {}).items():
+        for player in received:
+            player_id = str(player.get("player_id") or "")
+            roster_id = _safe_int(player.get("roster_id"))
+            matchup = matchup_rows.get(roster_id or 0)
+            rostered = bool(
+                matchup
+                and player_id in {
+                    str(value) for value in matchup.get("players") or []
+                }
+            )
+            starters = {
+                str(value)
+                for value in (matchup or {}).get("starters") or []
+                if str(value) != "0"
+            }
+            raw_points = (
+                (matchup or {}).get("players_points_custom")
+                or (matchup or {}).get("players_points")
+                or {}
+            )
+            points = _safe_float(raw_points.get(player_id)) if rostered else None
+            impact.append(
+                {
+                    "player_id": player_id,
+                    "player": player.get("player"),
+                    "to_roster_id": roster_id,
+                    "to_team": team,
+                    "reviewed_week": week,
+                    "rostered_in_reviewed_matchup": rostered,
+                    "started": player_id in starters if rostered else None,
+                    "fantasy_points": points,
+                }
+            )
+    return impact
+
+
 def _normalize_pick(pick: dict[str, Any], team_names: dict[int, str]) -> dict[str, Any]:
     original = _safe_int(pick.get("roster_id"))
     previous = _safe_int(pick.get("previous_owner_id"))
@@ -182,6 +244,7 @@ def build_transaction_evidence(
             if value is not None
         ]
         transaction_id = str(row.get("transaction_id") or "")
+        normalized_players = _normalize_players(snapshot, row, team_names)
         normalized.append(
             {
                 "transaction_id": transaction_id,
@@ -191,7 +254,12 @@ def build_transaction_evidence(
                 "completed_at": row.get("created"),
                 "roster_ids": roster_ids,
                 "teams": [team_names.get(rid, f"Roster {rid}") for rid in roster_ids],
-                "players": _normalize_players(snapshot, row, team_names),
+                "players": normalized_players,
+                "reviewed_week_impact": _reviewed_week_impact(
+                    snapshot,
+                    week,
+                    normalized_players,
+                ),
                 "draft_picks": picks,
                 "faab": _safe_float(
                     settings.get("waiver_bid")

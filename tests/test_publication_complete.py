@@ -6,34 +6,119 @@ from editorial_desk.publication_complete import (
 
 
 def _snapshot(publication_key="ironbound_weekly"):
+    users = [
+        {
+            "user_id": f"u{roster_id}",
+            "display_name": f"Owner {roster_id}",
+            "metadata": {"team_name": f"Team {roster_id}"},
+        }
+        for roster_id in range(1, 17)
+    ]
+    rosters = [
+        {
+            "roster_id": roster_id,
+            "owner_id": f"u{roster_id}",
+            "players": [f"p{roster_id}"],
+            "settings": {"division": 1 if roster_id <= 8 else 2},
+        }
+        for roster_id in range(1, 17)
+    ]
+    players = {
+        f"p{roster_id}": {
+            "full_name": f"Player {roster_id}",
+            "position": "QB",
+            "team": "NFL",
+        }
+        for roster_id in range(1, 17)
+    }
+    matchups = [
+        {
+            "matchup_id": (roster_id + 1) // 2,
+            "roster_id": roster_id,
+            "points": 100.0 if roster_id % 2 else 90.0,
+            "players": [f"p{roster_id}"],
+            "starters": [f"p{roster_id}"],
+            "players_points": {f"p{roster_id}": 20.0 + roster_id},
+        }
+        for roster_id in range(1, 17)
+    ]
     return {
         "week": 3,
-        "league": {"season": "2026"},
+        "league": {
+            "season": "2026",
+            "roster_positions": ["QB"],
+            "metadata": {"division_1": "One", "division_2": "Two"},
+        },
         "editorial": {
             "league_key": "ironbound_sixteen",
             "publication_profile": {"key": publication_key},
         },
+        "users": users,
+        "rosters": rosters,
+        "players": players,
+        "matchups": matchups,
     }
 
 
 def _canonical():
     games = []
+    player_weeks = []
+    evidence_index = {}
     for matchup_id in range(1, 9):
-        games.extend(
-            [
-                {"week": 3, "matchup_id": matchup_id, "roster_id": matchup_id * 2 - 1, "team": f"Team {matchup_id * 2 - 1}", "points": 100.0},
-                {"week": 3, "matchup_id": matchup_id, "roster_id": matchup_id * 2, "team": f"Team {matchup_id * 2}", "points": 90.0},
-            ]
-        )
+        for roster_id, points in (
+            (matchup_id * 2 - 1, 100.0),
+            (matchup_id * 2, 90.0),
+        ):
+            team_eid = f"team-week:2026:3:{roster_id}"
+            player_eid = f"player-week:2026:3:{roster_id}:p{roster_id}"
+            game = {
+                "evidence_id": team_eid,
+                "week": 3,
+                "matchup_id": matchup_id,
+                "roster_id": roster_id,
+                "team": f"Team {roster_id}",
+                "points": points,
+            }
+            player = {
+                "evidence_id": player_eid,
+                "week": 3,
+                "roster_id": roster_id,
+                "player_id": f"p{roster_id}",
+                "points": 20.0 + roster_id,
+                "started": True,
+            }
+            games.append(game)
+            player_weeks.append(player)
+            evidence_index[team_eid] = game
+            evidence_index[player_eid] = player
+    team_records = {
+        str(i): {
+            "roster_id": i,
+            "team": f"Team {i}",
+            "division": "1" if i <= 8 else "2",
+            "overall_record": {"wins": 1, "losses": 1, "ties": 0},
+            "division_record": {"wins": 1, "losses": 0, "ties": 0},
+            "cross_division_record": {"wins": 0, "losses": 1, "ties": 0},
+        }
+        for i in range(1, 17)
+    }
     return {
         "coverage": {"status": "READY", "weeks": [1, 2, 3]},
         "historical_matchups": games,
+        "player_weeks": player_weeks,
         "entering_records": {"3": {str(i): {"wins": 1, "losses": 1, "ties": 0} for i in range(1, 17)}},
         "team_season_totals": {str(i): {"roster_id": i, "points": 300.0, "through_week": 3} for i in range(1, 17)},
         "player_season_totals": {"p1": {"player_id": "p1", "points": 60.0, "through_week": 3}},
         "player_season_totals_status": "READY",
-        "division_summary": {"status": "READY", "divisions": {"1": {"scoring_average": 100.0}}},
-        "evidence_index": {"fact:1": {"evidence_id": "fact:1"}},
+        "division_summary": {
+            "status": "READY",
+            "divisions": {
+                "1": {"division": "1", "scoring_average": 100.0},
+                "2": {"division": "2", "scoring_average": 95.0},
+            },
+            "team_records": team_records,
+        },
+        "evidence_index": evidence_index,
         "conflicts": [],
     }
 
@@ -69,7 +154,21 @@ def _research():
         for i in range(1, 9)
     ]
     forecast = [
-        {"matchup_id": i, "roster_one": 2*i-1, "roster_two": 2*i, "projected_margin": 5}
+        {
+            "matchup_id": i,
+            "week": 4,
+            "roster_one": 2 * i - 1,
+            "roster_two": 2 * i,
+            "team_one": f"Team {2 * i - 1}",
+            "team_two": f"Team {2 * i}",
+            "projected_margin": 5,
+            "projected_score_one": 110.0,
+            "projected_score_two": 105.0,
+            "projected_total": 215.0,
+            "optimal_lineup_one": [f"p{2 * i - 1}"],
+            "optimal_lineup_two": [f"p{2 * i}"],
+            "projection_source": "fixture projections",
+        }
         for i in range(1, 9)
     ]
     rankings = [

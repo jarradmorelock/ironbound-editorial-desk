@@ -139,6 +139,58 @@ class _ChronicleConflict:
         return []
 
 
+class _ChroniclePlayerEvidence:
+    def __init__(self, points):
+        self.points = points
+
+    def season_matchup_finals(self, league_key, season):
+        return []
+
+    def season_player_fantasy_finals(self, league_key, season):
+        return [
+            {
+                "season": season,
+                "week": 2,
+                "roster_id": 1,
+                "player_id": "p0",
+                "position": "WR",
+                "points": self.points,
+                "score_status": "CERTIFIED_ZERO" if self.points == 0 else "OBSERVED",
+                "membership_status": "ROSTERED",
+                "event_id": "chronicle-p0",
+            }
+        ]
+
+
+def test_chronicle_player_zero_fills_explicit_rostered_player_evidence():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Player Zero"}
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players"].append("p0")
+
+    result = build_canonical_league_evidence(snapshot, _ChroniclePlayerEvidence(0))
+
+    row = next(row for row in result["player_weeks"] if row["player_id"] == "p0")
+    assert row["score_status"] == "CERTIFIED_ZERO"
+    assert row["source_refs"] == ["chronicle-p0"]
+
+
+def test_chronicle_player_score_conflict_is_manual_verify():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Player Conflict"}
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players"].append("p0")
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players_points"] = {"p1": 20.0, "p0": 2.0}
+
+    result = build_canonical_league_evidence(snapshot, _ChroniclePlayerEvidence(3))
+
+    assert any(
+        conflict["kind"] == "PLAYER_FANTASY_WEEK_FINAL"
+        and conflict["player_id"] == "p0"
+        and conflict["status"] == "MANUAL_VERIFY"
+        for conflict in result["conflicts"]
+    )
+    assert result["coverage"]["status"] == "MANUAL_VERIFY"
+
+
 def test_sleeper_chronicle_conflict_is_manual_verify():
     result = build_canonical_league_evidence(_snapshot(), _ChronicleConflict())
 

@@ -80,6 +80,43 @@ def _points_map(row: dict[str, Any]) -> dict[str, float]:
     return result
 
 
+def _current_roster_by_player(snapshot: dict[str, Any]) -> dict[str, int]:
+    result: dict[str, int] = {}
+    for roster in snapshot.get("rosters") or []:
+        roster_id = int(roster.get("roster_id") or 0)
+        if not roster_id:
+            continue
+        for field in ("players", "taxi", "reserve"):
+            for player_id in roster.get(field) or []:
+                result[str(player_id)] = roster_id
+    return result
+
+
+def _transaction_additions(snapshot: dict[str, Any]) -> dict[str, int]:
+    history = _publication_history(snapshot)
+    weeks = ((history.get("transactions") or {}).get("weeks") or {})
+    acquired: dict[str, int] = {}
+    for raw_week, transactions in weeks.items():
+        try:
+            week = int(raw_week)
+        except (TypeError, ValueError):
+            continue
+        for transaction in transactions or []:
+            if transaction.get("status") not in {None, "complete"}:
+                continue
+            additions = dict(transaction.get("adds") or {})
+            received = ((transaction.get("players") or {}).get("received_by") or {})
+            for roster_name, rows in received.items():
+                for row in rows or []:
+                    player_id = str(row.get("player_id") or row.get("player") or "")
+                    roster_id = row.get("roster_id")
+                    if player_id and roster_id is not None:
+                        additions[player_id] = roster_id
+            for player_id, roster_id in additions.items():
+                acquired[str(player_id)] = min(acquired.get(str(player_id), week), week)
+    return acquired
+
+
 def _pair_results(rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
@@ -403,12 +440,32 @@ def build_canonical_league_evidence(
             evidence_index[eid] = canonical
 
             sleeper_points_map = _points_map(row)
-            player_ids = set(canonical["players"]) | set(canonical["starters"]) | set(sleeper_points_map)
+            chronicle_ids = {
+                player_id
+                for (chronicle_week, chronicle_roster, player_id) in chronicle_players
+                if chronicle_week == week and chronicle_roster == roster_id
+            }
+            player_ids = (
+                set(canonical["players"])
+                | set(canonical["starters"])
+                | set(sleeper_points_map)
+                | chronicle_ids
+            )
             for player_id in sorted(player_ids):
                 score = sleeper_points_map.get(player_id)
                 chronicle_player = chronicle_players.get((week, roster_id, player_id))
+                score_status = "OBSERVED" if player_id in sleeper_points_map else None
+                authority = "sleeper_matchups" if player_id in sleeper_points_map else None
                 if score is None and chronicle_player is not None:
                     score = float(chronicle_player.get("points") or 0)
+                    score_status = chronicle_player.get("score_status") or (
+                        "OBSERVED" if score else "CERTIFIED_ZERO"
+                    )
+                    authority = "chronicle"
+                if score is None and player_id in set(canonical["players"]) | set(canonical["starters"]):
+                    score = 0.0
+                    score_status = "CERTIFIED_ZERO"
+                    authority = "sleeper_matchups"
                 if score is None:
                     continue
                 if chronicle_player is not None and abs(float(score) - float(chronicle_player.get("points") or 0)) > _EPSILON:
@@ -432,7 +489,17 @@ def build_canonical_league_evidence(
                     "player_id": player_id,
                     "points": float(score),
                     "started": player_id in canonical["starters"],
-                    "authority": "sleeper_matchups" if player_id in sleeper_points_map else "chronicle",
+                    "score_status": score_status,
+                    "membership_status": "ROSTERED",
+                    "authority": authority,
+                    "source_refs": [
+                        ref
+                        for ref in [
+                            chronicle_player.get("event_id") if chronicle_player else None,
+                            chronicle_player.get("source_ref") if chronicle_player else None,
+                        ]
+                        if ref
+                    ],
                 }
                 player_weeks.append(prow)
                 evidence_index[peid] = prow
@@ -448,6 +515,46 @@ def build_canonical_league_evidence(
         coverage_status = "READY"
         reason = None
 
+    current_roster_by_player = _current_roster_by_player(snapshot)
+    acquired_week = _transaction_additions(snapshot)
+    player_week_coverage = {
+        "observed": [],
+        "certified_zero": [],
+        "excluded": [],
+        "unknown": [],
+        "manual_verify": [],
+    }
+    for row in player_weeks:
+        key = f"week {row['week']}:{row['player_id']}"
+        if row.get("score_status") == "CERTIFIED_ZERO":
+            player_week_coverage["certified_zero"].append(key)
+        else:
+            player_week_coverage["observed"].append(key)
+    for conflict in conflicts:
+        if conflict.get("kind") == "PLAYER_FANTASY_WEEK_FINAL":
+            player_week_coverage["manual_verify"].append(
+                f"week {conflict.get('week')}:{conflict.get('player_id')}"
+            )
+    for player_id in sorted(current_roster_by_player):
+        for week in range(1, current_week + 1):
+            if any(
+                int(row.get("week") or 0) == week and row.get("player_id") == player_id
+                for row in player_weeks
+            ):
+                continue
+            acquired = acquired_week.get(player_id, 1)
+            key = f"week {week}:{player_id}"
+            if week < acquired:
+                player_week_coverage["excluded"].append(key)
+            else:
+                player_week_coverage["unknown"].append(key)
+    for values in player_week_coverage.values():
+        values.sort()
+
+    player_history_ready = not (
+        player_week_coverage["unknown"] or player_week_coverage["manual_verify"]
+    )
+
     entering_records = {
         str(week): _record_before(canonical_by_week, roster_ids, week)
         for week in range(1, current_week + 1)
@@ -456,6 +563,7 @@ def build_canonical_league_evidence(
     team_totals: dict[str, dict[str, Any]] = {}
     player_totals: dict[str, dict[str, Any]] = {}
     totals_available = coverage_status == "READY"
+    player_totals_available = totals_available and player_history_ready
     if totals_available:
         team_accumulator: dict[int, float] = defaultdict(float)
         for rows in canonical_by_week.values():
@@ -486,6 +594,8 @@ def build_canonical_league_evidence(
             }
             for player_id, points in sorted(player_accumulator.items())
         }
+    if not player_totals_available:
+        player_totals = {}
 
     return {
         "schema_version": 1,
@@ -502,11 +612,12 @@ def build_canonical_league_evidence(
             row for week in range(1, current_week + 1) for row in canonical_by_week.get(week, [])
         ],
         "player_weeks": player_weeks,
+        "player_week_coverage": player_week_coverage,
         "entering_records": entering_records,
         "team_season_totals": team_totals,
         "team_season_totals_status": "READY" if totals_available else "UNAVAILABLE",
         "player_season_totals": player_totals,
-        "player_season_totals_status": "READY" if totals_available else "UNAVAILABLE",
+        "player_season_totals_status": "READY" if player_totals_available else "UNAVAILABLE",
         "division_summary": (
             _division_summary(snapshot, canonical_by_week, current_week)
             if totals_available

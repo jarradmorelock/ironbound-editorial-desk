@@ -232,3 +232,144 @@ def test_unbound_uses_same_flagship_readiness_contract():
 
     assert validation["profile_tier"] == "flagship"
     assert validation["publication_ready"] is True
+
+
+def test_flagship_game_dossiers_and_week_ahead_are_writer_ready_offline():
+    snapshot = _snapshot()
+    snapshot["league"]["roster_positions"] = ["QB"]
+    snapshot["users"] = [
+        {
+            "user_id": f"u{roster_id}",
+            "display_name": f"Owner {roster_id}",
+            "metadata": {"team_name": f"Team {roster_id}"},
+        }
+        for roster_id in range(1, 17)
+    ]
+    snapshot["rosters"] = [
+        {
+            "roster_id": roster_id,
+            "owner_id": f"u{roster_id}",
+            "players": [f"p{roster_id}"],
+            "settings": {"division": 1 if roster_id <= 8 else 2},
+        }
+        for roster_id in range(1, 17)
+    ]
+    snapshot["players"] = {
+        f"p{roster_id}": {
+            "full_name": f"Player {roster_id}",
+            "position": "QB",
+            "team": "NFL",
+        }
+        for roster_id in range(1, 17)
+    }
+    snapshot["matchups"] = [
+        {
+            "matchup_id": (roster_id + 1) // 2,
+            "roster_id": roster_id,
+            "points": 100.0 if roster_id % 2 else 90.0,
+            "players": [f"p{roster_id}"],
+            "starters": [f"p{roster_id}"],
+            "players_points": {f"p{roster_id}": 20.0 + roster_id},
+        }
+        for roster_id in range(1, 17)
+    ]
+
+    canonical = _canonical()
+    canonical["historical_matchups"] = [
+        {
+            **row,
+            "evidence_id": f"team-week:2026:3:{row['roster_id']}",
+        }
+        for row in canonical["historical_matchups"]
+    ]
+    canonical["player_weeks"] = [
+        {
+            "evidence_id": f"player-week:2026:3:{roster_id}:p{roster_id}",
+            "week": 3,
+            "roster_id": roster_id,
+            "player_id": f"p{roster_id}",
+            "points": 20.0 + roster_id,
+            "started": True,
+        }
+        for roster_id in range(1, 17)
+    ]
+    canonical["evidence_index"] = {
+        row["evidence_id"]: row
+        for row in canonical["historical_matchups"] + canonical["player_weeks"]
+    }
+    canonical["division_summary"]["team_records"] = {
+        str(roster_id): {
+            "roster_id": roster_id,
+            "team": f"Team {roster_id}",
+            "division": "1" if roster_id <= 8 else "2",
+            "overall_record": {"wins": 1, "losses": 1, "ties": 0},
+            "division_record": {"wins": 1, "losses": 0, "ties": 0},
+            "cross_division_record": {"wins": 0, "losses": 1, "ties": 0},
+        }
+        for roster_id in range(1, 17)
+    }
+
+    research = _research()
+    research["weekly_honors"]["free_agent_of_the_week"] = {
+        "player_id": "fa",
+        "player": "Free Agent",
+    }
+    for row in research["weekly_matchup_forecast"]["rows"]:
+        left = row["roster_one"]
+        right = row["roster_two"]
+        row.update(
+            {
+                "week": 4,
+                "team_one": f"Team {left}",
+                "team_two": f"Team {right}",
+                "projected_score_one": 110.0,
+                "projected_score_two": 105.0,
+                "projected_total": 215.0,
+                "optimal_lineup_one": [f"p{left}"],
+                "optimal_lineup_two": [f"p{right}"],
+                "projection_source": "fixture projections",
+            }
+        )
+
+    packet = build_publication_complete_packet(
+        snapshot,
+        {},
+        research,
+        ExternalEditorialInputs("ironbound_weekly", schema_version=3),
+        canonical_evidence=canonical,
+        transaction_evidence=_transactions(),
+        source_manifest=_source_manifest(),
+        health={
+            "status": "READY",
+            "information_cutoff": "2026-09-30T18:00:00+00:00",
+            "players": [
+                {
+                    "player_id": "p1",
+                    "player": "Player 1",
+                    "roster_id": 1,
+                    "fantasy_team": "Team 1",
+                    "injury_status": "Questionable",
+                    "observed_at": "2026-09-30T17:00:00+00:00",
+                }
+            ],
+            "news_events": [],
+        },
+        publication_assets=research["ranking_publication_assets"]["assets"],
+    )
+
+    game = packet["game_dossiers"][0]
+    assert game["submitted_lineup_evidence_status"] == "READY"
+    assert game["teams"][0]["submitted_starters"][0]["player"] == "Player 1"
+    assert game["teams"][0]["submitted_starters"][0]["fantasy_points"] == 21.0
+    assert game["teams"][0]["entering_record"] == {"wins": 1, "losses": 1, "ties": 0}
+    assert game["teams"][0]["entering_power_rank"] == 1
+    assert game["teams"][0]["health_context"][0]["injury_status"] == "Questionable"
+    assert game["evidence_ids"]
+
+    ahead = packet["week_ahead"]["rows"][0]
+    assert ahead["model_source"] == "fixture projections"
+    assert ahead["teams"][0]["optimal_lineup"][0]["player"] == "Player 1"
+    assert ahead["teams"][0]["health_caveats"][0]["injury_status"] == "Questionable"
+    assert ahead["teams"][0]["division_context"]["division"] == "1"
+    assert ahead["evidence_ids"][0] in packet["evidence_index"]
+    assert packet["player_honors"]["free_agent_of_the_week"]["player"] == "Free Agent"

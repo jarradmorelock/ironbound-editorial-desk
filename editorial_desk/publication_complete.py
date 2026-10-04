@@ -538,12 +538,12 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         )
     issue_cutoff = (packet.get("issue_identity") or {}).get("information_cutoff")
     health_cutoff = health.get("information_cutoff")
-    if issue_cutoff and health_cutoff and str(issue_cutoff) != str(health_cutoff):
+    if issue_cutoff and str(health_cutoff or "") != str(issue_cutoff):
         _block(
             blocking,
             "roster_health",
             "HEALTH_CUTOFF_MISMATCH",
-            f"health cutoff {health_cutoff} does not match issue cutoff {issue_cutoff}",
+            f"health cutoff {health_cutoff or 'missing'} does not match issue cutoff {issue_cutoff}",
         )
 
     usage = packet.get("usage_desk") or {}
@@ -664,8 +664,36 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         )
 
     for section in ("power_rankings", "playoff_forecast"):
-        if (packet.get(section) or {}).get("status") != "READY":
+        row = packet.get(section) or {}
+        if row.get("status") != "READY":
             _block(blocking, section, "AUTHORITATIVE_HANDOFF_NOT_READY", "authoritative ranking handoff is unavailable")
+        elif len(row.get("rows") or []) != 16:
+            _block(
+                blocking,
+                section,
+                "INCOMPLETE_AUTHORITATIVE_HANDOFF",
+                f"{len(row.get('rows') or [])}/16 team rows supplied",
+            )
+
+    schedule_strength = (
+        (packet.get("division_report") or {}).get("remaining_schedule_strength") or {}
+    )
+    if schedule_strength.get("status") != "READY" or len(schedule_strength.get("rows") or []) != 16:
+        _block(
+            blocking,
+            "division_report",
+            "SCHEDULE_STRENGTH_NOT_READY",
+            f"{len(schedule_strength.get('rows') or [])}/16 remaining-schedule rows supplied",
+        )
+
+    power_board = packet.get("power_board") or {}
+    if len(power_board.get("writeup_inputs") or []) != 16:
+        _block(
+            blocking,
+            "power_board",
+            "POWER_BOARD_INPUTS_NOT_READY",
+            f"{len(power_board.get('writeup_inputs') or [])}/16 team writeup rows supplied",
+        )
 
     assets = packet.get("publication_assets") or {}
     for asset_key in ("power_rankings", "playoff_forecast"):

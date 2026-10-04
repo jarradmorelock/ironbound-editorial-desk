@@ -303,7 +303,7 @@ def build_flagship_game_dossiers(
 
             starter_rows = [player_row(player_id, started=True) for player_id in starters]
             bench_rows = [player_row(player_id, started=False) for player_id in bench]
-            lineup_ready = bool(starters) and all(
+            lineup_ready = side.get("points") is not None and bool(starters) and all(
                 row.get("fantasy_points") is not None for row in starter_rows
             )
             if expected_slots and len(starters) != len(expected_slots):

@@ -142,15 +142,26 @@ def build_combined_evidence_index(
 
     for row in health.get("players") or []:
         evidence_id = row.get("evidence_id")
-        if not evidence_id:
-            continue
-        key = str(evidence_id)
-        index[key] = {
-            "evidence_id": key,
-            "kind": "health_status",
-            "player_id": row.get("player_id"),
-            "observed_at": row.get("observed_at"),
-        }
+        if evidence_id:
+            key = str(evidence_id)
+            index[key] = {
+                "evidence_id": key,
+                "kind": "health_status",
+                "player_id": row.get("player_id"),
+                "observed_at": row.get("observed_at"),
+            }
+        for event in row.get("news_events") or []:
+            event_id = event.get("event_id")
+            if not event_id:
+                continue
+            key = str(event_id)
+            index[key] = {
+                "evidence_id": key,
+                "kind": "accepted_news",
+                "player_id": row.get("player_id"),
+                "published_at": event.get("published_at"),
+                "source": event.get("source"),
+            }
 
     for row in week_ahead.get("rows") or []:
         for evidence_id in row.get("evidence_ids") or []:

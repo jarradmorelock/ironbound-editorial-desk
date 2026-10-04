@@ -102,11 +102,71 @@ def _split_flagship_honors(honors: dict[str, Any]) -> tuple[dict[str, Any], dict
     )
 
 
-def _feature_evidence(research: dict[str, Any]) -> dict[str, Any]:
+def _feature_evidence(
+    research: dict[str, Any],
+    game_dossiers: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     game = research.get("game_coverage") or {}
     story = research.get("story_desk") or {}
+    by_matchup = {
+        str(row.get("matchup_id")): row
+        for row in (game_dossiers or [])
+        if row.get("matchup_id") is not None
+    }
+    cover_candidates: list[dict[str, Any]] = []
+    for raw in game.get("cover_candidates") or []:
+        item = dict(raw)
+        matchup_id = item.get("matchup_id")
+        dossier = by_matchup.get(str(matchup_id)) or {}
+        transaction_ids = sorted(
+            {
+                str(transaction.get("transaction_id"))
+                for team in dossier.get("teams") or []
+                for transaction in team.get("transaction_context") or []
+                if transaction.get("transaction_id")
+            }
+        )
+        health_evidence = sorted(
+            {
+                str(health.get("evidence_id"))
+                for team in dossier.get("teams") or []
+                for health in team.get("health_context") or []
+                if health.get("evidence_id")
+            }
+        )
+        item.update(
+            {
+                "candidate_id": item.get("candidate_id")
+                or f"cover-matchup:{matchup_id}",
+                "candidate_type": item.get("candidate_type") or "matchup",
+                "related_game_ids": [matchup_id] if matchup_id is not None else [],
+                "verified_facts": {
+                    key: dossier.get(key)
+                    for key in (
+                        "matchup",
+                        "scoreline",
+                        "margin",
+                        "winner",
+                        "loser",
+                        "top_started_player",
+                        "division_status",
+                        "division_name",
+                    )
+                    if dossier.get(key) is not None
+                },
+                "transaction_ids": transaction_ids,
+                "health_evidence_ids": health_evidence,
+                "evidence_ids": sorted(
+                    set(dossier.get("evidence_ids") or []) | set(health_evidence)
+                ),
+                "cautions": [
+                    "Candidate strength is deterministic research evidence; headline, angle, and feature selection remain editorial."
+                ],
+            }
+        )
+        cover_candidates.append(item)
     return {
-        "cover_candidates": list(game.get("cover_candidates") or []),
+        "cover_candidates": cover_candidates,
         "story_candidates": list(story.get("candidates") or []),
         "story_status": story.get("status"),
         "context_events": research.get("context_events") or {},
@@ -347,7 +407,10 @@ def build_publication_complete_packet(
             {
                 "profile_tier": "flagship",
                 "game_dossiers": compiled_games,
-                "feature_evidence": _feature_evidence(research_packet),
+                "feature_evidence": _feature_evidence(
+                    research_packet,
+                    compiled_games,
+                ),
                 "usage_desk": dict(research_packet.get("usage_desk") or {}),
                 "manager_honors": manager,
                 "player_honors": player,

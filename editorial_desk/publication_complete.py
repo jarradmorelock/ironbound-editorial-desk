@@ -177,6 +177,11 @@ def _sources_and_notes(
     source_manifest: dict[str, Any],
     research: dict[str, Any],
 ) -> dict[str, Any]:
+    tuesday = research.get("tuesday_external_inputs") or {}
+    ranking_assets = research.get("ranking_publication_assets") or {}
+    optional_market = (
+        (research.get("roster_market") or {}).get("sleeper_platform_rates") or {}
+    )
     return {
         "information_cutoff": source_manifest.get("information_cutoff"),
         "measured_sources": {
@@ -186,13 +191,23 @@ def _sources_and_notes(
         "model_sources": {
             "rankings": source_manifest.get("rankings") or {},
         },
+        "supplied_assets": {
+            "manifest": source_manifest.get("publication_assets") or {},
+            "authority": ranking_assets.get("authority"),
+            "assets": ranking_assets.get("assets") or {},
+            "policy": ranking_assets.get("policy"),
+        },
         "time_sensitive": {
             "health": True,
             "beat_news": source_manifest.get("beat_news") or {},
         },
-        "editorial_notes": list(
-            ((research.get("tuesday_external_inputs") or {}).get("notes") or [])
-        ),
+        "experimental_optional": {
+            "sleeper_platform_market": optional_market,
+            "external_usage": (tuesday.get("usage") or {}),
+            "war": (tuesday.get("war") or {}),
+            "cwar": (tuesday.get("cwar") or {}),
+        },
+        "editorial_notes": list(tuesday.get("notes") or []),
     }
 
 

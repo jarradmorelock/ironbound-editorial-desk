@@ -1,0 +1,454 @@
+name: RUN THIS - Weekly Editorial Delivery
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Production finalizes a completed week; Preview is read-only
+        required: true
+        default: production
+        type: choice
+        options:
+          - production
+          - preview
+          - validate
+      week:
+        description: NFL week for Production or Preview
+        required: true
+        default: "1"
+      send_email:
+        description: Email the publication dossiers after a successful collection
+        required: true
+        default: false
+        type: boolean
+  schedule:
+    - cron: "17 21 * * 2"
+      timezone: "America/New_York"
+    - cron: "17 5 * * 3"
+      timezone: "America/New_York"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: editorial-chronicle-writer
+  cancel-in-progress: false
+
+jobs:
+  weekly-delivery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out application code
+        uses: actions/checkout@v6
+        with:
+          path: app
+
+      - name: Check out Chronicle data branch
+        uses: actions/checkout@v6
+        with:
+          ref: chronicle-data
+          path: chronicle-data
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
+
+      - name: Install dependencies
+        working-directory: app
+        run: python -m pip install -r requirements.txt
+
+      - name: Run tests
+        working-directory: app
+        run: python -m pytest -q
+
+      - name: Prepare safe example configuration
+        working-directory: app
+        run: cp config/leagues.example.json config/leagues.json
+
+      - name: Determine this run's job and completed week
+        id: plan
+        working-directory: app
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ inputs.mode }}" == "validate" ]]; then
+              echo "active=true" >> "$GITHUB_OUTPUT"
+              echo "season=manual" >> "$GITHUB_OUTPUT"
+              echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
+              echo "job=validate" >> "$GITHUB_OUTPUT"
+            elif [[ "${{ inputs.mode }}" == "preview" ]]; then
+              echo "active=true" >> "$GITHUB_OUTPUT"
+              echo "season=manual" >> "$GITHUB_OUTPUT"
+              echo "week=${{ inputs.week }}" >> "$GITHUB_OUTPUT"
+              echo "job=preview" >> "$GITHUB_OUTPUT"
+            else
+              echo "job=primary" >> "$GITHUB_OUTPUT"
+              REQUESTED_WEEK="${{ inputs.week }}" python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          from editorial_desk.period import detect_completed_period, PeriodDetectionError
+
+          requested = int(os.environ["REQUESTED_WEEK"])
+          try:
+              period = detect_completed_period()
+          except PeriodDetectionError as exc:
+              print("active=false")
+              print("season=unknown")
+              print(f"week={requested}")
+              print(f"reason=Could not verify completed NFL week: {exc}")
+          else:
+              verified = bool(period["active"]) and int(period["week"]) == requested
+              print(f"active={str(verified).lower()}")
+              print(f"season={period['season']}")
+              print(f"week={requested}")
+              if verified:
+                  print(f"reason=NFL Week {requested} is verified fully complete; safe to finalize")
+              else:
+                  print(
+                      "reason=Requested production week does not match the latest fully "
+                      f"completed NFL week ({period['week']})"
+                  )
+          PY
+            fi
+          else
+            if [[ "${{ github.event.schedule }}" == "17 21 * * 2" ]]; then
+              echo "job=primary" >> "$GITHUB_OUTPUT"
+            else
+              echo "job=backup" >> "$GITHUB_OUTPUT"
+            fi
+            python -m editorial_desk completed-period >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Refuse unsafe manual Production
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'production' && steps.plan.outputs.active != 'true' }}
+        run: |
+          echo "${{ steps.plan.outputs.reason }}"
+          echo "Production was not run because the requested week is not verified fully complete."
+          exit 1
+
+      - name: Explain a scheduled no-op
+        if: ${{ github.event_name != 'workflow_dispatch' && steps.plan.outputs.active != 'true' }}
+        run: echo "${{ steps.plan.outputs.reason }}; no packet will be sent."
+
+      - name: Validate configuration
+        if: ${{ steps.plan.outputs.job == 'validate' }}
+        working-directory: app
+        run: python -m editorial_desk validate-config --config config/leagues.json
+
+      - name: Restore Tuesday packet for Wednesday comparison
+        id: baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' }}
+        uses: actions/cache/restore@v4
+        with:
+          path: output/primary
+          key: editorial-baseline-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+          fail-on-cache-miss: false
+
+      - name: Finalize completed week into Chronicle
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk chronicle-collect
+          --config config/leagues.json
+          --week ${{ steps.plan.outputs.week }}
+          --chronicle-root ../chronicle-data
+          --finalize-matchups
+
+      - name: Materialize finalized Chronicle history
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk chronicle-materialize
+          --chronicle-root ../chronicle-data
+          --allow-partial
+
+      - name: Commit finalized Chronicle revision
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: chronicle-data
+        shell: bash
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "Chronicle unchanged after Tuesday finalization."
+            exit 0
+          fi
+          git config user.name "Ironbound Editorial Desk"
+          git config user.email "actions@users.noreply.github.com"
+          git add registry leagues cross_league coverage manifests diagnostics
+          git commit -m "chronicle: finalize ${{ steps.plan.outputs.season }} week ${{ steps.plan.outputs.week }}"
+          git push origin HEAD:chronicle-data
+
+      - name: Capture pinned Chronicle SHA
+        id: chronicle_sha
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: chronicle-data
+        shell: bash
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch Tuesday rankings handoff when available
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job != 'validate' }}
+        working-directory: app
+        shell: bash
+        run: |
+          mkdir -p editorial-inputs/assets
+          for pair in "main:ironbound_weekly" "free:unbound_weekly"; do
+            source_key="${pair%%:*}"
+            publication_key="${pair##*:}"
+            json_url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/${source_key}.json"
+            if curl --fail --silent --show-error --location "$json_url" -o "editorial-inputs/${publication_key}.json"; then
+              echo "Loaded ranking handoff for ${publication_key}."
+              for asset in power-rankings playoff-forecast; do
+                filename="${publication_key}-${asset}.png"
+                asset_url="https://raw.githubusercontent.com/jarradmorelock/Ironbound_power_ranks/main/handoff/assets/${filename}"
+                if curl --fail --silent --show-error --location "$asset_url" -o "editorial-inputs/assets/${filename}"; then
+                  echo "Loaded authoritative ranking asset ${filename}."
+                else
+                  rm -f "editorial-inputs/assets/${filename}"
+                  echo "WARNING: Missing ranking asset ${filename}; flagship research will remain incomplete."
+                fi
+              done
+            else
+              rm -f "editorial-inputs/${publication_key}.json"
+              rm -f "editorial-inputs/assets/${publication_key}-power-rankings.png"
+              rm -f "editorial-inputs/assets/${publication_key}-playoff-forecast.png"
+              echo "WARNING: No current ranking handoff for ${publication_key}; packet will mark those inputs awaiting."
+            fi
+          done
+
+      - name: Fetch durable beat/news ledger
+        id: beat_news
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job != 'validate' }}
+        working-directory: app
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p beat-inputs
+          revision="$(git ls-remote https://github.com/jarradmorelock/Ironbound-Forum-Feed-Poster.git refs/heads/news-data | awk '{print $1}')"
+          if [ -z "$revision" ]; then
+            echo "ERROR: Could not resolve Ironbound-Forum-Feed-Poster news-data revision."
+            exit 1
+          fi
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
+            -o beat-inputs/events.jsonl
+          curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
+            -o beat-inputs/coverage.json
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "Loaded durable beat/news ledger at revision $revision."
+
+      - name: Collect complete weekly dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk collect
+          --config config/leagues.json
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir ../output/primary
+          --chronicle-root ../chronicle-data
+          --chronicle-revision "${{ steps.chronicle_sha.outputs.sha }}"
+          --external-inputs-dir editorial-inputs
+          --beat-ledger beat-inputs/events.jsonl
+          --beat-ledger-revision "${{ steps.beat_news.outputs.revision }}"
+
+      - name: Write Tuesday Chronicle baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        env:
+          CHRONICLE_SHA: ${{ steps.chronicle_sha.outputs.sha }}
+        run: |
+          python - <<'PY'
+          from datetime import datetime, timezone
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("../output/primary/chronicle-baseline.json")
+          path.parent.mkdir(parents=True, exist_ok=True)
+          payload = {
+              "chronicle_sha": os.environ["CHRONICLE_SHA"],
+              "baseline_time": datetime.now(timezone.utc).isoformat(),
+          }
+          path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          PY
+
+      - name: Check whether monthly Chronicle archive is due
+        id: monthly_backup
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        shell: bash
+        run: >-
+          python -m editorial_desk chronicle-monthly-backup-due
+          --chronicle-root ../chronicle-data
+          >> "$GITHUB_OUTPUT"
+
+      - name: Build monthly Chronicle archive when due
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' && steps.monthly_backup.outputs.due == 'true' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk chronicle-backup
+          --chronicle-root ../chronicle-data
+          --output ../output/chronicle-backup/chronicle-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}-${{ steps.chronicle_sha.outputs.sha }}.zip
+          --chronicle-revision "${{ steps.chronicle_sha.outputs.sha }}"
+
+      - name: Upload complete research dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: editorial-desk-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+          path: output/primary/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Email complete publication dossiers
+        if: ${{ steps.plan.outputs.active == 'true' && ((steps.plan.outputs.job == 'primary' && (github.event_name != 'workflow_dispatch' || inputs.send_email)) || (steps.plan.outputs.job == 'preview' && inputs.send_email)) }}
+        working-directory: app
+        shell: bash
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: |
+          args=(
+            python -m editorial_desk email
+            --week "${{ steps.plan.outputs.week }}"
+            --output-dir ../output/primary
+          )
+          if [[ "${{ steps.plan.outputs.job }}" == "primary" && "${{ steps.monthly_backup.outputs.due }}" == "true" ]]; then
+            args+=(
+              --chronicle-archive "../output/chronicle-backup/chronicle-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}-${{ steps.chronicle_sha.outputs.sha }}.zip"
+              --monthly-receipt-root ../chronicle-data
+              --chronicle-revision "${{ steps.chronicle_sha.outputs.sha }}"
+            )
+          fi
+          "${args[@]}"
+
+      - name: Email divisional MVP Card Shop handoff
+        if: ${{ steps.plan.outputs.active == 'true' && ((steps.plan.outputs.job == 'primary' && (github.event_name != 'workflow_dispatch' || inputs.send_email)) || (steps.plan.outputs.job == 'preview' && inputs.send_email)) }}
+        working-directory: app
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: >-
+          python -m editorial_desk email-divisional-mvps
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir ../output/primary
+
+      - name: Prune expired Chronicle diagnostics
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk chronicle-prune-diagnostics
+          --chronicle-root ../chronicle-data
+          --retention-days 30
+
+      - name: Commit Chronicle delivery and retention changes
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: chronicle-data
+        shell: bash
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No Chronicle receipt or retention changes to commit."
+            exit 0
+          fi
+          git config user.name "Ironbound Editorial Desk"
+          git config user.email "actions@users.noreply.github.com"
+          git add backup_receipts diagnostics
+          git commit -m "chronicle: record editorial delivery ${{ steps.plan.outputs.season }} week ${{ steps.plan.outputs.week }}"
+          git push origin HEAD:chronicle-data
+
+      - name: Save Tuesday packet as Wednesday baseline
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        uses: actions/cache/save@v4
+        with:
+          path: output/primary
+          key: editorial-baseline-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}
+
+      - name: Collect Wednesday Chronicle pulse
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk chronicle-collect
+          --config config/leagues.json
+          --week ${{ steps.plan.outputs.week }}
+          --chronicle-root ../chronicle-data
+
+      - name: Commit Wednesday Chronicle changes
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' }}
+        working-directory: chronicle-data
+        shell: bash
+        run: |
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "Wednesday Chronicle pulse produced no changes."
+            exit 0
+          fi
+          git config user.name "Ironbound Editorial Desk"
+          git config user.email "actions@users.noreply.github.com"
+          git add registry leagues cross_league coverage manifests diagnostics
+          git commit -m "chronicle: Wednesday pulse ${{ steps.plan.outputs.season }} week ${{ steps.plan.outputs.week }}"
+          git push origin HEAD:chronicle-data
+
+      - name: Read Tuesday Chronicle baseline
+        id: chronicle_baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        working-directory: app
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          from pathlib import Path
+
+          value = json.loads(Path("../output/primary/chronicle-baseline.json").read_text(encoding="utf-8"))
+          print(f"chronicle_sha={value['chronicle_sha']}")
+          print(f"baseline_time={value['baseline_time']}")
+          PY
+
+      - name: Collect Wednesday comparison
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk collect
+          --config config/leagues.json
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir ../output/backup
+          --chronicle-root ../chronicle-data
+          --external-inputs-dir editorial-inputs
+          --beat-ledger beat-inputs/events.jsonl
+          --beat-ledger-revision "${{ steps.beat_news.outputs.revision }}"
+
+      - name: Build delta-only Wednesday supplements
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        working-directory: app
+        run: >-
+          python -m editorial_desk supplement
+          --baseline-dir ../output/primary
+          --current-dir ../output/backup
+          --output-dir ../output/supplements
+          --week ${{ steps.plan.outputs.week }}
+          --chronicle-root ../chronicle-data
+          --baseline-time "${{ steps.chronicle_baseline.outputs.baseline_time }}"
+
+      - name: Explain a missing Tuesday baseline
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit != 'true' }}
+        run: echo "Tuesday baseline is unavailable; refusing to send a duplicate full packet."
+
+      - name: Upload Wednesday supplemental research
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: editorial-desk-${{ steps.plan.outputs.season }}-week-${{ steps.plan.outputs.week }}-supplements
+          path: output/supplements/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Email only newly captured Wednesday material
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'backup' && steps.baseline.outputs.cache-hit == 'true' }}
+        working-directory: app
+        env:
+          IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
+          IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
+        run: >-
+          python -m editorial_desk email-supplement
+          --week ${{ steps.plan.outputs.week }}
+          --output-dir ../output/supplements

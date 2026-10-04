@@ -63,6 +63,9 @@ def test_sleeper_schedule_history_builds_entering_records_and_player_totals():
     assert result["entering_records"]["3"]["1"] == {"wins": 2, "losses": 0, "ties": 0}
     assert result["player_season_totals"]["p1"]["points"] == 63.5
     assert result["player_season_totals"]["p1"]["through_week"] == 3
+    assert result["division_summary"]["team_records"]["1"]["overall_record"] == {"wins": 3, "losses": 0, "ties": 0}
+    assert result["division_summary"]["team_records"]["1"]["cross_division_record"] == {"wins": 3, "losses": 0, "ties": 0}
+    assert result["division_summary"]["divisions"]["1"]["cross_division_record"] == {"wins": 3, "losses": 0, "ties": 0}
 
 
 def test_missing_historical_roster_blocks_full_season_totals():
@@ -211,3 +214,11 @@ def test_real_ironbound_week3_history_reconstructs_entering_records_and_season_t
     ]
     assert result["player_season_totals"]["9221"]["points"] == 104.05
     assert result["player_season_totals"]["1373"]["points"] == 67.42
+    martian = result["division_summary"]["team_records"]["5"]
+    assert martian["overall_record"] == {"wins": 2, "losses": 1, "ties": 0}
+    assert martian["division_record"] == {"wins": 1, "losses": 1, "ties": 0}
+    assert martian["cross_division_record"] == {"wins": 1, "losses": 0, "ties": 0}
+    hammer = result["division_summary"]["divisions"]["1"]
+    assert hammer["pooled_internal_record"] == {"wins": 3, "losses": 3, "ties": 0}
+    assert hammer["cross_division_record"] == {"wins": 2, "losses": 4, "ties": 0}
+    assert hammer["scoring_average"] == 107.1367

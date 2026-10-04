@@ -286,16 +286,22 @@ def build_flagship_game_dossiers(
             for item in health_rows:
                 if item.get("evidence_id"):
                     game_evidence.add(str(item["evidence_id"]))
+                game_evidence.update(
+                    str(value) for value in item.get("news_evidence_ids") or []
+                )
 
             related_transactions = [
                 dict(row)
                 for row in transaction_rows
-                if roster_id in [
+                if int(row.get("week") or 0) == week
+                and (
+                    roster_id in [
                     int(value)
                     for value in row.get("roster_ids") or []
                     if str(value).isdigit()
-                ]
-                or team_name in (row.get("teams") or [])
+                    ]
+                    or team_name in (row.get("teams") or [])
+                )
             ]
             for transaction in related_transactions:
                 game_evidence.update(

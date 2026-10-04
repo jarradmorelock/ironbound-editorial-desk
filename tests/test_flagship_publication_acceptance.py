@@ -250,7 +250,12 @@ def _build_packet(input_name):
         "publication_assets": {"status": "READY"},
         "beat_news": {"status": "READY", "blocking": False},
     }
-    health = {"status": "READY_NO_ITEMS", "players": [], "news_events": []}
+    health = {
+        "status": "READY_NO_ITEMS",
+        "information_cutoff": "2026-09-30T18:00:00+00:00",
+        "players": [],
+        "news_events": [],
+    }
     return build_publication_complete_packet(
         snapshot,
         {},

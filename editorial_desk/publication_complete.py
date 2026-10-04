@@ -467,6 +467,14 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     games = packet.get("game_dossiers") or []
     if len(games) != 8:
         _block(blocking, "game_dossiers", "INCOMPLETE_MATCHUPS", f"{len(games)}/8 completed matchup dossiers")
+    game_ids = [str(row.get("matchup_id")) for row in games if row.get("matchup_id") is not None]
+    if len(game_ids) != len(set(game_ids)):
+        _block(
+            blocking,
+            "game_dossiers",
+            "DUPLICATE_MATCHUP_IDS",
+            "reviewed-week matchup dossiers contain duplicate matchup IDs",
+        )
     incomplete_lineups = [
         row.get("matchup_id")
         for row in games
@@ -669,6 +677,14 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     week_rows = week_ahead.get("rows") or []
     if week_ahead.get("status") != "READY" or len(week_rows) != 8:
         _block(blocking, "week_ahead", "INCOMPLETE_WEEK_AHEAD", f"{len(week_rows)}/8 matchup forecast rows")
+    week_ids = [str(row.get("matchup_id")) for row in week_rows if row.get("matchup_id") is not None]
+    if len(week_ids) != len(set(week_ids)):
+        _block(
+            blocking,
+            "week_ahead",
+            "DUPLICATE_WEEK_AHEAD_MATCHUPS",
+            "upcoming matchup forecast rows contain duplicate matchup IDs",
+        )
     incomplete_forecasts = [
         row.get("matchup_id")
         for row in week_rows

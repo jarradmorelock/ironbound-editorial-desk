@@ -295,7 +295,7 @@ jobs:
           PY
 
       - name: Write news inbox consumption receipt
-        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
         working-directory: app
         env:
           NEWS_REVISION: ${{ steps.beat_news.outputs.revision }}

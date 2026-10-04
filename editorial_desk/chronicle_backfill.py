@@ -162,6 +162,45 @@ def _historical_matchup_events(
                 evidence=evidence,
             )
         )
+        for side in sides:
+            roster_id = int(side.get("roster_id") or 0)
+            points_raw = (
+                side.get("players_points")
+                or side.get("players_points_custom")
+                or {}
+            )
+            points = {str(player_id): float(value or 0) for player_id, value in points_raw.items()}
+            player_ids = sorted(
+                {str(player_id) for player_id in side.get("players") or []}
+                | {str(player_id) for player_id in side.get("starters") or []}
+                | set(points)
+            )
+            for player_id in player_ids:
+                events.append(
+                    make_event(
+                        event_type="PLAYER_FANTASY_WEEK_FINAL",
+                        source="sleeper_matchups",
+                        source_ref=(
+                            f"league:{season_ref.league_id}:season:{season_ref.season}:"
+                            f"week:{week}:roster:{roster_id}:player:{player_id}"
+                        ),
+                        league_key=league_key,
+                        season=season_ref.season,
+                        week=week,
+                        provenance="reconstructed_from_sleeper",
+                        entities={"roster_id": roster_id, "player_id": player_id},
+                        observed_at=f"backfill:{season_ref.season}",
+                        evidence={
+                            "matchup_id": evidence["matchup_id"],
+                            "position": None,
+                            "points": round(points.get(player_id, 0.0), 2),
+                            "score_status": (
+                                "OBSERVED" if player_id in points else "CERTIFIED_ZERO"
+                            ),
+                            "membership_status": "ROSTERED",
+                        },
+                    )
+                )
     return events
 
 

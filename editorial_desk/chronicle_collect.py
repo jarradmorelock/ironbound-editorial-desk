@@ -321,10 +321,13 @@ def _normalize_player_fantasy_finals(
             player = players.get(player_id) or {}
             positions = player.get("fantasy_positions") or []
             position = player.get("position") or (positions[0] if positions else None)
+            score_status = "OBSERVED" if player_id in points else "CERTIFIED_ZERO"
             evidence = {
                 "matchup_id": matchup_id,
                 "position": str(position).upper() if position else None,
                 "points": round(points.get(player_id, 0.0), 2),
+                "score_status": score_status,
+                "membership_status": "ROSTERED",
             }
             events.append(
                 make_event(

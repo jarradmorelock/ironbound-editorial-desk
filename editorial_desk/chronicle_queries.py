@@ -255,6 +255,9 @@ class ChronicleQueries:
                     "player_id": player_id,
                     "position": evidence.get("position"),
                     "points": float(evidence.get("points") or 0),
+                    "score_status": evidence.get("score_status") or "OBSERVED",
+                    "membership_status": evidence.get("membership_status") or "ROSTERED",
+                    "source_ref": event.get("source_ref"),
                     "event_id": event.get("event_id"),
                 }
             )

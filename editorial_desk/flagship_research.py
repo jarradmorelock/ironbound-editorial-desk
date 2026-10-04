@@ -2267,6 +2267,8 @@ def _attach_rookie_draft_context(
                 "roster_id": _safe_int(pick.get("roster_id")),
             }
 
+    source_status = str(draft_source.get("status") or "").casefold()
+    draft_history_available = bool(draft_source.get("records")) or source_status == "available"
     enriched = []
     for row in rows:
         item = dict(row)
@@ -2282,8 +2284,25 @@ def _attach_rookie_draft_context(
             item["ironbound_draft_round"] = pick["round"]
             item["ironbound_draft_slot"] = pick["slot"]
             item["ironbound_drafted_by"] = drafting_team
+            item["ironbound_draft_status"] = "DRAFTED"
+            item["ironbound_draft_provenance"] = {
+                "source": "Sleeper league draft archive",
+                "round": pick["round"],
+                "slot": pick["slot"],
+                "drafting_roster_id": drafting_roster,
+                "drafting_team": drafting_team,
+            }
         else:
             item["ironbound_draft"] = None
+            item["ironbound_draft_status"] = (
+                "NOT_DRAFTED_IN_CAPTURED_LEAGUE_DRAFT"
+                if draft_history_available
+                else "UNAVAILABLE"
+            )
+            item["ironbound_draft_provenance"] = {
+                "source": "Sleeper league draft archive",
+                "source_status": source_status or "not_collected",
+            }
         enriched.append(item)
     return enriched
 

@@ -555,3 +555,20 @@ def test_health_news_without_sleeper_designation_remains_writer_ready_evidence()
     assert row["source_status"] == "accepted_news_only"
     assert row["news_evidence_ids"] == ["news-health-1"]
     assert "news-health-1" in packet["evidence_index"]
+
+
+def test_game_dossier_includes_prior_transaction_leg_acquisition_that_started_this_week():
+    transactions = _transactions()
+    trade = transactions['transactions'][0]
+    trade.update({
+        'week': 2, 'roster_ids': [1, 2], 'teams': ['Team 1', 'Team 2'],
+        'reviewed_week_impact': [{
+            'to_roster_id': 1, 'reviewed_week': 3,
+            'rostered_in_reviewed_matchup': True, 'started': True,
+            'player_id': 'p1', 'fantasy_points': 21.0,
+        }],
+    })
+    packet = _packet(transactions)
+    team = next(team for game in packet['game_dossiers'] for team in game['teams']
+                if team['roster_id'] == 1)
+    assert [row['transaction_id'] for row in team['transaction_context']] == ['tx1']

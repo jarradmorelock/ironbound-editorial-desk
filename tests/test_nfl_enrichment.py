@@ -1,6 +1,22 @@
 from editorial_desk.nfl_enrichment import build_nfl_game_intelligence
 
 
+def test_rostered_rams_starter_stat_book_matches_without_gsis_id():
+    snapshot = {
+        "editorial": {"tier": "flagship"},
+        "players": {"kyren": {"full_name": "Kyren Williams", "position": "RB", "team": "LAR"}},
+        "rosters": [{"roster_id": 1, "players": ["kyren"]}],
+        "matchups": [{"roster_id": 1, "starters": ["kyren"]}],
+        "nfl_context": {"player_stats": {"status": "available", "records": [
+            {"player_id": "g-kyren", "player_display_name": "Kyren Williams", "team": "LA", "position": "RB", "rushing_yards": 150},
+        ]}},
+    }
+    stat_book = build_nfl_game_intelligence(snapshot)["stat_book"]
+    assert stat_book["records"][0]["sleeper_player_id"] == "kyren"
+    assert stat_book["records"][0]["rushing_yards"] == 150
+    assert stat_book["missing_starters"] == []
+
+
 def flagship_snapshot():
     plays = [
         {

@@ -255,6 +255,21 @@ def test_free_agent_of_week_uses_league_scoring_and_excludes_rostered_players():
     assert free_agent["points"] == 27.5
 
 
+def test_free_agent_excludes_rostered_rams_player_without_gsis_id():
+    from editorial_desk.weekly_features import _free_agent_of_week
+
+    data = {
+        "league": {"scoring_settings": {"rush_yd": 0.1}},
+        "players": {"kyren": {"full_name": "Kyren Williams", "position": "RB", "team": "LAR"}},
+        "rosters": [{"players": ["kyren"]}],
+        "nfl_context": {"player_stats": {"status": "available", "records": [
+            {"player_id": "g-kyren", "player_display_name": "Kyren Williams", "team": "LA", "position": "RB", "rushing_yards": 150},
+            {"player_id": "g-free", "player_display_name": "Free Runner", "team": "BUF", "position": "RB", "rushing_yards": 50},
+        ]}},
+    }
+    assert _free_agent_of_week(data)["player"] == "Free Runner"
+
+
 def test_started_position_leaders_ignore_taxi_and_nonstarters():
     _, dossier = enriched()
     leaders = dossier["weekly_features"]["started_position_leaders"]

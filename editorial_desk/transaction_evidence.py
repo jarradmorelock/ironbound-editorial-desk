@@ -257,7 +257,7 @@ def build_transaction_evidence(
                 "players": normalized_players,
                 "reviewed_week_impact": _reviewed_week_impact(
                     snapshot,
-                    week,
+                    int(snapshot.get("week") or 0),
                     normalized_players,
                 ),
                 "draft_picks": picks,

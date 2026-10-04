@@ -467,6 +467,9 @@ def _sleeper_player_name(player: dict[str, Any]) -> str:
 def _identity_signature(name: Any, team: Any, position: Any) -> tuple[str, str, str] | None:
     normalized = _normalize_name(str(name or ""))
     team_text = str(team or "").upper()
+    # Keep name-based joins consistent across nflverse and Sleeper.
+    if team_text == "LA":
+        team_text = "LAR"
     position_text = str(position or "").upper()
     if not normalized or not team_text or not position_text:
         return None

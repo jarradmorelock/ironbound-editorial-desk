@@ -129,3 +129,18 @@ def test_transaction_evidence_attaches_reviewed_week_impact_for_acquired_players
     assert impact["Rome Odunze"]["to_team"] == "Chicken"
     assert impact["Rome Odunze"]["started"] is True
     assert impact["Rome Odunze"]["fantasy_points"] == 17.6
+
+
+def test_prior_sleeper_week_leg_trade_reports_current_issue_week_impact():
+    snapshot = _snapshot()
+    snapshot["matchups"] = [{
+        "roster_id": 1, "matchup_id": 1, "players": ["bernard"],
+        "starters": ["bernard"], "players_points": {"bernard": 14.0},
+        "points": 100.0,
+    }]
+    trade = next(row for row in build_transaction_evidence(snapshot)["transactions"]
+                 if row["transaction_id"] == "tx-week2")
+    assert trade["week"] == 2  # Preserve the source transaction leg.
+    assert trade["reviewed_week_impact"][0]["reviewed_week"] == 3
+    assert trade["reviewed_week_impact"][0]["started"] is True
+    assert trade["reviewed_week_impact"][0]["fantasy_points"] == 14.0

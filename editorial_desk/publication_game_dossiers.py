@@ -332,7 +332,18 @@ def build_flagship_game_dossiers(
             related_transactions = [
                 dict(row)
                 for row in transaction_rows
-                if int(row.get("week") or 0) == week
+                if (
+                    int(row.get("week") or 0) == week
+                    or (
+                        int(row.get("week") or 0) == week - 1
+                        and any(
+                            int(impact.get("reviewed_week") or 0) == week
+                            and int(impact.get("to_roster_id") or 0) == roster_id
+                            and impact.get("started") is True
+                            for impact in row.get("reviewed_week_impact") or []
+                        )
+                    )
+                )
                 and (
                     roster_id in [
                     int(value)

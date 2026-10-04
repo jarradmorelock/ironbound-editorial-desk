@@ -419,6 +419,9 @@ def _position(player: dict[str, Any]) -> str | None:
 def _identity_signature(name: Any, team: Any, position: Any) -> tuple[str, str, str] | None:
     normalized = _normalize_name(str(name or ""))
     team_text = str(team or "").upper()
+    # nflverse uses LA for the Rams; Sleeper uses LAR.
+    if team_text == "LA":
+        team_text = "LAR"
     position_text = str(position or "").upper()
     if not normalized or not team_text or not position_text:
         return None

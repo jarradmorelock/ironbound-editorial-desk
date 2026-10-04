@@ -16,17 +16,98 @@ def _build_packet(input_name):
     data = _load(input_name)
     teams = data["teams"]
     team_to_roster = {team: idx + 1 for idx, team in enumerate(teams)}
+    users = [
+        {
+            "user_id": f"u{roster_id}",
+            "display_name": team,
+            "metadata": {"team_name": team},
+        }
+        for roster_id, team in enumerate(teams, 1)
+    ]
+    rosters = [
+        {
+            "roster_id": roster_id,
+            "owner_id": f"u{roster_id}",
+            "players": [f"p{roster_id}"],
+        }
+        for roster_id in range(1, 17)
+    ]
+    players = {
+        f"p{roster_id}": {
+            "full_name": f"Fixture Player {roster_id}",
+            "position": "QB",
+            "team": "NFL",
+        }
+        for roster_id in range(1, 17)
+    }
+    matchup_by_roster = {}
+    for game in data["games"]:
+        matchup_by_roster[game["left_roster_id"]] = game["matchup_id"]
+        matchup_by_roster[game["right_roster_id"]] = game["matchup_id"]
+    matchups = [
+        {
+            "matchup_id": matchup_by_roster[roster_id],
+            "roster_id": roster_id,
+            "points": 100.0 if roster_id % 2 else 90.0,
+            "players": [f"p{roster_id}"],
+            "starters": [f"p{roster_id}"],
+            "players_points": {f"p{roster_id}": 20.0 + roster_id},
+        }
+        for roster_id in range(1, 17)
+    ]
     snapshot = {
         "week": data["week"],
-        "league": {"season": data["season"]},
+        "league": {
+            "season": data["season"],
+            "roster_positions": ["QB"],
+        },
         "editorial": {
             "league_key": data["league_key"],
             "publication_profile": {"key": data["publication_key"]},
         },
+        "users": users,
+        "rosters": rosters,
+        "players": players,
+        "matchups": matchups,
     }
+    division_names = list(data.get("division_averages", {"1": 100.0}))
+    team_records = {
+        str(i): {
+            "roster_id": i,
+            "team": teams[i - 1],
+            "division": division_names[(i - 1) % len(division_names)],
+            "overall_record": {"wins": 1, "losses": 1, "ties": 0},
+            "division_record": {"wins": 1, "losses": 0, "ties": 0},
+            "cross_division_record": {"wins": 0, "losses": 1, "ties": 0},
+        }
+        for i in range(1, 17)
+    }
+    historical_matchups = [
+        {
+            "evidence_id": f"team-week:{data['season']}:{data['week']}:{roster_id}",
+            "week": data["week"],
+            "matchup_id": matchup_by_roster[roster_id],
+            "roster_id": roster_id,
+            "team": teams[roster_id - 1],
+            "points": 100.0 if roster_id % 2 else 90.0,
+        }
+        for roster_id in range(1, 17)
+    ]
+    player_weeks = [
+        {
+            "evidence_id": f"player-week:{data['season']}:{data['week']}:{roster_id}:p{roster_id}",
+            "week": data["week"],
+            "roster_id": roster_id,
+            "player_id": f"p{roster_id}",
+            "points": 20.0 + roster_id,
+            "started": True,
+        }
+        for roster_id in range(1, 17)
+    ]
     canonical = {
         "coverage": {"status": "READY", "weeks": list(range(1, data["week"] + 1))},
-        "historical_matchups": [],
+        "historical_matchups": historical_matchups,
+        "player_weeks": player_weeks,
         "entering_records": {str(data["week"]): {str(i): {"wins": 1, "losses": 1, "ties": 0} for i in range(1, 17)}},
         "team_season_totals": {
             str(i): {"roster_id": i, "team": teams[i - 1], "points": 300 - i, "through_week": data["week"]}
@@ -40,8 +121,12 @@ def _build_packet(input_name):
                 name: {"division": name, "scoring_average": avg}
                 for name, avg in data.get("division_averages", {"1": 100.0}).items()
             },
+            "team_records": team_records,
         },
-        "evidence_index": {"fixture:1": {"evidence_id": "fixture:1"}},
+        "evidence_index": {
+            row["evidence_id"]: row
+            for row in historical_matchups + player_weeks
+        },
         "conflicts": [],
     }
     games = [
@@ -49,11 +134,27 @@ def _build_packet(input_name):
             "matchup_id": row["matchup_id"],
             "matchup": f"{teams[row['left_roster_id'] - 1]} vs {teams[row['right_roster_id'] - 1]}",
             "scoreline": "100-90",
+            "division_status": "VERIFIED_DIVISIONAL",
+            "division_name": "fixture",
         }
         for row in data["games"]
     ]
     forecast = [
-        {"matchup_id": row["matchup_id"], "roster_one": row["left_roster_id"], "roster_two": row["right_roster_id"], "projected_margin": 5}
+        {
+            "matchup_id": row["matchup_id"],
+            "week": data["week"] + 1,
+            "roster_one": row["left_roster_id"],
+            "roster_two": row["right_roster_id"],
+            "team_one": teams[row["left_roster_id"] - 1],
+            "team_two": teams[row["right_roster_id"] - 1],
+            "projected_margin": 5,
+            "projected_score_one": 110.0,
+            "projected_score_two": 105.0,
+            "projected_total": 215.0,
+            "optimal_lineup_one": [f"p{row['left_roster_id']}"],
+            "optimal_lineup_two": [f"p{row['right_roster_id']}"],
+            "projection_source": "fixture projections",
+        }
         for row in data["games"]
     ]
     rankings = [

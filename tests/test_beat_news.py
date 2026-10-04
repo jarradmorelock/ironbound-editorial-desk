@@ -102,6 +102,22 @@ def test_load_news_ledger_reads_jsonl_and_records_revision(tmp_path):
     assert source["coverage"]["durable_since"] == "2026-09-01T00:00:00+00:00"
 
 
+def test_load_news_ledger_reads_weekly_manifest_and_player_index(tmp_path):
+    path = tmp_path / "events.jsonl"
+    path.write_text(json.dumps(_event("news:1", "2026-09-16T12:00:00+00:00")) + "\n", encoding="utf-8")
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"week_key": "2026-09-15", "event_count": 1}), encoding="utf-8"
+    )
+    (tmp_path / "by-player.json").write_text(
+        json.dumps({"players": {"00-0036875": {"event_ids": ["news:1"]}}}), encoding="utf-8"
+    )
+
+    source = load_news_ledger(path, revision="abc123")
+
+    assert source["ledger_manifest"]["week_key"] == "2026-09-15"
+    assert source["player_index"]["players"]["00-0036875"]["event_ids"] == ["news:1"]
+
+
 def test_build_beat_report_maps_only_rostered_relevant_news_in_weekly_window():
     source = {
         "status": "available",

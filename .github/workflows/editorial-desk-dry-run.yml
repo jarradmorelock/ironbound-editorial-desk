@@ -39,6 +39,8 @@ jobs:
   weekly-delivery:
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'historical-week3-replay' }}
     runs-on: ubuntu-latest
+    env:
+      NEWS_DATA_PUSH_TOKEN: ${{ secrets.NEWS_DATA_PUSH_TOKEN }}
     steps:
       - name: Check out application code
         uses: actions/checkout@v6
@@ -232,12 +234,23 @@ jobs:
             echo "ERROR: Could not resolve Ironbound-Forum-Feed-Poster news-data revision."
             exit 1
           fi
-          curl --fail --silent --show-error --location \
-            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
-            -o beat-inputs/events.jsonl
-          curl --fail --silent --show-error --location \
-            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
-            -o beat-inputs/coverage.json
+          if ! curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/current/events.jsonl" \
+            -o beat-inputs/events.jsonl; then
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
+              -o beat-inputs/events.jsonl
+          fi
+          for ledger_file in manifest.json by-player.json coverage.json; do
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/current/$ledger_file" \
+              -o "beat-inputs/$ledger_file" || true
+          done
+          if [ ! -f beat-inputs/coverage.json ]; then
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
+              -o beat-inputs/coverage.json || true
+          fi
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
           echo "Loaded durable beat/news ledger at revision $revision."
 
@@ -280,6 +293,78 @@ jobs:
               )
           print(f"Verified {len(dossiers)} publication-complete packets.")
           PY
+
+      - name: Write news inbox consumption receipt
+        if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
+        working-directory: app
+        env:
+          NEWS_REVISION: ${{ steps.beat_news.outputs.revision }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from editorial_desk.news_index import build_consumption_receipt
+
+          root = Path("../output/primary")
+          candidates = sorted(root.glob("*/week-*/*/publication_complete_packet.json"))
+          if not candidates:
+              raise SystemExit("No publication-complete packet available for news receipt.")
+          selected = candidates[0]
+          for path in candidates:
+              try:
+                  packet = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError):
+                  continue
+              if (packet.get("issue_identity") or {}).get("publication_key") == "ironbound_weekly":
+                  selected = path
+                  break
+          selected_packet = json.loads(selected.read_text(encoding="utf-8"))
+          if not isinstance(selected_packet.get("news_index"), dict):
+              raise SystemExit("Publication packet is missing the validated news_index contract.")
+          if not isinstance(selected_packet.get("readiness"), dict):
+              raise SystemExit("Publication packet is missing readiness validation.")
+          manifest_path = Path("beat-inputs/manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+          report = {
+              "source_revision": __import__("os").environ.get("NEWS_REVISION"),
+              "ledger_manifest": manifest,
+          }
+          issue = selected_packet.get("issue_identity") or {}
+          receipt = build_consumption_receipt(
+              report,
+              selected,
+              issue_key=f"{issue.get('publication_key', 'publication')}-{issue.get('season', 'unknown')}-week-{issue.get('week', 'unknown')}",
+          )
+          destination = root / "news-consumption-receipt.json"
+          destination.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(f"Wrote news inbox receipt for {receipt.get('week_key') or 'legacy ledger'}.")
+          PY
+
+      - name: Acknowledge consumed news inbox on news-data branch
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' && env.NEWS_DATA_PUSH_TOKEN != '' }}
+        uses: actions/checkout@v6
+        with:
+          repository: jarradmorelock/Ironbound-Forum-Feed-Poster
+          ref: news-data
+          path: news-data
+          token: ${{ secrets.NEWS_DATA_PUSH_TOKEN }}
+      - name: Commit news inbox receipt
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' && env.NEWS_DATA_PUSH_TOKEN != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p news-data/ledger/receipts
+          cp app/../output/primary/news-consumption-receipt.json news-data/ledger/receipts/latest.json
+          cd news-data
+          git config user.name "Ironbound Editorial Desk"
+          git config user.email "actions@users.noreply.github.com"
+          git add ledger/receipts/latest.json
+          if git diff --cached --quiet; then
+            echo "News inbox receipt already recorded."
+          else
+            git commit -m "editorial: acknowledge consumed weekly news inbox"
+            git push origin HEAD:news-data
+          fi
 
       - name: Write Tuesday Chronicle baseline
         if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}

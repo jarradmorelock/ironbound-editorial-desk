@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from .context_events import build_context_events
+from .news_index import build_news_index
 from .honors import research_honors
 from .weekly_features import _overall_player_of_week
 from .external_inputs import ExternalEditorialInputs
@@ -199,6 +200,13 @@ def build_flagship_research_packet(
         "injury_roster_health": health,
         "beat_report": beat_report,
         "context_events": build_context_events(beat_report, games),
+        "news_index": build_news_index(
+            beat_report,
+            dossier,
+            status_events=list(
+                ((roster_market or {}).get("status_timeline") or {}).get("events") or []
+            ),
+        ),
         "roster_market": roster_market,
         "weekly_honors": {
             **honors_research,

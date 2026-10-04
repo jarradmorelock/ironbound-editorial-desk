@@ -358,6 +358,7 @@ def build_publication_complete_packet(
     transaction_evidence: dict[str, Any],
     source_manifest: dict[str, Any],
     health: dict[str, Any],
+    news_index: dict[str, Any] | None = None,
     publication_assets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compile the publication-facing factual boundary.
@@ -398,6 +399,7 @@ def build_publication_complete_packet(
         "canonical_league_evidence": canonical_evidence,
         "transaction_desk": transaction_evidence,
         "roster_health": normalized_health,
+        "news_index": dict(news_index or {}),
         "publication_assets": dict(publication_assets or {}),
     }
 
@@ -881,6 +883,7 @@ def render_publication_complete_packet(packet: dict[str, Any]) -> str:
         f"Contract: **{packet.get('contract_version')}**",
         f"Publication ready: **{'YES' if readiness.get('publication_ready') else 'NO'}**",
         f"Information cutoff: {issue.get('information_cutoff') or 'unknown'}",
+        f"News index: {len((packet.get('news_index') or {}).get('stories') or [])} stories; {len((packet.get('news_index') or {}).get('links') or [])} evidence links.",
         "",
         "## Blocking Gaps",
     ]

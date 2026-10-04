@@ -132,6 +132,7 @@ def build_source_manifest(
             "blocking": False,
             "coverage_start": ((beat_report or {}).get("coverage") or {}).get("durable_since"),
             "source_revision": (beat_report or {}).get("source_revision"),
+            "ledger_manifest": (beat_report or {}).get("ledger_manifest") or {},
         },
     }
 

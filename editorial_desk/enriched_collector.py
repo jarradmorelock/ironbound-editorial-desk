@@ -33,6 +33,7 @@ from .chronicle_queries import ChronicleQueries
 from .canonical_evidence import build_canonical_league_evidence
 from .transaction_evidence import build_transaction_evidence
 from .publication_sources import build_source_manifest, health_evidence
+from .news_index import build_news_index
 from .publication_complete import (
     build_publication_complete_packet,
     write_publication_complete_packet,
@@ -209,6 +210,7 @@ def collect_all(
                             external_inputs,
                             publication_assets=publication_assets,
                             beat_report=beat_report,
+                            roster_market=roster_market,
                             chronicle=chronicle_queries,
                         )
                     )
@@ -301,6 +303,7 @@ def _write_newspaper_packet(
             external,
             publication_assets=None,
             beat_report=beat_report,
+            roster_market=None,
             chronicle=chronicle,
         )
     )
@@ -316,7 +319,8 @@ def _write_publication_complete_artifacts(
     *,
     publication_assets: dict[str, Any] | None,
     beat_report: dict[str, Any] | None,
-    chronicle: ChronicleQueries | None,
+    roster_market: dict[str, Any] | None = None,
+    chronicle: ChronicleQueries | None = None,
 ) -> tuple[Path, Path]:
     """Compile the immutable factual handoff after all research has completed."""
     canonical = build_canonical_league_evidence(snapshot, chronicle)
@@ -335,6 +339,14 @@ def _write_publication_complete_artifacts(
         beat_report,
         manifest.get("information_cutoff"),
     )
+    status_events = list(
+        ((roster_market or {}).get("status_timeline") or {}).get("events") or []
+    )
+    news_index = build_news_index(
+        beat_report,
+        dossier,
+        status_events=status_events,
+    )
     complete = build_publication_complete_packet(
         snapshot,
         dossier,
@@ -344,6 +356,7 @@ def _write_publication_complete_artifacts(
         transaction_evidence=transactions,
         source_manifest=manifest,
         health=health,
+        news_index=news_index,
         publication_assets=publication_assets,
     )
     return write_publication_complete_packet(directory, complete)

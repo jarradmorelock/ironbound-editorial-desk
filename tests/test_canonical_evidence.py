@@ -81,6 +81,48 @@ def test_missing_historical_roster_blocks_full_season_totals():
     assert result["player_season_totals_status"] == "UNAVAILABLE"
 
 
+def test_rostered_player_without_points_entry_is_certified_zero():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Player Zero"}
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players"].append("p0")
+
+    result = build_canonical_league_evidence(snapshot, None)
+
+    row = next(row for row in result["player_weeks"] if row["player_id"] == "p0")
+    assert row["week"] == 2
+    assert row["points"] == 0.0
+    assert row["score_status"] == "CERTIFIED_ZERO"
+    assert row["membership_status"] == "ROSTERED"
+    assert row["evidence_id"] == "player-week:2026:2:1:p0"
+
+
+def test_player_acquired_after_historical_week_is_excluded_not_unknown():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Later Player"}
+    snapshot["rosters"][0]["players"] = ["p0"]
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["1"][0]["players"] = []
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["1"][0]["players_points"] = {}
+    snapshot["publication_sleeper"]["transactions"] = {
+        "weeks": {"2": [{"status": "complete", "adds": {"p0": 1}}]}
+    }
+
+    result = build_canonical_league_evidence(snapshot, None)
+
+    assert "week 1:p0" in result["player_week_coverage"]["excluded"]
+    assert "week 1:p0" not in result["player_week_coverage"]["unknown"]
+
+
+def test_player_without_roster_or_transaction_evidence_remains_unknown():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Unresolved Player"}
+    snapshot["rosters"][0]["players"] = ["p0"]
+
+    result = build_canonical_league_evidence(snapshot, None)
+
+    assert "week 1:p0" in result["player_week_coverage"]["unknown"]
+    assert result["player_season_totals_status"] == "UNAVAILABLE"
+
+
 class _ChronicleConflict:
     def season_matchup_finals(self, league_key, season):
         return [

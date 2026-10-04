@@ -96,9 +96,11 @@ def add_health_evidence_ids(
                 news_by_player.setdefault(player_id, []).append(dict(event))
 
     rows = []
+    known_players: set[str] = set()
     for row in result.get("players") or []:
         item = dict(row)
         player_id = str(item.get("player_id") or item.get("player") or "unknown")
+        known_players.add(player_id)
         observed = str(
             item.get("observed_at")
             or result.get("information_cutoff")
@@ -115,6 +117,43 @@ def add_health_evidence_ids(
             if event.get("event_id")
         ]
         rows.append(item)
+
+    for event in result.get("news_events") or []:
+        for linked in event.get("league_players") or []:
+            player_id = str(linked.get("sleeper_player_id") or "")
+            if not player_id or player_id in known_players:
+                continue
+            observed = str(
+                event.get("published_at")
+                or result.get("information_cutoff")
+                or "unknown"
+            )
+            rows.append(
+                {
+                    "player_id": player_id,
+                    "player": linked.get("player"),
+                    "roster_id": linked.get("roster_id"),
+                    "fantasy_team": linked.get("fantasy_team"),
+                    "nfl_team": linked.get("nfl_team"),
+                    "observed_at": observed,
+                    "source_status": "accepted_news_only",
+                    "evidence_id": f"health-news:{season}:{week}:{player_id}:{observed}",
+                    "news_events": news_by_player.get(player_id, []),
+                    "news_evidence_ids": [
+                        str(value.get("event_id"))
+                        for value in news_by_player.get(player_id, [])
+                        if value.get("event_id")
+                    ],
+                }
+            )
+            known_players.add(player_id)
+
+    rows.sort(
+        key=lambda row: (
+            str(row.get("fantasy_team") or row.get("team") or "").casefold(),
+            str(row.get("player") or row.get("player_id") or "").casefold(),
+        )
+    )
     result["players"] = rows
     return result
 

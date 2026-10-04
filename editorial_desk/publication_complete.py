@@ -64,7 +64,11 @@ def _split_flagship_honors(honors: dict[str, Any]) -> tuple[dict[str, Any], dict
         "high_score",
         "low_score",
         "bad_beat",
+        "bad_beat_candidates",
+        "bad_beat_status",
         "escape_artist",
+        "escape_artist_candidates",
+        "escape_artist_status",
         "weekly_efficiency_top_three",
         "season_efficiency_top_three",
         "season_team_score_top_three",
@@ -461,11 +465,55 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
             "HEALTH_NOT_READY",
             str(health.get("status") or "unavailable"),
         )
+    issue_cutoff = (packet.get("issue_identity") or {}).get("information_cutoff")
+    health_cutoff = health.get("information_cutoff")
+    if issue_cutoff and health_cutoff and str(issue_cutoff) != str(health_cutoff):
+        _block(
+            blocking,
+            "roster_health",
+            "HEALTH_CUTOFF_MISMATCH",
+            f"health cutoff {health_cutoff} does not match issue cutoff {issue_cutoff}",
+        )
 
     manager = packet.get("manager_honors") or {}
-    for key in ("manager_of_the_week", "season_efficiency_top_three", "season_team_score_top_three"):
+    for key in (
+        "manager_of_the_week",
+        "most_efficient_manager",
+        "high_score",
+        "low_score",
+        "season_efficiency_top_three",
+        "season_team_score_top_three",
+        "award_audit",
+    ):
         if not manager.get(key):
-            _block(blocking, "manager_honors", f"MISSING_{key.upper()}", f"{key} is unavailable")
+            _block(
+                blocking,
+                "manager_honors",
+                f"MISSING_{key.upper()}",
+                f"{key} is unavailable",
+            )
+    for honor_key, status_key in (
+        ("bad_beat", "bad_beat_status"),
+        ("escape_artist", "escape_artist_status"),
+    ):
+        status = manager.get(status_key) or {}
+        if not manager.get(honor_key) and status.get("status") not in {
+            "UNAVAILABLE",
+            "MANUAL_REVIEW",
+        }:
+            _block(
+                blocking,
+                "manager_honors",
+                f"MISSING_{honor_key.upper()}",
+                f"{honor_key} has neither a verified winner nor an explicit no-candidate status",
+            )
+    if "commissioner_selection_required" not in manager:
+        _block(
+            blocking,
+            "manager_honors",
+            "MISSING_COMMISSIONER_SELECTION_FLAG",
+            "rotating-award commissioner selection state is absent",
+        )
 
     player = packet.get("player_honors") or {}
     if not player.get("overall_player_of_the_week"):

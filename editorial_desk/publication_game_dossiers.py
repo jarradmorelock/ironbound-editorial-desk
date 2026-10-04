@@ -88,6 +88,13 @@ def add_health_evidence_ids(
     week: int,
 ) -> dict[str, Any]:
     result = dict(health or {})
+    news_by_player: dict[str, list[dict[str, Any]]] = {}
+    for event in result.get("news_events") or []:
+        for linked in event.get("league_players") or []:
+            player_id = str(linked.get("sleeper_player_id") or "")
+            if player_id:
+                news_by_player.setdefault(player_id, []).append(dict(event))
+
     rows = []
     for row in result.get("players") or []:
         item = dict(row)
@@ -101,6 +108,12 @@ def add_health_evidence_ids(
             "evidence_id",
             f"health-status:{season}:{week}:{player_id}:{observed}",
         )
+        item["news_events"] = news_by_player.get(player_id, [])
+        item["news_evidence_ids"] = [
+            str(event.get("event_id"))
+            for event in item["news_events"]
+            if event.get("event_id")
+        ]
         rows.append(item)
     result["players"] = rows
     return result

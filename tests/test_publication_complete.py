@@ -196,7 +196,19 @@ def _research():
                 "TE": {"player_id": "t"},
             },
             "benchwarmer_of_the_week": {"player_id": "b"},
-            "rookie_watch_top_five": [{"player_id": f"rookie{i}"} for i in range(5)],
+            "rookie_watch_top_five": [
+                {
+                    "player_id": f"rookie{i}",
+                    "player": f"Rookie {i}",
+                    "team": f"Team {i + 1}",
+                    "status": "STARTED",
+                    "points": 10.0 + i,
+                    "nfl_stat_line": None,
+                    "ironbound_draft_status": "NOT_DRAFTED_IN_CAPTURED_LEAGUE_DRAFT",
+                    "ironbound_draft_provenance": {"source": "fixture"},
+                }
+                for i in range(5)
+            ],
             "rookie_of_the_week": {"player_id": "rookie0"},
             "season_efficiency_top_three": [{"roster_id": 1, "weeks": 3}],
             "season_team_score_top_three": [{"roster_id": 1, "weeks": 3}],

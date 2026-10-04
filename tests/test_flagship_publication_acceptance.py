@@ -182,6 +182,8 @@ def _build_packet(input_name):
             "most_efficient_manager": {"team": manager["manager_of_the_week"], "roster_id": team_to_roster[manager["manager_of_the_week"]]},
             "bad_beat": {"team": manager["bad_beat"], "roster_id": team_to_roster[manager["bad_beat"]]},
             "escape_artist": {"team": manager["escape_artist"], "roster_id": team_to_roster[manager["escape_artist"]]},
+            "high_score": {"roster_id": 1, "team": teams[0], "points": 100.0},
+            "low_score": {"roster_id": 16, "team": teams[15], "points": 90.0},
             "overall_player_of_the_week": {"player_id": "overall", "player": data["player_honors"]["overall"]},
             "started_position_leaders": {
                 "QB": {"player_id": "q"},
@@ -201,7 +203,7 @@ def _build_packet(input_name):
             "rookie_season_leaders": {"status": "READY", "by_position": {"WR": [{"player_id": "rookie1"}]}},
             "rotating_award_candidates": no_fear,
             "rotating_award_manual_review": [],
-            "award_audit": {},
+            "award_audit": {"BY_A_RIVET": {"availability": "AVAILABLE"}},
         },
         "story_desk": {"status": "available", "candidates": [{"candidate_id": "story1"}]},
         "power_board": {"writeup_inputs": rankings},

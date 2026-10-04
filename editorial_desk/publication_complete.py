@@ -400,6 +400,32 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     games = packet.get("game_dossiers") or []
     if len(games) != 8:
         _block(blocking, "game_dossiers", "INCOMPLETE_MATCHUPS", f"{len(games)}/8 completed matchup dossiers")
+    incomplete_lineups = [
+        row.get("matchup_id")
+        for row in games
+        if row.get("submitted_lineup_evidence_status") != "READY"
+    ]
+    if incomplete_lineups:
+        _block(
+            blocking,
+            "game_dossiers",
+            "SUBMITTED_LINEUPS_NOT_READY",
+            "verified submitted starters/player scoring missing for matchup(s): "
+            + ", ".join(str(value) for value in incomplete_lineups),
+        )
+    missing_game_evidence = [
+        row.get("matchup_id")
+        for row in games
+        if not row.get("evidence_ids")
+    ]
+    if missing_game_evidence:
+        _block(
+            blocking,
+            "game_dossiers",
+            "MATCHUP_EVIDENCE_IDS_MISSING",
+            "canonical evidence references missing for matchup(s): "
+            + ", ".join(str(value) for value in missing_game_evidence),
+        )
 
     canonical = packet.get("canonical_league_evidence") or {}
     coverage = canonical.get("coverage") or {}
@@ -469,6 +495,25 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     outlook = division.get("outlook") or {}
     if canonical_division.get("status") != "READY" or outlook.get("division_status") != "READY":
         _block(blocking, "division_report", "DIVISION_EVIDENCE_NOT_READY", "canonical or forward-looking division evidence unavailable")
+    expected_team_records = len(canonical.get("team_season_totals") or {})
+    team_records = canonical_division.get("team_records") or {}
+    division_records_ready = (
+        bool(team_records)
+        and len(team_records) == expected_team_records
+        and all(
+            isinstance(row.get("overall_record"), dict)
+            and isinstance(row.get("division_record"), dict)
+            and isinstance(row.get("cross_division_record"), dict)
+            for row in team_records.values()
+        )
+    )
+    if not division_records_ready:
+        _block(
+            blocking,
+            "division_report",
+            "TEAM_DIVISION_RECORDS_NOT_READY",
+            f"{len(team_records)}/{expected_team_records} teams have deterministic overall/division/cross-division records",
+        )
 
     for section in ("power_rankings", "playoff_forecast"):
         if (packet.get(section) or {}).get("status") != "READY":
@@ -481,8 +526,26 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
             _block(blocking, "publication_assets", f"MISSING_{asset_key.upper()}_ASSET", f"{asset_key} supplied graphic unavailable")
 
     week_ahead = packet.get("week_ahead") or {}
-    if week_ahead.get("status") != "READY" or len(week_ahead.get("rows") or []) != 8:
-        _block(blocking, "week_ahead", "INCOMPLETE_WEEK_AHEAD", f"{len(week_ahead.get('rows') or [])}/8 matchup forecast rows")
+    week_rows = week_ahead.get("rows") or []
+    if week_ahead.get("status") != "READY" or len(week_rows) != 8:
+        _block(blocking, "week_ahead", "INCOMPLETE_WEEK_AHEAD", f"{len(week_rows)}/8 matchup forecast rows")
+    incomplete_forecasts = [
+        row.get("matchup_id")
+        for row in week_rows
+        if len(row.get("teams") or []) != 2
+        or not row.get("model_source")
+        or row.get("projected_total") is None
+        or not row.get("evidence_ids")
+        or any(not team.get("optimal_lineup") for team in row.get("teams") or [])
+    ]
+    if incomplete_forecasts:
+        _block(
+            blocking,
+            "week_ahead",
+            "WEEK_AHEAD_EVIDENCE_NOT_READY",
+            "writer-ready projected line/model/evidence missing for matchup(s): "
+            + ", ".join(str(value) for value in incomplete_forecasts),
+        )
 
     optional_market = packet.get("optional_market") or {}
     if optional_market and optional_market.get("status") not in {"READY", "available"}:

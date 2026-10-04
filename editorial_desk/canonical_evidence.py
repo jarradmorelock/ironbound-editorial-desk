@@ -137,14 +137,37 @@ def _division_summary(
     canonical_by_week: dict[int, list[dict[str, Any]]],
     through_week: int,
 ) -> dict[str, Any]:
+    """Build writer-ready team and division records through the reviewed week."""
     divisions = _division_map(snapshot)
     if not divisions:
-        return {"status": "NOT_APPLICABLE", "divisions": {}}
+        return {
+            "status": "NOT_APPLICABLE",
+            "divisions": {},
+            "team_records": {},
+        }
+
+    teams = _team_names(snapshot)
+    metadata = (snapshot.get("league") or {}).get("metadata") or {}
+
+    def empty_record() -> dict[str, int]:
+        return {"wins": 0, "losses": 0, "ties": 0}
+
+    def apply_result(record: dict[str, int], mine: float, other: float) -> None:
+        if mine > other:
+            record["wins"] += 1
+        elif mine < other:
+            record["losses"] += 1
+        else:
+            record["ties"] += 1
 
     result: dict[str, dict[str, Any]] = {}
     for division in sorted(set(divisions.values())):
         result[division] = {
             "division": division,
+            "division_name": str(
+                metadata.get(f"division_{division}") or f"Division {division}"
+            ),
+            # Backward-compatible pooled internal fields.
             "wins": 0,
             "losses": 0,
             "ties": 0,
@@ -154,28 +177,71 @@ def _division_summary(
             "points_for": 0.0,
             "team_games": 0,
             "scoring_average": None,
+            "teams": [],
+            "evidence_ids": [],
         }
+
+    team_records: dict[str, dict[str, Any]] = {}
+    for roster_id, division in sorted(divisions.items()):
+        team_records[str(roster_id)] = {
+            "roster_id": roster_id,
+            "team": teams.get(roster_id, f"Roster {roster_id}"),
+            "division": division,
+            "division_name": str(
+                metadata.get(f"division_{division}") or f"Division {division}"
+            ),
+            "overall_record": empty_record(),
+            "division_record": empty_record(),
+            "cross_division_record": empty_record(),
+            "points_for": 0.0,
+            "team_games": 0,
+            "scoring_average": None,
+            "evidence_ids": [],
+        }
+
+    division_evidence: dict[str, set[str]] = defaultdict(set)
 
     for week in range(1, through_week + 1):
         rows = canonical_by_week.get(week, [])
         for row in rows:
             roster_id = int(row.get("roster_id") or 0)
             division = divisions.get(roster_id)
-            if division is None:
+            team_row = team_records.get(str(roster_id))
+            if division is None or team_row is None:
                 continue
-            result[division]["points_for"] += float(row.get("points") or 0)
+            points = float(row.get("points") or 0)
+            result[division]["points_for"] += points
             result[division]["team_games"] += 1
+            team_row["points_for"] += points
+            team_row["team_games"] += 1
+            if row.get("evidence_id"):
+                evidence = str(row["evidence_id"])
+                team_row["evidence_ids"].append(evidence)
+                division_evidence[division].add(evidence)
 
         for left, right in _pair_results(rows):
             left_id = int(left.get("roster_id") or 0)
             right_id = int(right.get("roster_id") or 0)
             left_div = divisions.get(left_id)
             right_div = divisions.get(right_id)
-            if left_div is None or right_div is None:
+            left_team = team_records.get(str(left_id))
+            right_team = team_records.get(str(right_id))
+            if (
+                left_div is None
+                or right_div is None
+                or left_team is None
+                or right_team is None
+            ):
                 continue
+
             lp = float(left.get("points") or 0)
             rp = float(right.get("points") or 0)
+            apply_result(left_team["overall_record"], lp, rp)
+            apply_result(right_team["overall_record"], rp, lp)
+
             if left_div == right_div:
+                apply_result(left_team["division_record"], lp, rp)
+                apply_result(right_team["division_record"], rp, lp)
                 if lp > rp:
                     result[left_div]["wins"] += 1
                     result[left_div]["losses"] += 1
@@ -185,6 +251,8 @@ def _division_summary(
                 else:
                     result[left_div]["ties"] += 2
             else:
+                apply_result(left_team["cross_division_record"], lp, rp)
+                apply_result(right_team["cross_division_record"], rp, lp)
                 if lp > rp:
                     result[left_div]["cross_division_wins"] += 1
                     result[right_div]["cross_division_losses"] += 1
@@ -195,14 +263,42 @@ def _division_summary(
                     result[left_div]["cross_division_ties"] += 1
                     result[right_div]["cross_division_ties"] += 1
 
-    for row in result.values():
-        row["points_for"] = round(row["points_for"], 4)
+    for team_row in team_records.values():
+        team_row["points_for"] = round(float(team_row["points_for"]), 4)
+        team_row["scoring_average"] = (
+            round(team_row["points_for"] / team_row["team_games"], 4)
+            if team_row["team_games"]
+            else None
+        )
+        team_row["evidence_ids"] = sorted(set(team_row["evidence_ids"]))
+        result[team_row["division"]]["teams"].append(team_row)
+
+    for division, row in result.items():
+        row["points_for"] = round(float(row["points_for"]), 4)
         row["scoring_average"] = (
             round(row["points_for"] / row["team_games"], 4)
             if row["team_games"]
             else None
         )
-    return {"status": "READY", "divisions": result}
+        row["pooled_internal_record"] = {
+            "wins": row["wins"],
+            "losses": row["losses"],
+            "ties": row["ties"],
+        }
+        row["cross_division_record"] = {
+            "wins": row["cross_division_wins"],
+            "losses": row["cross_division_losses"],
+            "ties": row["cross_division_ties"],
+        }
+        row["teams"].sort(key=lambda team: int(team["roster_id"]))
+        row["evidence_ids"] = sorted(division_evidence.get(division, set()))
+
+    return {
+        "status": "READY",
+        "through_week": through_week,
+        "divisions": result,
+        "team_records": team_records,
+    }
 
 
 def build_canonical_league_evidence(

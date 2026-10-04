@@ -186,6 +186,8 @@ def _research():
             "most_efficient_manager": {"roster_id": 1},
             "bad_beat": {"roster_id": 2},
             "escape_artist": {"roster_id": 3},
+            "high_score": {"roster_id": 1, "team": "Team 1", "points": 100.0},
+            "low_score": {"roster_id": 16, "team": "Team 16", "points": 90.0},
             "overall_player_of_the_week": {"player_id": "p1"},
             "started_position_leaders": {
                 "QB": {"player_id": "q"},
@@ -202,7 +204,7 @@ def _research():
             "rookie_season_leaders": {"status": "READY", "by_position": {"WR": [{"player_id": "rookie0"}]}},
             "rotating_award_candidates": [],
             "rotating_award_manual_review": [],
-            "award_audit": {},
+            "award_audit": {"BY_A_RIVET": {"availability": "AVAILABLE"}},
         },
         "story_desk": {"status": "available", "candidates": [{"candidate_id": "story1"}]},
         "power_board": {"writeup_inputs": rankings},

@@ -860,6 +860,7 @@ def test_season_player_boards_merge_current_week_and_report_missing_history():
 
     snapshot = {
         "week": 2,
+        "league": {"season": "2026"},
         "players": {
             "p1": {"full_name": "Alpha QB", "position": "QB", "years_exp": 0},
             "p2": {"full_name": "Beta RB", "position": "RB", "years_exp": 2},
@@ -890,12 +891,13 @@ def test_season_player_boards_merge_current_week_and_report_missing_history():
 
     assert boards["player_season_top_three"]["status"] == "READY"
     assert boards["player_season_top_three"]["by_position"]["QB"] == [
-        {"player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil"},
-        {"player_id": "p4", "player": "Delta QB", "position": "QB", "points": 26.0, "fantasy_team": "Anvil"},
-        {"player_id": "p1", "player": "Alpha QB", "position": "QB", "points": 15.0, "fantasy_team": "Forge"},
+        {"player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil", "weeks": [1, 2], "through_week": 2, "evidence_ids": ["player-week:2026:2:2:p3"]},
+        {"player_id": "p4", "player": "Delta QB", "position": "QB", "points": 26.0, "fantasy_team": "Anvil", "weeks": [1, 2], "through_week": 2, "evidence_ids": ["player-week:2026:2:2:p4"]},
+        {"player_id": "p1", "player": "Alpha QB", "position": "QB", "points": 15.0, "fantasy_team": "Forge", "weeks": [1, 2], "through_week": 2, "evidence_ids": ["player-week:2026:2:1:p1"]},
     ]
     assert boards["rookie_season_leaders"]["by_position"]["QB"] == {
-        "player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil"
+        "player_id": "p3", "player": "Gamma QB", "position": "QB", "points": 45.0, "fantasy_team": "Anvil",
+        "weeks": [1, 2], "through_week": 2, "evidence_ids": ["player-week:2026:2:2:p3"]
     }
     assert "RB" not in boards["rookie_season_leaders"]["by_position"]
 
@@ -910,6 +912,68 @@ def test_season_player_boards_merge_current_week_and_report_missing_history():
     assert incomplete["player_season_top_three"]["status"] == "UNAVAILABLE"
     assert incomplete["player_season_top_three"]["by_position"] == {}
     assert "Beta RB" in incomplete["player_season_top_three"]["reason"]
+
+
+def test_season_player_boards_use_resolved_states_and_retain_evidence():
+    from editorial_desk.flagship_research import _season_player_boards
+
+    snapshot = {
+        "week": 3,
+        "league": {"season": "2026"},
+        "players": {
+            "p1": {"full_name": "Moved QB", "position": "QB", "years_exp": 2},
+            "p0": {"full_name": "Zero RB", "position": "RB", "years_exp": 0},
+        },
+        "users": [
+            {"user_id": "u1", "metadata": {"team_name": "Forge"}},
+            {"user_id": "u2", "metadata": {"team_name": "Anvil"}},
+        ],
+        "rosters": [
+            {"roster_id": 1, "owner_id": "u1", "players": ["p0"]},
+            {"roster_id": 2, "owner_id": "u2", "players": ["p1"]},
+        ],
+        "matchups": [
+            {"roster_id": 1, "players": ["p0"], "players_points": {}},
+            {"roster_id": 2, "players": ["p1"], "players_points": {"p1": 5.0}},
+        ],
+    }
+    historical = [
+        {"week": 1, "roster_id": 1, "player_id": "p0", "points": 0.0, "score_status": "CERTIFIED_ZERO", "membership_status": "ROSTERED", "evidence_id": "e0"},
+        {"week": 2, "roster_id": 1, "player_id": "p0", "points": 0.0, "score_status": "CERTIFIED_ZERO", "membership_status": "ROSTERED", "evidence_id": "e1"},
+        {"week": 1, "roster_id": 1, "player_id": "p1", "points": 10.0, "score_status": "OBSERVED", "membership_status": "ROSTERED", "evidence_id": "p1w1"},
+        {"week": 2, "roster_id": 2, "player_id": "p1", "points": 20.0, "score_status": "OBSERVED", "membership_status": "ROSTERED", "evidence_id": "p1w2"},
+    ]
+    coverage = {"unknown": [], "manual_verify": [], "excluded": []}
+
+    boards = _season_player_boards(historical, snapshot, coverage)
+
+    assert boards["player_season_top_three"]["status"] == "READY"
+    moved = boards["player_season_top_three"]["by_position"]["QB"][0]
+    assert moved["points"] == 35.0
+    assert moved["fantasy_team"] == "Anvil"
+    assert moved["evidence_ids"] == ["p1w1", "p1w2", "player-week:2026:3:2:p1"]
+    assert boards["rookie_season_leaders"]["by_position"]["RB"]["player"] == "Zero RB"
+
+
+def test_season_player_boards_block_on_unresolved_canonical_week():
+    from editorial_desk.flagship_research import _season_player_boards
+
+    snapshot = {
+        "week": 2,
+        "players": {"p1": {"full_name": "Unresolved QB", "position": "QB", "years_exp": 2}},
+        "users": [{"user_id": "u1", "metadata": {"team_name": "Forge"}}],
+        "rosters": [{"roster_id": 1, "owner_id": "u1", "players": ["p1"]}],
+        "matchups": [{"roster_id": 1, "players": ["p1"], "players_points": {"p1": 8.0}}],
+    }
+
+    boards = _season_player_boards(
+        [{"week": 1, "roster_id": 1, "player_id": "p1", "points": 10.0, "score_status": "OBSERVED", "membership_status": "ROSTERED", "evidence_id": "p1w1"}],
+        snapshot,
+        {"unknown": ["week 1:p1"], "manual_verify": [], "excluded": []},
+    )
+
+    assert boards["player_season_top_three"]["status"] == "UNAVAILABLE"
+    assert "week 1:p1" in boards["player_season_top_three"]["reason"]
 
 
 def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):

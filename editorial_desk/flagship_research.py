@@ -145,7 +145,11 @@ def build_flagship_research_packet(
             if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
             else []
         )
-    player_boards = _season_player_boards(player_score_rows, snapshot)
+    player_boards = _season_player_boards(
+        player_score_rows,
+        snapshot,
+        canonical_evidence.get("player_week_coverage") if canonical_ready else None,
+    )
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
@@ -1620,6 +1624,7 @@ def _canonical_team_score_top_three(
 def _season_player_boards(
     historical_rows: list[dict[str, Any]],
     snapshot: dict[str, Any],
+    coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate finalized weekly player scores without presenting gaps as full totals."""
     from .weekly_features import _rostered_player_weeks
@@ -1667,6 +1672,16 @@ def _season_player_boards(
             "player_id": player_id,
             "position": row.get("position"),
             "points": round(float(row.get("points") or 0), 2),
+            "score_status": row.get("score_status")
+            or ("CERTIFIED_ZERO" if float(row.get("points") or 0) == 0 else "OBSERVED"),
+            "membership_status": row.get("membership_status") or "ROSTERED",
+            "evidence_ids": sorted(
+                {
+                    str(value)
+                    for value in [row.get("evidence_id"), *(row.get("source_refs") or [])]
+                    if value
+                }
+            ),
         }
         previous = by_week_player.get(key)
         if previous and previous["roster_id"] != roster_id and previous["points"] != value["points"]:
@@ -1678,7 +1693,17 @@ def _season_player_boards(
         if int(row.get("week") or 0) < through_week:
             add_score(row)
     for row in _rostered_player_weeks(snapshot):
-        add_score({**row, "week": through_week}, current=True)
+        player_id = str(row.get("player_id") or "")
+        add_score(
+            {
+                **row,
+                "week": through_week,
+                "evidence_id": f"player-week:{(snapshot.get('league') or {}).get('season') or (snapshot.get('nfl_state') or {}).get('season') or 'unknown'}:{through_week}:{row.get('roster_id')}:{player_id}",
+                "score_status": "CERTIFIED_ZERO" if float(row.get("points") or 0) == 0 else "OBSERVED",
+                "membership_status": "ROSTERED",
+            },
+            current=True,
+        )
 
     expected_rosters = set(rosters)
     missing_weeks = [
@@ -1719,17 +1744,23 @@ def _season_player_boards(
             incomplete_players[player_id] = missing
 
     reasons = []
-    if missing_weeks:
+    if missing_weeks and coverage is None:
         reasons.append(
             "missing finalized player scores for week(s) "
             + ", ".join(str(value) for value in missing_weeks)
         )
-    if incomplete_players:
+    if incomplete_players and coverage is None:
         names = []
         for player_id, weeks in sorted(incomplete_players.items()):
             missing = ", ".join(f"Week {week}" for week in weeks)
             names.append(f"{display_player_name(player_id)} (missing {missing})")
         reasons.append("incomplete fantasy-score history for " + "; ".join(names))
+    unresolved = sorted(set((coverage or {}).get("unknown") or []))
+    manual_verify = sorted(set((coverage or {}).get("manual_verify") or []))
+    if unresolved:
+        reasons.append("unresolved player-week evidence: " + ", ".join(unresolved))
+    if manual_verify:
+        reasons.append("player-week evidence requires manual verification: " + ", ".join(manual_verify))
     if conflicts:
         reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
     if duplicate_current_players:
@@ -1756,12 +1787,27 @@ def _season_player_boards(
                 if player_position != position:
                     continue
                 roster_id = current_roster_by_player[player_id]
+                evidence_ids = sorted(
+                    {
+                        evidence_id
+                        for (week, candidate_id), candidate in by_week_player.items()
+                        if candidate_id == player_id
+                        for evidence_id in candidate.get("evidence_ids") or []
+                    }
+                )
                 row = {
                     "player_id": player_id,
                     "player": display_player_name(player_id),
                     "position": position,
                     "points": round(points, 2),
                     "fantasy_team": team_names.get(roster_id, f"Roster {roster_id}"),
+                    "weeks": sorted(
+                        week
+                        for (week, candidate_id) in by_week_player
+                        if candidate_id == player_id
+                    ),
+                    "through_week": through_week,
+                    "evidence_ids": evidence_ids,
                 }
                 candidates.append(row)
                 if player.get("years_exp") is not None and _safe_int(player.get("years_exp")) == 0:
@@ -1773,17 +1819,30 @@ def _season_player_boards(
                 rookie_by_position[position] = rookie_candidates[0]
 
     reason = "; ".join(reasons) if reasons else None
+    coverage_summary = {
+        key: len(values)
+        for key, values in (coverage or {}).items()
+        if isinstance(values, list)
+    }
+    unresolved_ids = sorted(set((coverage or {}).get("unknown") or []))
+    manual_verify_ids = sorted(set((coverage or {}).get("manual_verify") or []))
     return {
         "player_season_top_three": {
             "status": status,
             "through_week": through_week,
             "reason": reason,
+            "coverage": coverage_summary,
+            "unresolved_player_weeks": unresolved_ids,
+            "manual_verify_player_weeks": manual_verify_ids,
             "by_position": by_position if status == "READY" else {},
         },
         "rookie_season_leaders": {
             "status": status,
             "through_week": through_week,
             "reason": reason,
+            "coverage": coverage_summary,
+            "unresolved_player_weeks": unresolved_ids,
+            "manual_verify_player_weeks": manual_verify_ids,
             "by_position": rookie_by_position if status == "READY" else {},
         },
     }

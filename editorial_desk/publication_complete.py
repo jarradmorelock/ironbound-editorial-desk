@@ -626,7 +626,11 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         )
     season_board = player.get("player_season_top_three") or {}
     if season_board.get("status") != "READY":
-        _block(blocking, "player_honors", "PLAYER_SEASON_BOARD_NOT_READY", str(season_board.get("reason") or season_board.get("status")))
+        detail = str(season_board.get("reason") or season_board.get("status"))
+        unresolved = season_board.get("unresolved_player_weeks") or []
+        if unresolved and "unresolved player-week evidence" not in detail:
+            detail += ": " + ", ".join(map(str, unresolved))
+        _block(blocking, "player_honors", "PLAYER_SEASON_BOARD_NOT_READY", detail)
 
     rookie = packet.get("rookie_watch") or {}
     rookie_rows = rookie.get("rookie_watch_top_five") or []
@@ -653,7 +657,11 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         )
     rookie_season = rookie.get("rookie_season_leaders") or {}
     if rookie_season.get("status") != "READY":
-        _block(blocking, "rookie_watch", "ROOKIE_SEASON_BOARD_NOT_READY", str(rookie_season.get("reason") or rookie_season.get("status")))
+        detail = str(rookie_season.get("reason") or rookie_season.get("status"))
+        unresolved = rookie_season.get("unresolved_player_weeks") or []
+        if unresolved and "unresolved player-week evidence" not in detail:
+            detail += ": " + ", ".join(map(str, unresolved))
+        _block(blocking, "rookie_watch", "ROOKIE_SEASON_BOARD_NOT_READY", detail)
 
     division = packet.get("division_report") or {}
     canonical_division = division.get("canonical") or {}

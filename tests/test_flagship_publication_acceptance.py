@@ -192,7 +192,19 @@ def _build_packet(input_name):
                 "TE": {"player_id": "t"},
             },
             "benchwarmer_of_the_week": {"player_id": "bench", "player": data["player_honors"]["benchwarmer"]},
-            "rookie_watch_top_five": [{"player_id": f"rookie{i}", "player": name} for i, name in enumerate(rookie_names, 1)],
+            "rookie_watch_top_five": [
+                {
+                    "player_id": f"rookie{i}",
+                    "player": name,
+                    "team": teams[(i - 1) % len(teams)],
+                    "status": "STARTED",
+                    "points": 10.0 + i,
+                    "nfl_stat_line": None,
+                    "ironbound_draft_status": "NOT_DRAFTED_IN_CAPTURED_LEAGUE_DRAFT",
+                    "ironbound_draft_provenance": {"source": "fixture"},
+                }
+                for i, name in enumerate(rookie_names, 1)
+            ],
             "rookie_of_the_week": {"player_id": "rookie1"},
             "season_efficiency_top_three": [{"roster_id": 1, "weeks": data["week"]}],
             "season_team_score_top_three": [

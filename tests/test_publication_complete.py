@@ -486,3 +486,72 @@ def test_flagship_game_dossiers_and_week_ahead_are_writer_ready_offline():
     assert ahead["teams"][0]["division_context"]["division"] == "1"
     assert ahead["evidence_ids"][0] in packet["evidence_index"]
     assert packet["player_honors"]["free_agent_of_the_week"]["player"] == "Free Agent"
+
+
+def test_missing_submitted_lineup_evidence_blocks_flagship_publication():
+    packet = _packet()
+    packet["game_dossiers"][0]["submitted_lineup_evidence_status"] = "UNAVAILABLE"
+
+    validation = validate_publication_complete_packet(packet)
+
+    assert validation["publication_ready"] is False
+    assert any(
+        gap["code"] == "SUBMITTED_LINEUPS_NOT_READY"
+        for gap in validation["blocking_gaps"]
+    )
+
+
+def test_missing_team_level_division_records_blocks_flagship_publication():
+    packet = _packet()
+    packet["division_report"]["canonical"]["team_records"] = {}
+
+    validation = validate_publication_complete_packet(packet)
+
+    assert validation["publication_ready"] is False
+    assert any(
+        gap["code"] == "TEAM_DIVISION_RECORDS_NOT_READY"
+        for gap in validation["blocking_gaps"]
+    )
+
+
+def test_health_news_without_sleeper_designation_remains_writer_ready_evidence():
+    research = _research()
+    packet = build_publication_complete_packet(
+        _snapshot(),
+        {},
+        research,
+        ExternalEditorialInputs("ironbound_weekly", schema_version=3),
+        canonical_evidence=_canonical(),
+        transaction_evidence=_transactions(),
+        source_manifest=_source_manifest(),
+        health={
+            "status": "READY",
+            "information_cutoff": "2026-09-30T18:00:00+00:00",
+            "players": [],
+            "news_events": [
+                {
+                    "event_id": "news-health-1",
+                    "published_at": "2026-09-30T17:00:00+00:00",
+                    "source": "Fixture Wire",
+                    "league_players": [
+                        {
+                            "sleeper_player_id": "p1",
+                            "player": "Player 1",
+                            "roster_id": 1,
+                            "fantasy_team": "Team 1",
+                            "nfl_team": "NFL",
+                        }
+                    ],
+                }
+            ],
+        },
+        publication_assets=research["ranking_publication_assets"]["assets"],
+    )
+
+    row = next(
+        item for item in packet["roster_health"]["players"]
+        if item["player_id"] == "p1"
+    )
+    assert row["source_status"] == "accepted_news_only"
+    assert row["news_evidence_ids"] == ["news-health-1"]
+    assert "news-health-1" in packet["evidence_index"]

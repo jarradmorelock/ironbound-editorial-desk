@@ -538,6 +538,15 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
             f"health cutoff {health_cutoff} does not match issue cutoff {issue_cutoff}",
         )
 
+    usage = packet.get("usage_desk") or {}
+    if usage.get("status") != "READY":
+        _block(
+            blocking,
+            "usage_desk",
+            "USAGE_EVIDENCE_NOT_READY",
+            str(usage.get("status") or "unavailable"),
+        )
+
     manager = packet.get("manager_honors") or {}
     for key in (
         "manager_of_the_week",
@@ -595,8 +604,28 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         _block(blocking, "player_honors", "PLAYER_SEASON_BOARD_NOT_READY", str(season_board.get("reason") or season_board.get("status")))
 
     rookie = packet.get("rookie_watch") or {}
-    if len(rookie.get("rookie_watch_top_five") or []) < 5:
+    rookie_rows = rookie.get("rookie_watch_top_five") or []
+    if len(rookie_rows) < 5:
         _block(blocking, "rookie_watch", "ROOKIE_TOP_FIVE_NOT_READY", "fewer than five rookie weekly rows")
+    incomplete_rookies = [
+        row.get("player_id") or row.get("player")
+        for row in rookie_rows
+        if not row.get("player")
+        or not row.get("team")
+        or not row.get("status")
+        or row.get("points") is None
+        or "nfl_stat_line" not in row
+        or not row.get("ironbound_draft_provenance")
+        or row.get("ironbound_draft_status") in {None, "", "UNAVAILABLE"}
+    ]
+    if incomplete_rookies:
+        _block(
+            blocking,
+            "rookie_watch",
+            "ROOKIE_CONTEXT_NOT_READY",
+            "weekly rookie rows lack team/status/stat/draft provenance: "
+            + ", ".join(str(value) for value in incomplete_rookies),
+        )
     rookie_season = rookie.get("rookie_season_leaders") or {}
     if rookie_season.get("status") != "READY":
         _block(blocking, "rookie_watch", "ROOKIE_SEASON_BOARD_NOT_READY", str(rookie_season.get("reason") or rookie_season.get("status")))

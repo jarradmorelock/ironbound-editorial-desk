@@ -5,6 +5,14 @@ from pathlib import Path
 from typing import Any
 
 from .external_inputs import ExternalEditorialInputs
+from .publication_game_dossiers import (
+    add_health_evidence_ids,
+    build_flagship_game_dossiers,
+)
+from .publication_week_ahead import (
+    build_combined_evidence_index,
+    build_flagship_week_ahead,
+)
 
 
 CONTRACT_VERSION = "publication-complete-v1"
@@ -72,6 +80,7 @@ def _split_flagship_honors(honors: dict[str, Any]) -> tuple[dict[str, Any], dict
         "overall_player_of_the_week",
         "started_position_leaders",
         "benchwarmer_of_the_week",
+        "free_agent_of_the_week",
         "player_season_top_three",
     }
     rookie_keys = {
@@ -279,7 +288,27 @@ def build_publication_complete_packet(
     """
     issue = _issue_identity(snapshot, research_packet, source_manifest)
     key = issue["publication_key"]
-    evidence_index = dict(canonical_evidence.get("evidence_index") or {})
+    normalized_health = add_health_evidence_ids(
+        health,
+        season=str(issue.get("season") or ""),
+        week=int(issue.get("week") or 0),
+    )
+    compiled_week_ahead = (
+        build_flagship_week_ahead(
+            snapshot,
+            research_packet,
+            canonical_evidence,
+            normalized_health,
+        )
+        if key in FLAGSHIP_PUBLICATIONS
+        else {}
+    )
+    evidence_index = build_combined_evidence_index(
+        canonical_evidence,
+        transaction_evidence,
+        normalized_health,
+        compiled_week_ahead,
+    )
 
     packet: dict[str, Any] = {
         "schema_version": 1,
@@ -289,19 +318,31 @@ def build_publication_complete_packet(
         "evidence_index": evidence_index,
         "canonical_league_evidence": canonical_evidence,
         "transaction_desk": transaction_evidence,
-        "roster_health": health,
+        "roster_health": normalized_health,
         "publication_assets": dict(publication_assets or {}),
     }
 
     if key in FLAGSHIP_PUBLICATIONS:
         honors = dict(research_packet.get("weekly_honors") or {})
         manager, player, rookie = _split_flagship_honors(honors)
+        manager["commissioner_selection_required"] = bool(
+            manager.get("rotating_award_candidates")
+            or manager.get("rotating_award_manual_review")
+        )
         game_coverage = research_packet.get("game_coverage") or {}
         ranking_assets = research_packet.get("ranking_publication_assets") or {}
+        compiled_games = build_flagship_game_dossiers(
+            snapshot,
+            dossier,
+            research_packet,
+            canonical_evidence,
+            transaction_evidence,
+            normalized_health,
+        )
         packet.update(
             {
                 "profile_tier": "flagship",
-                "game_dossiers": list(game_coverage.get("games") or []),
+                "game_dossiers": compiled_games,
                 "feature_evidence": _feature_evidence(research_packet),
                 "usage_desk": dict(research_packet.get("usage_desk") or {}),
                 "manager_honors": manager,
@@ -315,7 +356,7 @@ def build_publication_complete_packet(
                 "power_board": dict(research_packet.get("power_board") or {}),
                 "playoff_forecast": dict(research_packet.get("playoff_odds_chart") or {}),
                 "power_rankings": dict(research_packet.get("power_rankings_chart") or {}),
-                "week_ahead": dict(research_packet.get("weekly_matchup_forecast") or {}),
+                "week_ahead": compiled_week_ahead,
                 "sources_and_model_notes": _sources_and_notes(source_manifest, research_packet),
                 "publication_assets": dict(
                     publication_assets

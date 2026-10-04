@@ -12,6 +12,7 @@ on:
           - production
           - preview
           - validate
+          - historical-week3-replay
       week:
         description: NFL week for Production or Preview
         required: true
@@ -36,6 +37,7 @@ concurrency:
 
 jobs:
   weekly-delivery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'historical-week3-replay' }}
     runs-on: ubuntu-latest
     steps:
       - name: Check out application code
@@ -478,3 +480,141 @@ jobs:
           python -m editorial_desk email-supplement
           --week ${{ steps.plan.outputs.week }}
           --output-dir ../output/supplements
+
+  historical-week3-replay:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'historical-week3-replay' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require the archived Week 3 replay inputs
+        env:
+          REQUESTED_WEEK: ${{ inputs.week }}
+          SEND_EMAIL: ${{ inputs.send_email }}
+        run: |
+          test "$REQUESTED_WEEK" = "3"
+          test "$SEND_EMAIL" = "false"
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Test hardened publication code
+        run: python -m pytest -q
+      - name: Restore exact Week 3 production artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             https://api.github.com/repos/jarradmorelock/ironbound-editorial-desk/actions/artifacts/11139287617/zip             -o replay-source.zip
+          echo "f12eda0dc4c21e61c4fa161b05ac63ff6f97f2fe677ab6c724a3132686d403cd  replay-source.zip" | sha256sum --check
+          python -m zipfile -e replay-source.zip replay-source
+      - name: Restore pinned historical Chronicle without write credentials
+        uses: actions/checkout@v6
+        with:
+          ref: 0ab00d7fcdf9b20d57f59912e7952863f3584036
+          path: replay-chronicle
+          persist-credentials: false
+      - name: Restore pinned historical ranking handoff
+        uses: actions/checkout@v6
+        with:
+          repository: jarradmorelock/Ironbound_power_ranks
+          ref: 6300cb0db4145ea51bf7ee590ea7f3a3f6b6d752
+          path: replay-rankings
+          persist-credentials: false
+      - name: Rebuild Week 3 with production builders and no live network
+        env:
+          REPLAY_CODE_SHA: ${{ github.sha }}
+        run: |
+          cat > /tmp/replay-week3.py <<'PY'
+          """Audit harness: rerun production builders on immutable Week 3 sources.
+          
+          No collection, league writes, Chronicle writes, or email. All network access is
+          for separately retrieving pinned source archives, before this script runs.
+          """
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import socket
+          
+          from editorial_desk.config import load_publications
+          from editorial_desk.chronicle_queries import ChronicleQueries
+          from editorial_desk.external_inputs import load_external_inputs
+          from editorial_desk.review import build_editorial_review, render_editorial_review
+          from editorial_desk.flagship_research import build_flagship_research_packet, write_flagship_research_packet
+          from editorial_desk.enriched_collector import _materialize_publication_assets, _write_publication_complete_artifacts
+          from editorial_desk.roster_market import build_network_market_context, build_roster_market_report
+          from editorial_desk.story_artifacts import write_story_desk_artifacts
+          from editorial_desk.reading_packet import reading_packet_from_artifacts
+          
+          def no_network(*args, **kwargs):
+              raise RuntimeError('Historical replay prohibits live network access')
+          
+          socket.socket = no_network
+          
+          base = Path('replay-source')
+          source = base / '2026/week-03/ironbound_sixteen'
+          root = Path('historical-replay-output')
+          directory = root / '2026/week-03/ironbound_sixteen'
+          directory.mkdir(parents=True, exist_ok=True)
+          inputs = root / 'inputs'
+          inputs.mkdir(exist_ok=True)
+          shutil.copyfile('replay-rankings/handoff/main.json', inputs / 'ironbound_weekly.json')
+          shutil.copytree('replay-rankings/handoff/assets', inputs / 'assets', dirs_exist_ok=True)
+          snapshot = json.loads((source / 'snapshot.json').read_text())
+          original = json.loads((source / 'flagship_research_packet.json').read_text())
+          beat = original['beat_report']
+          chronicle = ChronicleQueries(Path('replay-chronicle'))
+          external = load_external_inputs(inputs / 'ironbound_weekly.json', 'ironbound_weekly')
+          assets, _ = _materialize_publication_assets(external, directory)
+          dossier = build_editorial_review(snapshot)
+          dossier['chronicle_revision'] = snapshot['chronicle_revision']
+          profile = load_publications(Path('config/publications.json'))['ironbound_weekly']
+          write_story_desk_artifacts(directory, snapshot, dossier, profile,
+              chronicle_root=Path('replay-chronicle'), external_inputs_dir=inputs)
+          story = json.loads((directory / 'story_desk.json').read_text())
+          snapshots = {p.parent.name: json.loads(p.read_text()) for p in base.rglob('snapshot.json')}
+          network = build_network_market_context(snapshots)
+          market = build_roster_market_report(snapshot, dossier, beat, network, chronicle=chronicle)
+          research = build_flagship_research_packet(snapshot, dossier, story, external,
+              history_root=base, chronicle=chronicle, publication_assets=assets,
+              beat_report=beat, roster_market=market)
+          dossier.setdefault('awards', {})['manager_of_the_week'] = research['weekly_honors']['manager_of_the_week']
+          dossier['awards']['exceptional_loss_review'] = research['weekly_honors']['exceptional_loss_review']
+          for name, value in [('snapshot', snapshot), ('dossier', dossier)]:
+              (directory / (name + '.json')).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+          (directory / 'dossier.md').write_text(render_editorial_review(dossier))
+          write_flagship_research_packet(directory, research)
+          _write_publication_complete_artifacts(directory, snapshot, dossier, research, external,
+              publication_assets=assets, beat_report=beat, chronicle=chronicle)
+          (directory / 'reading_packet.md').write_text(reading_packet_from_artifacts(directory, dossier))
+          packet = json.loads((directory / 'publication_complete_packet.json').read_text())
+          manifest = {
+              'mode': 'remote offline historical production-builder replay',
+              'code_sha': os.environ['REPLAY_CODE_SHA'],
+              'original_run_id': 36809946431, 'original_artifact_id': 11139287617,
+              'original_artifact_sha256': hashlib.sha256(Path('replay-source.zip').read_bytes()).hexdigest(),
+              'chronicle_sha': snapshot['chronicle_revision'],
+              'rankings_sha': '6300cb0db4145ea51bf7ee590ea7f3a3f6b6d752',
+              'beat_sha': beat['source_revision'],
+              'beat_replay_policy': 'Preserve archived normalized beat report, including partial-coverage warning; do not invent missing accepted stories.',
+              'information_cutoff': snapshot['collected_at'],
+              'live_network_prohibited': True,
+              'readiness': packet['readiness'],
+              'output_files': {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in sorted(root.rglob('*')) if p.is_file()},
+          }
+          (root / 'replay_manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(packet['readiness'], indent=2))
+          PY
+          PYTHONPATH="$PWD" python /tmp/replay-week3.py
+      - name: Upload historical publication packets and research
+        uses: actions/upload-artifact@v7
+        with:
+          name: ironbound-week3-historical-pr32-${{ github.sha }}
+          path: historical-replay-output/
+          if-no-files-found: error
+          retention-days: 14

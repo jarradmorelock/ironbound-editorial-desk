@@ -27,6 +27,7 @@ from .emailer import (
     send_supplement_email,
 )
 from .enriched_collector import collect_all
+from .manuscript_builder import ManuscriptValidationError, write_offline_manuscript
 from .period import PeriodDetectionError, detect_completed_period
 from .retention import prune_diagnostics
 from .sleeper import SleeperClient
@@ -113,6 +114,11 @@ def parser() -> argparse.ArgumentParser:
     supplement_email = subcommands.add_parser("email-supplement")
     supplement_email.add_argument("--week", type=int, required=True)
     supplement_email.add_argument("--output-dir", type=Path, required=True)
+
+    manuscript = subcommands.add_parser("build-manuscript")
+    manuscript.add_argument("--packet", type=Path, required=True)
+    manuscript.add_argument("--output-dir", type=Path, required=True)
+    manuscript.add_argument("--issue-plan", type=Path)
     return command
 
 
@@ -140,6 +146,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"season={period['season']}")
         print(f"week={period['week']}")
         print(f"reason={period['reason']}")
+        return 0
+
+    if args.command == "build-manuscript":
+        try:
+            plan = None
+            if args.issue_plan:
+                import json
+
+                plan = json.loads(args.issue_plan.read_text(encoding="utf-8"))
+            paths = write_offline_manuscript(
+                args.packet,
+                args.output_dir,
+                issue_plan=plan,
+            )
+        except (OSError, ValueError, ManuscriptValidationError) as exc:
+            print(f"Offline manuscript error: {exc}")
+            return 2
+        for path in paths:
+            print(f"artifact={path}")
         return 0
 
     if args.command == "chronicle-monthly-backup-due":

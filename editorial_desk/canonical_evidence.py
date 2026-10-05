@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from datetime import datetime, time, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .chronicle_queries import ChronicleQueries
 
@@ -115,6 +117,118 @@ def _transaction_additions(snapshot: dict[str, Any]) -> dict[str, int]:
             for player_id, roster_id in additions.items():
                 acquired[str(player_id)] = min(acquired.get(str(player_id), week), week)
     return acquired
+
+
+def _transaction_rows(snapshot: dict[str, Any]) -> list[tuple[int, int | None, dict[str, Any]]]:
+    """Return completed historical transactions with their source week and time."""
+    history = _publication_history(snapshot)
+    weeks = ((history.get("transactions") or {}).get("weeks") or {})
+    rows: list[tuple[int, int | None, dict[str, Any]]] = []
+    for raw_week, transactions in weeks.items():
+        try:
+            week = int(raw_week)
+        except (TypeError, ValueError):
+            continue
+        for transaction in transactions or []:
+            if transaction.get("status") not in {None, "complete"}:
+                continue
+            created = transaction.get("created")
+            try:
+                created_ms = int(created) if created is not None else None
+            except (TypeError, ValueError):
+                created_ms = None
+            rows.append((week, created_ms, transaction))
+    return rows
+
+
+def _week_lock_timestamp(snapshot: dict[str, Any], week: int) -> int | None:
+    """Return the first NFL kickoff for a week as an epoch millisecond."""
+    records = (
+        ((snapshot.get("nfl_context") or {}).get("schedule") or {}).get("records")
+        or []
+    )
+    starts: list[int] = []
+    eastern = ZoneInfo("America/New_York")
+    for record in records:
+        try:
+            if int(record.get("week")) != week:
+                continue
+            gameday = str(record.get("gameday") or "")
+            gametime = str(record.get("gametime") or "00:00")
+            starts.append(
+                int(
+                    datetime.strptime(
+                        f"{gameday} {gametime}", "%Y-%m-%d %H:%M"
+                    )
+                    .replace(tzinfo=eastern)
+                    .timestamp()
+                    * 1000
+                )
+            )
+        except (TypeError, ValueError, KeyError):
+            continue
+    if starts:
+        return min(starts)
+    season_start = str((snapshot.get("nfl_state") or {}).get("season_start_date") or "")
+    try:
+        start_date = datetime.strptime(season_start, "%Y-%m-%d").date()
+        first_thursday = start_date + timedelta(days=(3 - start_date.weekday()) % 7)
+        kickoff = first_thursday + timedelta(days=7 * (week - 1))
+        return int(datetime.combine(kickoff, time(20, 15), tzinfo=eastern).timestamp() * 1000)
+    except (TypeError, ValueError):
+        return None
+
+
+def _historical_membership(
+    snapshot: dict[str, Any], current_week: int
+) -> dict[int, dict[str, int]] | None:
+    """Reconstruct current players' league membership at each NFL weekly lock.
+
+    Sleeper exposes the current roster plus a transaction ledger, so the
+    historical state is reconstructed backwards from the current roster. A
+    transaction after a week's first kickoff cannot affect that week's lineup
+    membership, even when Sleeper labels it with the same fantasy week.
+    """
+    rows = _transaction_rows(snapshot)
+    locks = {week: _week_lock_timestamp(snapshot, week) for week in range(1, current_week + 1)}
+    if not rows or not any(value is not None for value in locks.values()):
+        return None
+    owners = _current_roster_by_player(snapshot)
+    membership: dict[int, dict[str, int]] = {}
+    for week, lock_ms in locks.items():
+        state = dict(owners)
+        for transaction_week, created_ms, transaction in sorted(
+            rows,
+            key=lambda row: (
+                row[1] if row[1] is not None else 0,
+                row[0],
+            ),
+            reverse=True,
+        ):
+            after_lock = (
+                created_ms is not None and lock_ms is not None and created_ms >= lock_ms
+            )
+            if not after_lock:
+                continue
+            adds = {str(player): roster for player, roster in (transaction.get("adds") or {}).items()}
+            drops = {str(player): roster for player, roster in (transaction.get("drops") or {}).items()}
+            received = ((transaction.get("players") or {}).get("received_by") or {})
+            for roster_id, received_rows in received.items():
+                for row in received_rows or []:
+                    player_id = str(row.get("player_id") or row.get("player") or "")
+                    if player_id and player_id not in adds:
+                        adds[player_id] = row.get("roster_id", roster_id)
+            for player_id in set(adds) | set(drops):
+                if player_id in adds:
+                    prior_owner = drops.get(player_id)
+                else:
+                    prior_owner = drops.get(player_id)
+                if prior_owner in (None, 0, "0", ""):
+                    state.pop(player_id, None)
+                else:
+                    state[player_id] = int(prior_owner)
+        membership[week] = state
+    return membership
 
 
 def _pair_results(rows: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
@@ -517,6 +631,7 @@ def build_canonical_league_evidence(
 
     current_roster_by_player = _current_roster_by_player(snapshot)
     acquired_week = _transaction_additions(snapshot)
+    historical_membership = _historical_membership(snapshot, current_week)
     player_week_coverage = {
         "observed": [],
         "certified_zero": [],
@@ -542,12 +657,18 @@ def build_canonical_league_evidence(
                 for row in player_weeks
             ):
                 continue
-            acquired = acquired_week.get(player_id, 1)
             key = f"week {week}:{player_id}"
-            if week < acquired:
-                player_week_coverage["excluded"].append(key)
+            if historical_membership is not None:
+                if player_id not in (historical_membership.get(week) or {}):
+                    player_week_coverage["excluded"].append(key)
+                else:
+                    player_week_coverage["unknown"].append(key)
             else:
-                player_week_coverage["unknown"].append(key)
+                acquired = acquired_week.get(player_id, 1)
+                if week < acquired:
+                    player_week_coverage["excluded"].append(key)
+                else:
+                    player_week_coverage["unknown"].append(key)
     for values in player_week_coverage.values():
         values.sort()
 

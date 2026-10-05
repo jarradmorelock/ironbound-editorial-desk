@@ -123,6 +123,65 @@ def test_player_without_roster_or_transaction_evidence_remains_unknown():
     assert result["player_season_totals_status"] == "UNAVAILABLE"
 
 
+def test_player_membership_respects_drop_reacquisition_and_nfl_lock():
+    snapshot = _snapshot()
+    snapshot["players"].update(
+        {
+            "p_drop": {"full_name": "Dropped Player"},
+            "p_late": {"full_name": "Late Player"},
+        }
+    )
+    snapshot["rosters"][0]["players"] = ["p_drop", "p_late"]
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["1"][0]["players"] = []
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["1"][0]["players_points"] = {}
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players"] = []
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players_points"] = {}
+    snapshot["nfl_context"] = {
+        "schedule": {
+            "records": [
+                {"week": 1, "gameday": "2026-09-10", "gametime": "20:15"},
+                {"week": 2, "gameday": "2026-09-17", "gametime": "20:15"},
+                {"week": 3, "gameday": "2026-09-24", "gametime": "20:15"},
+            ]
+        }
+    }
+    snapshot["publication_sleeper"]["transactions"] = {
+        "weeks": {
+            "1": [
+                {
+                    "status": "complete",
+                    "type": "waiver",
+                    "created": 1789344000000,
+                    "adds": {"p_drop": 1},
+                    "drops": {},
+                },
+                {
+                    "status": "complete",
+                    "type": "waiver",
+                    "created": 1789430400000,
+                    "adds": {},
+                    "drops": {"p_drop": 1},
+                },
+            ],
+            "2": [
+                {
+                    "status": "complete",
+                    "type": "waiver",
+                    "created": 1789696800000,
+                    "adds": {"p_drop": 1, "p_late": 1},
+                    "drops": {},
+                }
+            ],
+        }
+    }
+
+    result = build_canonical_league_evidence(snapshot, None)
+
+    assert "week 1:p_drop" in result["player_week_coverage"]["excluded"]
+    assert "week 2:p_drop" in result["player_week_coverage"]["excluded"]
+    assert "week 1:p_late" in result["player_week_coverage"]["excluded"]
+
+
 class _ChronicleConflict:
     def season_matchup_finals(self, league_key, season):
         return [

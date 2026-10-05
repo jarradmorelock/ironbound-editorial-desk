@@ -182,6 +182,41 @@ def test_player_membership_respects_drop_reacquisition_and_nfl_lock():
     assert "week 1:p_late" in result["player_week_coverage"]["excluded"]
 
 
+def test_finalized_matchup_roster_overrides_transaction_membership_for_missing_player():
+    snapshot = _snapshot()
+    snapshot["players"]["p0"] = {"full_name": "Prelock Add"}
+    snapshot["rosters"][0]["players"] = ["p0"]
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players"] = ["p1"]
+    snapshot["publication_sleeper"]["schedule"]["weeks"]["2"][0]["players_points"] = {"p1": 20.0}
+    snapshot["nfl_context"] = {
+        "schedule": {
+            "records": [
+                {"week": 1, "gameday": "2026-09-10", "gametime": "20:15"},
+                {"week": 2, "gameday": "2026-09-17", "gametime": "20:15"},
+                {"week": 3, "gameday": "2026-09-24", "gametime": "20:15"},
+            ]
+        }
+    }
+    snapshot["publication_sleeper"]["transactions"] = {
+        "weeks": {
+            "2": [
+                {
+                    "status": "complete",
+                    "type": "waiver",
+                    "created": 1789678036325,
+                    "adds": {"p0": 1},
+                    "drops": {"p1": 1},
+                }
+            ]
+        }
+    }
+
+    result = build_canonical_league_evidence(snapshot, None)
+
+    assert "week 2:p0" in result["player_week_coverage"]["excluded"]
+    assert "week 2:p0" not in result["player_week_coverage"]["unknown"]
+
+
 class _ChronicleConflict:
     def season_matchup_finals(self, league_key, season):
         return [

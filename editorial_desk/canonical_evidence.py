@@ -483,6 +483,8 @@ def build_canonical_league_evidence(
     evidence_index: dict[str, dict[str, Any]] = {}
     conflicts: list[dict[str, Any]] = []
     missing: list[str] = []
+    explicit_sleeper_rosters: set[tuple[int, int]] = set()
+    explicit_sleeper_players: dict[tuple[int, int], set[str]] = defaultdict(set)
 
     for week in range(1, current_week + 1):
         rows = _week_rows(snapshot, week)
@@ -491,6 +493,21 @@ def build_canonical_league_evidence(
             for row in rows
             if int(row.get("roster_id") or 0)
         }
+        for row in rows:
+            roster_id = int(row.get("roster_id") or 0)
+            if not roster_id or row.get("_authority") == "chronicle":
+                continue
+            key = (week, roster_id)
+            explicit_sleeper_rosters.add(key)
+            explicit_sleeper_players[key].update(
+                str(player_id)
+                for player_id in (
+                    set(str(value) for value in row.get("players") or [])
+                    | set(str(value) for value in row.get("starters") or [])
+                    | set(_points_map(row))
+                )
+                if str(player_id) != "0"
+            )
 
         for roster_id in sorted(roster_ids):
             sleeper_row = by_roster.get(roster_id)
@@ -659,7 +676,23 @@ def build_canonical_league_evidence(
                 continue
             key = f"week {week}:{player_id}"
             if historical_membership is not None:
-                if player_id not in (historical_membership.get(week) or {}):
+                weekly_membership = historical_membership.get(week) or {}
+                if player_id not in weekly_membership:
+                    player_week_coverage["excluded"].append(key)
+                elif (
+                    (
+                        week,
+                        int(weekly_membership.get(player_id) or 0),
+                    ) in explicit_sleeper_rosters
+                    and player_id
+                    not in explicit_sleeper_players.get(
+                        (week, int(weekly_membership.get(player_id) or 0)),
+                        set(),
+                    )
+                ):
+                    # A finalized Sleeper matchup roster is authoritative for
+                    # that week.  A pre-lock transaction cannot override an
+                    # explicit roster omission in the finalized row.
                     player_week_coverage["excluded"].append(key)
                 else:
                     player_week_coverage["unknown"].append(key)

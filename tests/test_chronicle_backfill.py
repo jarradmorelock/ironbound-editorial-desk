@@ -36,6 +36,15 @@ def test_discover_seasons_returns_oldest_to_newest():
     ]
 
 
+def test_discover_seasons_treats_numeric_zero_as_no_prior_league():
+    client = ChainClient()
+    client.rows["l26"]["previous_league_id"] = 0
+
+    seasons = discover_seasons(client, "l26")
+
+    assert [(row.season, row.league_id) for row in seasons] == [("2026", "l26")]
+
+
 def test_discover_seasons_rejects_cycles():
     client = ChainClient()
     client.rows["l24"]["previous_league_id"] = "l26"

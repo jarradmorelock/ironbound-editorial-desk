@@ -63,7 +63,11 @@ def discover_seasons(client: Any, current_league_id: str) -> list[SeasonRef]:
         league_id = str(league.get("league_id") or current)
         season = str(league.get("season") or "unknown")
         previous = league.get("previous_league_id")
-        previous_id = str(previous).strip() if previous not in (None, "") else None
+        previous_id = (
+            str(previous).strip()
+            if previous not in (None, "", 0, "0")
+            else None
+        )
         newest_to_oldest.append(
             SeasonRef(
                 league_id=league_id,

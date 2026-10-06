@@ -63,7 +63,23 @@ def test_rookie_directory_maps_only_rookies_with_supported_positions_and_gsis_id
             "101": {"years_exp": 0, "position": "WR", "full_name": "Unmapped Rookie"},
             "102": {"years_exp": 1, "position": "RB", "gsis_id": "gsis-102"},
             "103": {"years_exp": 0, "position": "K", "gsis_id": "gsis-103"},
-        }
+        },
+        season_stats_rows=[
+            {
+                "player_id": "gsis-unmapped-a",
+                "player_display_name": "Unmapped Rookie",
+                "position": "WR",
+                "team": "NYJ",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-unmapped-b",
+                "player_display_name": "Unmapped Rookie",
+                "position": "WR",
+                "team": "BUF",
+                "week": 2,
+            },
+        ],
     )
 
     assert directory == {
@@ -75,4 +91,57 @@ def test_rookie_directory_maps_only_rookies_with_supported_positions_and_gsis_id
             "years_exp": 0,
         }
     }
+    assert unmapped == 1
+
+
+def test_rookie_directory_recovers_only_unique_stat_bearing_no_gsis_rookies():
+    directory, unmapped = _build_rookie_player_directory(
+        {
+            "100": {
+                "years_exp": 0,
+                "position": "QB",
+                "full_name": "Jack Strand",
+                "team": "NYJ",
+            },
+            "101": {
+                "years_exp": 0,
+                "position": "WR",
+                "full_name": "Inactive Prospect",
+                "team": "NYJ",
+            },
+            "102": {
+                "years_exp": 0,
+                "position": "RB",
+                "full_name": "Ambiguous Rookie",
+                "team": "BUF",
+            },
+        },
+        season_stats_rows=[
+            {
+                "player_id": "gsis-100",
+                "player_display_name": "Jack Strand",
+                "position": "QB",
+                "team": "NYJ",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-102a",
+                "player_display_name": "Ambiguous Rookie",
+                "position": "RB",
+                "team": "BUF",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-102b",
+                "player_display_name": "Ambiguous Rookie",
+                "position": "RB",
+                "team": "BUF",
+                "week": 2,
+            },
+        ],
+    )
+
+    assert directory["gsis-100"]["player_id"] == "100"
+    assert "gsis-102a" not in directory
+    assert "gsis-102b" not in directory
     assert unmapped == 1

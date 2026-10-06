@@ -528,10 +528,11 @@ def _apply_context_scope(
     # players rather than only players already present in the league snapshot.
     context["player_stats"] = dict(shared.get("player_stats") or {})
     if include_deep:
-        rookie_directory, unmapped_rookies = _build_rookie_player_directory(
-            player_directory or {}
-        )
         season_stats = dict(shared.get("season_player_stats") or {})
+        rookie_directory, unmapped_rookies = _build_rookie_player_directory(
+            player_directory or {},
+            season_stats_rows=season_stats.get("records") or [],
+        )
         known_rookies = set(rookie_directory)
         season_stats["records"] = [
             row for row in season_stats.get("records") or []
@@ -550,6 +551,8 @@ def _apply_context_scope(
 
 def _build_rookie_player_directory(
     player_directory: dict[str, dict[str, Any]],
+    *,
+    season_stats_rows: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, dict[str, Any]], int]:
     rookies: dict[str, dict[str, Any]] = {}
     unmapped = 0
@@ -561,8 +564,37 @@ def _build_rookie_player_directory(
             continue
         gsis_id = str(player.get("gsis_id") or "").strip()
         if not gsis_id:
-            unmapped += 1
-            continue
+            normalized_name = _normalize_rookie_name(
+                player.get("full_name") or player.get("name")
+            )
+            team = str(player.get("team") or "").strip().upper()
+            matching_rows = [
+                row
+                for row in season_stats_rows or []
+                if _normalize_rookie_name(
+                    row.get("player_display_name") or row.get("player_name")
+                ) == normalized_name
+                and str(row.get("position") or "").strip().upper() == position
+                and (
+                    not team
+                    or str(row.get("team") or "").strip().upper() == team
+                )
+            ]
+            candidate_gsis_ids = {
+                str(row.get("player_id") or "").strip()
+                for row in matching_rows
+                if str(row.get("player_id") or "").strip()
+            }
+            if len(candidate_gsis_ids) == 1:
+                gsis_id = candidate_gsis_ids.pop()
+            elif matching_rows:
+                # A stat-bearing rookie without one unique NFLverse identifier
+                # makes the all-rookie board incomplete. Players with no NFL
+                # rows through this week have a verified zero for this window.
+                unmapped += 1
+                continue
+            else:
+                continue
         rookies[gsis_id] = {
             "player_id": str(sleeper_id),
             "player": str(player.get("full_name") or player.get("name") or sleeper_id),
@@ -571,6 +603,10 @@ def _build_rookie_player_directory(
             "years_exp": 0,
         }
     return rookies, unmapped
+
+
+def _normalize_rookie_name(value: Any) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
 
 
 def _safe_int_value(value: Any) -> int | None:

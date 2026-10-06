@@ -679,32 +679,24 @@ jobs:
           week = int(snapshot.get('week') or 0)
           supplemental_root = Path('replay-supplemental')
           player_directory = json.loads((supplemental_root / 'sleeper-nfl-players.json').read_text())
-          rookie_directory, unmapped_rookies = _build_rookie_player_directory(player_directory)
           stats_path = supplemental_root / 'nflverse-player-stats.csv'
           all_stats = parse_season_player_stats_csv(stats_path.read_bytes(), season, week)
+          rookie_directory, unmapped_rookies = _build_rookie_player_directory(
+              player_directory, season_stats_rows=all_stats)
           observed_weeks = sorted({int(row['week']) for row in all_stats if int(row.get('week') or 0) > 0})
           expected_weeks = list(range(1, week + 1))
           rookie_gsis_ids = set(rookie_directory)
-          def normalized_name(value):
-              return ''.join(character for character in str(value or '').casefold() if character.isalnum())
-          unmapped_rookie_entries = [
-              (str(player.get('full_name') or player.get('name') or sleeper_id),
-               str(player.get('position') or '').upper(),
-               str(player.get('team') or '').upper())
-              for sleeper_id, player in player_directory.items()
+          directory_gsis_ids = {
+              str(player.get('gsis_id') or '').strip()
+              for player in player_directory.values()
+              if str(player.get('gsis_id') or '').strip()
+          }
+          no_gsis_rookie_entries = [
+              player for player in player_directory.values()
               if str(player.get('years_exp')).strip() == '0'
               and str(player.get('position') or '').upper() in {'QB', 'RB', 'WR', 'TE'}
               and not str(player.get('gsis_id') or '').strip()
           ]
-          unmapped_rookies_with_stats = sum(
-              any(
-                  normalized_name(row.get('player_display_name') or row.get('player_name')) == normalized_name(name)
-                  and str(row.get('position') or '').upper() == position
-                  and str(row.get('team') or '').upper() == team
-                  for row in all_stats
-              )
-              for name, position, team in unmapped_rookie_entries
-          )
           season_stats_audit = {
               'status': 'available' if set(expected_weeks).issubset(observed_weeks) else 'partial',
               'through_week': week,
@@ -713,15 +705,12 @@ jobs:
               'csv_rows_by_week': {str(source_week): sum(1 for row in all_stats if int(row.get('week') or 0) == source_week)
                                    for source_week in observed_weeks},
               'rookie_directory_size': len(rookie_directory),
-              'unmapped_rookie_directory_entries': unmapped_rookies,
-              'unmapped_rookies_with_exact_name_team_position_stats': unmapped_rookies_with_stats,
+              'no_gsis_rookies_in_player_directory': len(no_gsis_rookie_entries),
+              'rookies_recovered_by_exact_name_team_position': len(rookie_gsis_ids - directory_gsis_ids),
+              'unmapped_stat_bearing_rookies': unmapped_rookies,
               'rookie_stat_rows_matched_by_gsis': sum(1 for row in all_stats if str(row.get('player_id') or '').strip() in rookie_gsis_ids),
               'unique_rookie_gsis_ids_with_stats': len({str(row.get('player_id') or '').strip() for row in all_stats
                                                          if str(row.get('player_id') or '').strip() in rookie_gsis_ids}),
-              'sample_unmapped_rookies': [
-                  {'name': name, 'position': position, 'team': team}
-                  for name, position, team in unmapped_rookie_entries[:8]
-              ],
               'sample_nflverse_rows': [
                   {'player_id': row.get('player_id'),
                    'player': row.get('player_display_name') or row.get('player_name'),

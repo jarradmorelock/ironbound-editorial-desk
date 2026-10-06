@@ -63,6 +63,32 @@ publication-complete JSON so the latter can be passed directly to the local
 manuscript builder. The Tuesday workflow also fails before email delivery if
 any publication dossier is missing its publication-complete JSON.
 
+To prepare an issue for local editorial work, run the offline manuscript
+builder against a saved publication packet with Python 3.12 (the version used
+by the project's automated workflows):
+
+```bash
+python -m editorial_desk build-manuscript \
+  --packet output/2026/week-03/ironbound_sixteen/publication_complete_packet.json \
+  --output-dir output/2026/week-03/ironbound_sixteen/editorial-handoff
+```
+
+The output folder presents `EDITORIAL_REVIEW.md` first for the commissioner,
+then `OFFLINE_WRITER_BRIEF.md` for a disconnected writing model. The review
+separates the lead and secondary matchup/team write-ups from recurring cover
+headlines such as Power Rankings and Divisional Heat. The writer brief leads
+game summaries with NFL stat lines and lists fantasy points alongside them. It
+dates and narrows transaction context, supplies the Power Board score and its
+component inputs, and spotlights health cases linked to current coverage or
+high full-season projections. When player projection or designation-change
+dates are absent, it says so; the complete health records remain in the
+supporting structured draft. The brief includes compact source references and
+indexed article summaries with publisher, date, and URL. It tells the offline
+writer to cite any news story used in the copy and list only those used articles
+in a back-cover source list. Supporting JSON stays in `supporting_files/` for
+later manuscript and PowerPoint steps. The builder itself performs no research
+calls.
+
 The first metric layer covers matchup results, supporting all-play context,
 league-median results where enabled, lineup efficiency, points left on the
 bench, Manager of the Week, Bench MVP, Bad Beat, Escape Artist, result-flipping

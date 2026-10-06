@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
+from .editorial_handoff import render_editorial_review, render_offline_writer_brief
+
 
 class ManuscriptValidationError(ValueError):
     """Raised when a plan or draft would leave the packet's evidence boundary."""
@@ -20,7 +22,7 @@ class ManuscriptValidationError(ValueError):
 _SECTION_DEFINITIONS: tuple[tuple[str, str, str], ...] = (
     ("cover", "Cover", "feature_evidence.cover_candidates"),
     ("lead_feature", "Lead Feature", "feature_evidence.cover_candidates"),
-    ("secondary_feature", "Secondary Feature", "feature_evidence.story_candidates"),
+    ("secondary_feature", "Secondary Feature", "feature_evidence.cover_candidates"),
     ("weekly_results", "Weekly Results", "game_dossiers"),
     ("usage_desk", "Usage Desk", "usage_desk"),
     ("roster_health", "Roster Health", "roster_health"),
@@ -70,6 +72,13 @@ def _candidate_id(row: Any) -> str | None:
     return str(row.get("candidate_id")) if isinstance(row, dict) and row.get("candidate_id") else None
 
 
+def _is_team_matchup_candidate(row: Any) -> bool:
+    if not isinstance(row, dict):
+        return False
+    facts = row.get("verified_facts") or {}
+    return row.get("candidate_type") == "matchup" or bool(facts.get("matchup"))
+
+
 def _choose_candidate(rows: Iterable[Any], requested: str | None) -> dict[str, Any] | None:
     candidates = [row for row in rows if isinstance(row, dict)]
     if requested:
@@ -112,34 +121,41 @@ def build_issue_plan(
 
     overrides = dict(overrides or {})
     feature = packet.get("feature_evidence") or {}
+    cover_candidates = [
+        row for row in feature.get("cover_candidates") or []
+        if isinstance(row, dict)
+    ]
     cover = _choose_candidate(
-        feature.get("cover_candidates") or [],
+        cover_candidates,
         overrides.get("cover_candidate_id"),
     )
     if cover is None:
         raise ManuscriptValidationError("packet has no cover candidate")
-    story = _choose_candidate(
-        feature.get("story_candidates") or [],
-        overrides.get("secondary_feature_candidate_id"),
-    )
-
     cover_id = _candidate_id(cover)
+    lead_id = overrides.get("lead_feature_candidate_id") or cover_id
+    if lead_id != cover_id:
+        available = {_candidate_id(row) for row in cover_candidates}
+        if lead_id not in available:
+            raise ManuscriptValidationError(f"unknown editorial candidate: {lead_id}")
+    secondary_candidates = [
+        row for row in cover_candidates
+        if _is_team_matchup_candidate(row) and _candidate_id(row) != lead_id
+    ]
+    requested_secondary = overrides.get("secondary_feature_candidate_id")
+    if requested_secondary:
+        story = _choose_candidate(secondary_candidates, requested_secondary)
+    else:
+        story = _choose_candidate(secondary_candidates, None)
+
     choices = {
         "cover_candidate_id": cover_id,
-        "lead_feature_candidate_id": overrides.get("lead_feature_candidate_id") or cover_id,
+        "lead_feature_candidate_id": lead_id,
         "secondary_feature_candidate_id": _candidate_id(story),
         "cover_direction": overrides.get("cover_direction") or "feature-led",
         "section_emphasis": list(overrides.get("section_emphasis") or []),
         "rotating_award_candidate_id": overrides.get("rotating_award_candidate_id"),
         "expansion_recommendation": overrides.get("expansion_recommendation") or "none",
     }
-    if choices["lead_feature_candidate_id"] != cover_id:
-        available = {_candidate_id(row) for row in feature.get("cover_candidates") or []}
-        if choices["lead_feature_candidate_id"] not in available:
-            raise ManuscriptValidationError(
-                f"unknown editorial candidate: {choices['lead_feature_candidate_id']}"
-            )
-
     sections: list[dict[str, Any]] = []
     for section_id, title, source_path in _SECTION_DEFINITIONS:
         facts = _path_value(packet, source_path)
@@ -263,17 +279,41 @@ def write_offline_manuscript(
     output_dir: Path,
     *,
     issue_plan: dict[str, Any] | None = None,
-) -> tuple[Path, Path, Path]:
-    """Read one packet and write the plan plus draft artifacts locally."""
+) -> tuple[Path, ...]:
+    """Read one packet and write editor-ready and offline-writer text files."""
 
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
-    plan = issue_plan or build_issue_plan(packet)
+    if issue_plan is None:
+        plan = build_issue_plan(packet)
+    else:
+        # Rebuild saved plans against the current packet contract. This preserves
+        # valid editor choices while replacing legacy non-matchup secondary picks.
+        choices = dict(issue_plan.get("editorial_choices") or {})
+        feature = packet.get("feature_evidence") or {}
+        valid_secondaries = {
+            _candidate_id(row)
+            for row in feature.get("cover_candidates") or []
+            if isinstance(row, dict) and _is_team_matchup_candidate(row)
+            and _candidate_id(row) != choices.get("lead_feature_candidate_id")
+        }
+        if choices.get("secondary_feature_candidate_id") not in valid_secondaries:
+            choices.pop("secondary_feature_candidate_id", None)
+        plan = build_issue_plan(packet, overrides=choices)
     draft = build_manuscript_draft(packet, plan)
     output_dir.mkdir(parents=True, exist_ok=True)
-    plan_path = output_dir / "issue_plan.json"
-    draft_path = output_dir / "manuscript_draft.json"
-    markdown_path = output_dir / "manuscript_draft.md"
+    supporting_dir = output_dir / "supporting_files"
+    supporting_dir.mkdir(parents=True, exist_ok=True)
+    plan_path = supporting_dir / "issue_plan.json"
+    draft_path = supporting_dir / "manuscript_draft.json"
+    markdown_path = supporting_dir / "manuscript_draft.md"
+    review_path = output_dir / "EDITORIAL_REVIEW.md"
+    writer_brief_path = output_dir / "OFFLINE_WRITER_BRIEF.md"
     plan_path.write_text(json.dumps(plan, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     draft_path.write_text(json.dumps(draft, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     markdown_path.write_text(_markdown(draft), encoding="utf-8")
-    return plan_path, draft_path, markdown_path
+    review_path.write_text(render_editorial_review(packet, plan), encoding="utf-8")
+    writer_brief_path.write_text(
+        render_offline_writer_brief(packet, plan),
+        encoding="utf-8",
+    )
+    return plan_path, draft_path, markdown_path, review_path, writer_brief_path

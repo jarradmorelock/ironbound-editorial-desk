@@ -116,6 +116,9 @@ def parser() -> argparse.ArgumentParser:
     supplement_email.add_argument("--output-dir", type=Path, required=True)
 
     manuscript = subcommands.add_parser("build-manuscript")
+    manuscript.description = (
+        "Build a readable editor review and offline AI writer brief from a completed packet"
+    )
     manuscript.add_argument("--packet", type=Path, required=True)
     manuscript.add_argument("--output-dir", type=Path, required=True)
     manuscript.add_argument("--issue-plan", type=Path)
@@ -163,8 +166,9 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError, ManuscriptValidationError) as exc:
             print(f"Offline manuscript error: {exc}")
             return 2
-        for path in paths:
-            print(f"artifact={path}")
+        print(f"For editor: {paths[3]}")
+        print(f"For offline writer: {paths[4]}")
+        print(f"Supporting structured files: {args.output_dir / 'supporting_files'}")
         return 0
 
     if args.command == "chronicle-monthly-backup-due":

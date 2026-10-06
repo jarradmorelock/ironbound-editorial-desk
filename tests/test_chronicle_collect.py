@@ -193,7 +193,7 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
             "matchup_id": 1,
             "points": 110.0,
             "starters": ["p1"],
-            "players": ["p1", "p2"],
+            "players": ["p1", "p2", "p0"],
             "players_points": {"p1": 17.25, "p2": 5.5},
         },
         {
@@ -224,7 +224,7 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
         for row in store.read_events("a", "2026")
         if row["event_type"] == "PLAYER_FANTASY_WEEK_FINAL"
     ]
-    assert len(finals) == 3
+    assert len(finals) == 4
     assert {
         (
             row["entities"]["roster_id"],
@@ -236,8 +236,12 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
     } == {
         (1, "p1", "WR", 17.25),
         (1, "p2", "RB", 5.5),
+        (1, "p0", None, 0.0),
         (2, "p1", "WR", 21.0),
     }
+    zero = next(row for row in finals if row["entities"]["player_id"] == "p0")
+    assert zero["evidence"]["score_status"] == "CERTIFIED_ZERO"
+    assert zero["evidence"]["membership_status"] == "ROSTERED"
 
 
 def test_failed_health_refresh_does_not_create_fake_healthy_transition(

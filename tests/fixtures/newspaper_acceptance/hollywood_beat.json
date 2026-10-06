@@ -1,0 +1,35 @@
+{
+  "publication_key": "hollywood_beat",
+  "source_issue": "the hollywood beat 2026.02.pdf",
+  "required_departments": [
+    "weekly_results",
+    "league_median",
+    "standings",
+    "lead_inputs",
+    "hollywood_board",
+    "game_window_context",
+    "weekly_honors",
+    "player_position_leaders",
+    "lineup_flip_candidates",
+    "lineup_efficiency",
+    "waiver_impact",
+    "health_status",
+    "weekly_briefs",
+    "next_matchups"
+  ],
+  "observed_printed": [
+    "weekly_results",
+    "league_median",
+    "standings",
+    "lead_inputs",
+    "hollywood_board",
+    "game_window_context",
+    "weekly_honors",
+    "player_position_leaders",
+    "lineup_flip_candidates",
+    "lineup_efficiency",
+    "waiver_impact",
+    "next_matchups"
+  ],
+  "note": "Production Delays and Backlot evidence remain research-contract inputs even when a given issue has no material item."
+}

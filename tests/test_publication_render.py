@@ -95,6 +95,8 @@ def test_newspaper_integration_builds_and_writes_weekly_packet(tmp_path):
         "publication_packet.md",
         "newspaper_research_packet.json",
         "newspaper_research_packet.md",
+        "publication_complete_packet.json",
+        "publication_complete_packet.md",
     }
     packet = json.loads((tmp_path / "publication_packet.json").read_text())
     assert packet["publication"] == "Paper"

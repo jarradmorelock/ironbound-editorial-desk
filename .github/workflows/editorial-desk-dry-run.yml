@@ -12,6 +12,7 @@ on:
           - production
           - preview
           - validate
+          - historical-week3-replay
       week:
         description: NFL week for Production or Preview
         required: true
@@ -36,7 +37,10 @@ concurrency:
 
 jobs:
   weekly-delivery:
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.mode != 'historical-week3-replay' }}
     runs-on: ubuntu-latest
+    env:
+      NEWS_DATA_PUSH_TOKEN: ${{ secrets.NEWS_DATA_PUSH_TOKEN }}
     steps:
       - name: Check out application code
         uses: actions/checkout@v6
@@ -230,12 +234,23 @@ jobs:
             echo "ERROR: Could not resolve Ironbound-Forum-Feed-Poster news-data revision."
             exit 1
           fi
-          curl --fail --silent --show-error --location \
-            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
-            -o beat-inputs/events.jsonl
-          curl --fail --silent --show-error --location \
-            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
-            -o beat-inputs/coverage.json
+          if ! curl --fail --silent --show-error --location \
+            "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/current/events.jsonl" \
+            -o beat-inputs/events.jsonl; then
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/events.jsonl" \
+              -o beat-inputs/events.jsonl
+          fi
+          for ledger_file in manifest.json by-player.json coverage.json; do
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/current/$ledger_file" \
+              -o "beat-inputs/$ledger_file" || true
+          done
+          if [ ! -f beat-inputs/coverage.json ]; then
+            curl --fail --silent --show-error --location \
+              "https://raw.githubusercontent.com/jarradmorelock/Ironbound-Forum-Feed-Poster/$revision/ledger/coverage.json" \
+              -o beat-inputs/coverage.json || true
+          fi
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
           echo "Loaded durable beat/news ledger at revision $revision."
 
@@ -252,6 +267,104 @@ jobs:
           --external-inputs-dir editorial-inputs
           --beat-ledger beat-inputs/events.jsonl
           --beat-ledger-revision "${{ steps.beat_news.outputs.revision }}"
+
+      - name: Verify publication-complete packet delivery
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: app
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          root = Path("../output/primary")
+          dossiers = sorted(root.glob("*/week-*/*/dossier.json"))
+          if not dossiers:
+              raise SystemExit("No publication dossiers were generated.")
+
+          missing = [
+              path.parent
+              for path in dossiers
+              if not (path.parent / "publication_complete_packet.json").is_file()
+          ]
+          if missing:
+              raise SystemExit(
+                  "Missing publication_complete_packet.json for: "
+                  + ", ".join(str(path) for path in missing)
+              )
+          print(f"Verified {len(dossiers)} publication-complete packets.")
+          PY
+
+      - name: Write news inbox consumption receipt
+        if: ${{ steps.plan.outputs.active == 'true' && (steps.plan.outputs.job == 'primary' || steps.plan.outputs.job == 'preview') }}
+        working-directory: app
+        env:
+          NEWS_REVISION: ${{ steps.beat_news.outputs.revision }}
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from editorial_desk.news_index import build_consumption_receipt
+
+          root = Path("../output/primary")
+          candidates = sorted(root.glob("*/week-*/*/publication_complete_packet.json"))
+          if not candidates:
+              raise SystemExit("No publication-complete packet available for news receipt.")
+          selected = candidates[0]
+          for path in candidates:
+              try:
+                  packet = json.loads(path.read_text(encoding="utf-8"))
+              except (OSError, json.JSONDecodeError):
+                  continue
+              if (packet.get("issue_identity") or {}).get("publication_key") == "ironbound_weekly":
+                  selected = path
+                  break
+          selected_packet = json.loads(selected.read_text(encoding="utf-8"))
+          if not isinstance(selected_packet.get("news_index"), dict):
+              raise SystemExit("Publication packet is missing the validated news_index contract.")
+          if not isinstance(selected_packet.get("readiness"), dict):
+              raise SystemExit("Publication packet is missing readiness validation.")
+          manifest_path = Path("beat-inputs/manifest.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8")) if manifest_path.exists() else {}
+          report = {
+              "source_revision": __import__("os").environ.get("NEWS_REVISION"),
+              "ledger_manifest": manifest,
+          }
+          issue = selected_packet.get("issue_identity") or {}
+          receipt = build_consumption_receipt(
+              report,
+              selected,
+              issue_key=f"{issue.get('publication_key', 'publication')}-{issue.get('season', 'unknown')}-week-{issue.get('week', 'unknown')}",
+          )
+          destination = root / "news-consumption-receipt.json"
+          destination.write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(f"Wrote news inbox receipt for {receipt.get('week_key') or 'legacy ledger'}.")
+          PY
+
+      - name: Acknowledge consumed news inbox on news-data branch
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' && env.NEWS_DATA_PUSH_TOKEN != '' }}
+        uses: actions/checkout@v6
+        with:
+          repository: jarradmorelock/Ironbound-Forum-Feed-Poster
+          ref: news-data
+          path: news-data
+          token: ${{ secrets.NEWS_DATA_PUSH_TOKEN }}
+      - name: Commit news inbox receipt
+        if: ${{ success() && steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' && env.NEWS_DATA_PUSH_TOKEN != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p news-data/ledger/receipts
+          cp app/../output/primary/news-consumption-receipt.json news-data/ledger/receipts/latest.json
+          cd news-data
+          git config user.name "Ironbound Editorial Desk"
+          git config user.email "actions@users.noreply.github.com"
+          git add ledger/receipts/latest.json
+          if git diff --cached --quiet; then
+            echo "News inbox receipt already recorded."
+          else
+            git commit -m "editorial: acknowledge consumed weekly news inbox"
+            git push origin HEAD:news-data
+          fi
 
       - name: Write Tuesday Chronicle baseline
         if: ${{ steps.plan.outputs.active == 'true' && steps.plan.outputs.job == 'primary' }}
@@ -452,3 +565,242 @@ jobs:
           python -m editorial_desk email-supplement
           --week ${{ steps.plan.outputs.week }}
           --output-dir ../output/supplements
+
+  historical-week3-replay:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'historical-week3-replay' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require the archived Week 3 replay inputs
+        env:
+          REQUESTED_WEEK: ${{ inputs.week }}
+          SEND_EMAIL: ${{ inputs.send_email }}
+        run: |
+          test "$REQUESTED_WEEK" = "3"
+          test "$SEND_EMAIL" = "false"
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install -r requirements.txt
+      - name: Test hardened publication code
+        run: python -m pytest -q
+      - name: Restore exact Week 3 production artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             https://api.github.com/repos/jarradmorelock/ironbound-editorial-desk/actions/artifacts/11139287617/zip             -o replay-source.zip
+          echo "f12eda0dc4c21e61c4fa161b05ac63ff6f97f2fe677ab6c724a3132686d403cd  replay-source.zip" | sha256sum --check
+          python -m zipfile -e replay-source.zip replay-source
+      - name: Restore pinned historical Chronicle without write credentials
+        uses: actions/checkout@v6
+        with:
+          ref: 0ab00d7fcdf9b20d57f59912e7952863f3584036
+          path: replay-chronicle
+          persist-credentials: false
+      - name: Restore pinned historical ranking handoff
+        uses: actions/checkout@v6
+        with:
+          repository: jarradmorelock/Ironbound_power_ranks
+          ref: 6300cb0db4145ea51bf7ee590ea7f3a3f6b6d752
+          path: replay-rankings
+          persist-credentials: false
+      - name: Capture missing public Week 3 stats inputs
+        env:
+          REPLAY_SEASON: "2026"
+        run: |
+          mkdir -p replay-supplemental
+          NFLVERSE_URL="https://github.com/nflverse/nflverse-data/releases/download/stats_player/stats_player_week_${REPLAY_SEASON}.csv"
+          SLEEPER_PLAYERS_URL="https://api.sleeper.app/v1/players/nfl"
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            "$NFLVERSE_URL" -o replay-supplemental/nflverse-player-stats.csv
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            "$SLEEPER_PLAYERS_URL" -o replay-supplemental/sleeper-nfl-players.json
+          test -s replay-supplemental/nflverse-player-stats.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          players = json.loads(Path('replay-supplemental/sleeper-nfl-players.json').read_text())
+          if not isinstance(players, dict) or not players:
+              raise SystemExit('Sleeper player directory response was empty or malformed')
+          PY
+          date -u +'%Y-%m-%dT%H:%M:%SZ' > replay-supplemental/captured-at-utc.txt
+      - name: Rebuild Week 3 with production builders and no live network
+        env:
+          REPLAY_CODE_SHA: ${{ github.sha }}
+        run: |
+          cat > /tmp/replay-week3.py <<'PY'
+          """Audit harness: rerun production builders on immutable Week 3 sources.
+          
+          No collection, league writes, Chronicle writes, or email. All network access is
+          for separately retrieving pinned source archives, before this script runs.
+          """
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import socket
+          
+          from editorial_desk.config import load_publications
+          from editorial_desk.chronicle_queries import ChronicleQueries
+          from editorial_desk.external_inputs import load_external_inputs
+          from editorial_desk.review import build_editorial_review, render_editorial_review
+          from editorial_desk.flagship_research import build_flagship_research_packet, write_flagship_research_packet
+          from editorial_desk.enriched_collector import _materialize_publication_assets, _write_publication_complete_artifacts
+          from editorial_desk.enriched_collector import _build_rookie_player_directory
+          from editorial_desk.nflverse import PLAYER_STATS_URL, parse_season_player_stats_csv
+          from editorial_desk.roster_market import build_network_market_context, build_roster_market_report
+          from editorial_desk.story_artifacts import write_story_desk_artifacts
+          from editorial_desk.reading_packet import reading_packet_from_artifacts
+          
+          def no_network(*args, **kwargs):
+              raise RuntimeError('Historical replay prohibits live network access')
+          
+          base = Path('replay-source')
+          source = base / '2026/week-03/ironbound_sixteen'
+          root = Path('historical-replay-output')
+          directory = root / '2026/week-03/ironbound_sixteen'
+          directory.mkdir(parents=True, exist_ok=True)
+          inputs = root / 'inputs'
+          inputs.mkdir(exist_ok=True)
+          archived_supplemental = inputs / 'replay-supplemental'
+          archived_supplemental.mkdir(exist_ok=True)
+          for filename in ('nflverse-player-stats.csv', 'sleeper-nfl-players.json', 'captured-at-utc.txt'):
+              shutil.copyfile(Path('replay-supplemental') / filename, archived_supplemental / filename)
+          shutil.copyfile('replay-rankings/handoff/main.json', inputs / 'ironbound_weekly.json')
+          shutil.copytree('replay-rankings/handoff/assets', inputs / 'assets', dirs_exist_ok=True)
+          snapshot = json.loads((source / 'snapshot.json').read_text())
+          original = json.loads((source / 'flagship_research_packet.json').read_text())
+          season = str((snapshot.get('nfl_state') or {}).get('season') or (snapshot.get('league') or {}).get('season'))
+          week = int(snapshot.get('week') or 0)
+          supplemental_root = Path('replay-supplemental')
+          player_directory = json.loads((supplemental_root / 'sleeper-nfl-players.json').read_text())
+          stats_path = supplemental_root / 'nflverse-player-stats.csv'
+          all_stats = parse_season_player_stats_csv(stats_path.read_bytes(), season, week)
+          rookie_directory, unmapped_rookies = _build_rookie_player_directory(
+              player_directory, season_stats_rows=all_stats)
+          observed_weeks = sorted({int(row['week']) for row in all_stats if int(row.get('week') or 0) > 0})
+          expected_weeks = list(range(1, week + 1))
+          rookie_gsis_ids = set(rookie_directory)
+          directory_gsis_ids = {
+              str(player.get('gsis_id') or '').strip()
+              for player in player_directory.values()
+              if str(player.get('gsis_id') or '').strip()
+          }
+          no_gsis_rookie_entries = [
+              player for player in player_directory.values()
+              if str(player.get('years_exp')).strip() == '0'
+              and str(player.get('position') or '').upper() in {'QB', 'RB', 'WR', 'TE'}
+              and not str(player.get('gsis_id') or '').strip()
+          ]
+          season_stats_audit = {
+              'status': 'available' if set(expected_weeks).issubset(observed_weeks) else 'partial',
+              'through_week': week,
+              'expected_weeks': expected_weeks,
+              'observed_weeks': observed_weeks,
+              'csv_rows_by_week': {str(source_week): sum(1 for row in all_stats if int(row.get('week') or 0) == source_week)
+                                   for source_week in observed_weeks},
+              'rookie_directory_size': len(rookie_directory),
+              'no_gsis_rookies_in_player_directory': len(no_gsis_rookie_entries),
+              'rookies_recovered_by_exact_name_team_position': len(rookie_gsis_ids - directory_gsis_ids),
+              'unmapped_stat_bearing_rookies': unmapped_rookies,
+              'rookie_stat_rows_matched_by_gsis': sum(1 for row in all_stats if str(row.get('player_id') or '').strip() in rookie_gsis_ids),
+              'unique_rookie_gsis_ids_with_stats': len({str(row.get('player_id') or '').strip() for row in all_stats
+                                                         if str(row.get('player_id') or '').strip() in rookie_gsis_ids}),
+              'sample_nflverse_rows': [
+                  {'player_id': row.get('player_id'),
+                   'player': row.get('player_display_name') or row.get('player_name'),
+                   'position': row.get('position'), 'team': row.get('team'), 'week': row.get('week')}
+                  for row in all_stats[:8]
+              ],
+              'player_directory_years_exp_counts': {
+                  str(exp): sum(1 for player in player_directory.values() if str(player.get('years_exp')) == str(exp))
+                  for exp in sorted({str(player.get('years_exp')) for player in player_directory.values()})
+              },
+              'player_directory_total': len(player_directory),
+          }
+          print('Week 3 season-history coverage diagnostics: ' + json.dumps(season_stats_audit, sort_keys=True))
+          snapshot.setdefault('nfl_context', {})['season_player_stats'] = {
+              'provider': 'nflverse',
+              'status': season_stats_audit['status'],
+              'through_week': week,
+              'weeks': observed_weeks,
+              'records': [row for row in all_stats if str(row.get('player_id') or '').strip() in rookie_gsis_ids],
+              'rookie_player_directory': rookie_directory,
+              'unmapped_rookies': unmapped_rookies,
+              'captured_at_utc': (supplemental_root / 'captured-at-utc.txt').read_text().strip(),
+              'source_sha256': hashlib.sha256(stats_path.read_bytes()).hexdigest(),
+          }
+          # All public supplemental data is now local; builders below may not fetch anything.
+          socket.socket = no_network
+          beat = original['beat_report']
+          chronicle = ChronicleQueries(Path('replay-chronicle'))
+          external = load_external_inputs(inputs / 'ironbound_weekly.json', 'ironbound_weekly')
+          assets, _ = _materialize_publication_assets(external, directory)
+          dossier = build_editorial_review(snapshot)
+          dossier['chronicle_revision'] = snapshot['chronicle_revision']
+          profile = load_publications(Path('config/publications.json'))['ironbound_weekly']
+          write_story_desk_artifacts(directory, snapshot, dossier, profile,
+              chronicle_root=Path('replay-chronicle'), external_inputs_dir=inputs)
+          story = json.loads((directory / 'story_desk.json').read_text())
+          snapshots = {p.parent.name: json.loads(p.read_text()) for p in base.rglob('snapshot.json')}
+          network = build_network_market_context(snapshots)
+          market = build_roster_market_report(snapshot, dossier, beat, network, chronicle=chronicle)
+          research = build_flagship_research_packet(snapshot, dossier, story, external,
+              history_root=base, chronicle=chronicle, publication_assets=assets,
+              beat_report=beat, roster_market=market)
+          dossier.setdefault('awards', {})['manager_of_the_week'] = research['weekly_honors']['manager_of_the_week']
+          dossier['awards']['exceptional_loss_review'] = research['weekly_honors']['exceptional_loss_review']
+          for name, value in [('snapshot', snapshot), ('dossier', dossier)]:
+              (directory / (name + '.json')).write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+          (directory / 'dossier.md').write_text(render_editorial_review(dossier))
+          write_flagship_research_packet(directory, research)
+          _write_publication_complete_artifacts(directory, snapshot, dossier, research, external,
+              publication_assets=assets, beat_report=beat, chronicle=chronicle)
+          (directory / 'reading_packet.md').write_text(reading_packet_from_artifacts(directory, dossier))
+          packet = json.loads((directory / 'publication_complete_packet.json').read_text())
+          manifest = {
+              'mode': 'remote offline historical production-builder replay',
+              'code_sha': os.environ['REPLAY_CODE_SHA'],
+              'original_run_id': 36809946431, 'original_artifact_id': 11139287617,
+              'original_artifact_sha256': hashlib.sha256(Path('replay-source.zip').read_bytes()).hexdigest(),
+              'chronicle_sha': snapshot['chronicle_revision'],
+              'rankings_sha': '6300cb0db4145ea51bf7ee590ea7f3a3f6b6d752',
+              'beat_sha': beat['source_revision'],
+              'beat_replay_policy': 'Preserve archived normalized beat report, including partial-coverage warning; do not invent missing accepted stories.',
+              'original_information_cutoff': snapshot['collected_at'],
+              'supplemental_sources': {
+                  'nflverse_player_stats': {
+                      'url': PLAYER_STATS_URL.format(season=season),
+                      'captured_at_utc': snapshot['nfl_context']['season_player_stats']['captured_at_utc'],
+                      'sha256': hashlib.sha256((supplemental_root / 'nflverse-player-stats.csv').read_bytes()).hexdigest(),
+                      'used_through_week': week,
+                      'note': 'Current public release filtered to the historical issue week; later provider corrections may be reflected.',
+                  },
+                  'sleeper_nfl_player_directory': {
+                      'url': 'https://api.sleeper.app/v1/players/nfl',
+                      'captured_at_utc': snapshot['nfl_context']['season_player_stats']['captured_at_utc'],
+                      'sha256': hashlib.sha256((supplemental_root / 'sleeper-nfl-players.json').read_bytes()).hexdigest(),
+                  },
+              },
+              'season_history_coverage_diagnostics': season_stats_audit,
+              'live_network_prohibited': True,
+              'readiness': packet['readiness'],
+              'output_files': {str(p.relative_to(root)): hashlib.sha256(p.read_bytes()).hexdigest()
+                               for p in sorted(root.rglob('*')) if p.is_file()},
+          }
+          (root / 'replay_manifest.json').write_text(json.dumps(manifest, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(packet['readiness'], indent=2))
+          PY
+          PYTHONPATH="$PWD" python /tmp/replay-week3.py
+      - name: Upload historical publication packets and research
+        uses: actions/upload-artifact@v7
+        with:
+          name: ironbound-week3-historical-pr32-${{ github.sha }}
+          path: historical-replay-output/
+          if-no-files-found: error
+          retention-days: 14

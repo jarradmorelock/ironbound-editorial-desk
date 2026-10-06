@@ -78,12 +78,38 @@ def load_news_ledger(path: Path | None, *, revision: str | None = None) -> dict[
         except (OSError, json.JSONDecodeError):
             coverage = {}
 
+    manifest: dict[str, Any] = {}
+    manifest_path = source_path.parent / "manifest.json"
+    if manifest_path.exists():
+        try:
+            raw_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if isinstance(raw_manifest, dict):
+                manifest = dict(raw_manifest)
+        except (OSError, json.JSONDecodeError):
+            manifest = {}
+    player_index: dict[str, Any] = {}
+    index_path = source_path.parent / "by-player.json"
+    if index_path.exists():
+        try:
+            raw_index = json.loads(index_path.read_text(encoding="utf-8"))
+            if isinstance(raw_index, dict):
+                player_index = dict(raw_index)
+        except (OSError, json.JSONDecodeError):
+            player_index = {}
+    if manifest and not coverage:
+        coverage = {
+            "durable_since": manifest.get("window_start"),
+            "meaning": "Weekly news inbox snapshot; exact revision is retained in the publication packet.",
+        }
+
     return {
         "status": "available",
         "source_repository": "jarradmorelock/Ironbound-Forum-Feed-Poster",
         "source_branch": "news-data",
         "source_revision": revision,
         "coverage": coverage,
+        "ledger_manifest": manifest,
+        "player_index": player_index,
         "records": records,
     }
 
@@ -101,6 +127,8 @@ def build_beat_report(
         "source_repository": source.get("source_repository"),
         "source_branch": source.get("source_branch"),
         "source_revision": source.get("source_revision"),
+        "ledger_manifest": source.get("ledger_manifest") or {},
+        "player_index": source.get("player_index") or {},
     }
     if source.get("status") != "available":
         return {

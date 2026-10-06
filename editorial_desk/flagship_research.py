@@ -5,10 +5,12 @@ from pathlib import Path
 from typing import Any
 
 from .context_events import build_context_events
+from .news_index import build_news_index
 from .honors import research_honors
 from .weekly_features import _overall_player_of_week
 from .external_inputs import ExternalEditorialInputs
 from .chronicle_queries import ChronicleQueries
+from .canonical_evidence import build_canonical_league_evidence
 
 
 FLAGSHIP_PUBLICATIONS = {"ironbound_weekly", "unbound_weekly"}
@@ -130,15 +132,24 @@ def build_flagship_research_packet(
     week = int(snapshot.get("week") or dossier.get("week") or 0)
     league_key = str(editorial.get("league_key") or "")
     history = _season_dossiers(history_root, season, league_key, week)
+    canonical_evidence = build_canonical_league_evidence(snapshot, chronicle)
+    canonical_ready = (canonical_evidence.get("coverage") or {}).get("status") == "READY"
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
-    player_score_rows = (
-        chronicle.season_player_fantasy_finals(league_key, season)
-        if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
-        else []
+    if canonical_ready:
+        player_score_rows = list(canonical_evidence.get("player_weeks") or [])
+    else:
+        player_score_rows = (
+            chronicle.season_player_fantasy_finals(league_key, season)
+            if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
+            else []
+        )
+    player_boards = _season_player_boards(
+        player_score_rows,
+        snapshot,
+        canonical_evidence.get("player_week_coverage") if canonical_ready else None,
     )
-    player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)
     weekly = dossier.get("weekly_features") or {}
@@ -148,6 +159,11 @@ def build_flagship_research_packet(
         history,
         current_week=week,
         manager_of_the_week=honors_research.get("manager_of_the_week"),
+        entering_records=(
+            (canonical_evidence.get("entering_records") or {}).get(str(week))
+            if canonical_ready
+            else None
+        ),
     )
     rookie_awards = _rookie_weekly_awards(weekly, snapshot, intelligence)
     health = dossier.get("roster_health") or {}
@@ -188,6 +204,13 @@ def build_flagship_research_packet(
         "injury_roster_health": health,
         "beat_report": beat_report,
         "context_events": build_context_events(beat_report, games),
+        "news_index": build_news_index(
+            beat_report,
+            dossier,
+            status_events=list(
+                ((roster_market or {}).get("status_timeline") or {}).get("events") or []
+            ),
+        ),
         "roster_market": roster_market,
         "weekly_honors": {
             **honors_research,
@@ -213,12 +236,19 @@ def build_flagship_research_packet(
                 season=season,
                 chronicle=chronicle,
             ),
-            "season_team_score_top_three": _season_team_score_top_three(
-                history,
-                snapshot=snapshot,
-                league_key=league_key,
-                season=season,
-                chronicle=chronicle,
+            "season_team_score_top_three": (
+                _canonical_team_score_top_three(
+                    canonical_evidence,
+                    through_week=week,
+                )
+                if canonical_ready
+                else _season_team_score_top_three(
+                    history,
+                    snapshot=snapshot,
+                    league_key=league_key,
+                    season=season,
+                    chronicle=chronicle,
+                )
             ),
             **player_boards,
             "benchwarmer_of_the_week": _attach_stat_lines(
@@ -601,20 +631,38 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         has_applicable_positions = key == "rookie_season_leaders" or bool(
             board.get("by_position")
         )
-        board_ready = board.get("status") == "READY" and has_applicable_positions
+        rookie_scope_complete = (
+            key != "rookie_season_leaders"
+            or board.get("coverage_scope") == "ALL_NFL_ROOKIES"
+        )
+        board_ready = (
+            board.get("status") == "READY"
+            and has_applicable_positions
+            and rookie_scope_complete
+        )
+        detail = str(board.get("reason") or board.get("status") or "unavailable")
+        if key == "rookie_season_leaders" and not rookie_scope_complete:
+            detail = (
+                "Complete NFL rookie scoring history is required; current-league-rostered "
+                "players are not a complete rookie player pool. "
+                + detail
+            )
         _check(
             checks,
             check_name,
             board_ready,
             f"complete through Week {season_week}"
             if board_ready
-            else str(board.get("reason") or board.get("status") or "unavailable"),
+            else detail,
         )
         if not board_ready:
-            manual.append(
-                f"{label} requires complete per-player scoring history through Week {season_week}; "
-                + str(board.get("reason") or "source history unavailable")
-            )
+            if key == "rookie_season_leaders" and not rookie_scope_complete:
+                manual.append(detail)
+            else:
+                manual.append(
+                    f"{label} requires complete per-player scoring history through Week {season_week}; "
+                    + str(board.get("reason") or "source history unavailable")
+                )
 
     for key, label in (
         ("power_rankings_chart", "Power Rankings"),
@@ -1567,9 +1615,34 @@ def _season_team_score_top_three(
     return rows[:3]
 
 
+def _canonical_team_score_top_three(
+    canonical_evidence: dict[str, Any],
+    *,
+    through_week: int,
+) -> list[dict[str, Any]]:
+    rows = [
+        {
+            "team": row.get("team"),
+            "roster_id": row.get("roster_id"),
+            "score": float(row.get("points") or 0),
+            "weeks": int(row.get("through_week") or through_week),
+            "through_week": through_week,
+        }
+        for row in (canonical_evidence.get("team_season_totals") or {}).values()
+    ]
+    rows.sort(
+        key=lambda row: (
+            -float(row.get("score") or 0),
+            str(row.get("team") or "").casefold(),
+        )
+    )
+    return rows[:3]
+
+
 def _season_player_boards(
     historical_rows: list[dict[str, Any]],
     snapshot: dict[str, Any],
+    coverage: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Aggregate finalized weekly player scores without presenting gaps as full totals."""
     from .weekly_features import _rostered_player_weeks
@@ -1617,6 +1690,16 @@ def _season_player_boards(
             "player_id": player_id,
             "position": row.get("position"),
             "points": round(float(row.get("points") or 0), 2),
+            "score_status": row.get("score_status")
+            or ("CERTIFIED_ZERO" if float(row.get("points") or 0) == 0 else "OBSERVED"),
+            "membership_status": row.get("membership_status") or "ROSTERED",
+            "evidence_ids": sorted(
+                {
+                    str(value)
+                    for value in [row.get("evidence_id"), *(row.get("source_refs") or [])]
+                    if value
+                }
+            ),
         }
         previous = by_week_player.get(key)
         if previous and previous["roster_id"] != roster_id and previous["points"] != value["points"]:
@@ -1628,7 +1711,17 @@ def _season_player_boards(
         if int(row.get("week") or 0) < through_week:
             add_score(row)
     for row in _rostered_player_weeks(snapshot):
-        add_score({**row, "week": through_week}, current=True)
+        player_id = str(row.get("player_id") or "")
+        add_score(
+            {
+                **row,
+                "week": through_week,
+                "evidence_id": f"player-week:{(snapshot.get('league') or {}).get('season') or (snapshot.get('nfl_state') or {}).get('season') or 'unknown'}:{through_week}:{row.get('roster_id')}:{player_id}",
+                "score_status": "CERTIFIED_ZERO" if float(row.get("points") or 0) == 0 else "OBSERVED",
+                "membership_status": "ROSTERED",
+            },
+            current=True,
+        )
 
     expected_rosters = set(rosters)
     missing_weeks = [
@@ -1636,31 +1729,56 @@ def _season_player_boards(
         for week in range(1, through_week + 1)
         if not expected_rosters.issubset(roster_coverage.get(week, set()))
     ]
-    incomplete_players = {
-        player_id: [
+
+    publication_history = snapshot.get("publication_sleeper") or snapshot.get("flagship_sleeper") or {}
+    transaction_weeks = ((publication_history.get("transactions") or {}).get("weeks") or {})
+    acquired_week: dict[str, int] = {}
+    for raw_week, transactions in transaction_weeks.items():
+        try:
+            transaction_week = int(raw_week)
+        except (TypeError, ValueError):
+            continue
+        for transaction in transactions or []:
+            if transaction.get("status") != "complete":
+                continue
+            for player_id, roster_id in (transaction.get("adds") or {}).items():
+                player_id = str(player_id)
+                if current_roster_by_player.get(player_id) != _safe_int(roster_id):
+                    continue
+                acquired_week[player_id] = min(
+                    acquired_week.get(player_id, transaction_week),
+                    transaction_week,
+                )
+
+    incomplete_players = {}
+    for player_id in current_roster_by_player:
+        missing = [
             week
             for week in range(1, through_week + 1)
             if (week, player_id) not in by_week_player
+            and week >= acquired_week.get(player_id, 1)
         ]
-        for player_id in current_roster_by_player
-    }
-    incomplete_players = {
-        player_id: weeks
-        for player_id, weeks in incomplete_players.items()
-        if weeks
-    }
+        if missing:
+            incomplete_players[player_id] = missing
+
     reasons = []
-    if missing_weeks:
+    if missing_weeks and coverage is None:
         reasons.append(
             "missing finalized player scores for week(s) "
             + ", ".join(str(value) for value in missing_weeks)
         )
-    if incomplete_players:
+    if incomplete_players and coverage is None:
         names = []
         for player_id, weeks in sorted(incomplete_players.items()):
             missing = ", ".join(f"Week {week}" for week in weeks)
             names.append(f"{display_player_name(player_id)} (missing {missing})")
         reasons.append("incomplete fantasy-score history for " + "; ".join(names))
+    unresolved = sorted(set((coverage or {}).get("unknown") or []))
+    manual_verify = sorted(set((coverage or {}).get("manual_verify") or []))
+    if unresolved:
+        reasons.append("unresolved player-week evidence: " + ", ".join(unresolved))
+    if manual_verify:
+        reasons.append("player-week evidence requires manual verification: " + ", ".join(manual_verify))
     if conflicts:
         reasons.append("conflicting player-week scores were recorded for multiple fantasy rosters")
     if duplicate_current_players:
@@ -1687,12 +1805,27 @@ def _season_player_boards(
                 if player_position != position:
                     continue
                 roster_id = current_roster_by_player[player_id]
+                evidence_ids = sorted(
+                    {
+                        evidence_id
+                        for (week, candidate_id), candidate in by_week_player.items()
+                        if candidate_id == player_id
+                        for evidence_id in candidate.get("evidence_ids") or []
+                    }
+                )
                 row = {
                     "player_id": player_id,
                     "player": display_player_name(player_id),
                     "position": position,
                     "points": round(points, 2),
                     "fantasy_team": team_names.get(roster_id, f"Roster {roster_id}"),
+                    "weeks": sorted(
+                        week
+                        for (week, candidate_id) in by_week_player
+                        if candidate_id == player_id
+                    ),
+                    "through_week": through_week,
+                    "evidence_ids": evidence_ids,
                 }
                 candidates.append(row)
                 if player.get("years_exp") is not None and _safe_int(player.get("years_exp")) == 0:
@@ -1703,19 +1836,111 @@ def _season_player_boards(
             if rookie_candidates:
                 rookie_by_position[position] = rookie_candidates[0]
 
+    season_source = (snapshot.get("nfl_context") or {}).get("season_player_stats") or {}
+    rookie_directory = season_source.get("rookie_player_directory") or {}
+    expected_source_weeks = list(range(1, through_week + 1))
+    season_source_complete = (
+        season_source.get("status") == "available"
+        and int(season_source.get("through_week") or 0) == through_week
+        and list(season_source.get("weeks") or []) == expected_source_weeks
+        and int(season_source.get("unmapped_rookies") or 0) == 0
+        and bool(rookie_directory)
+    )
+    all_nfl_rookie_by_position: dict[str, dict[str, Any]] = {}
+    if season_source_complete:
+        from .weekly_features import _score_nflverse_row
+
+        scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
+        totals: dict[str, dict[str, Any]] = {}
+        for gsis_id, player in rookie_directory.items():
+            player_id = str(player.get("player_id") or "")
+            position = str(player.get("position") or "").upper()
+            if not player_id or position not in CORE_POSITIONS:
+                continue
+            roster_id = current_roster_by_player.get(player_id)
+            totals[gsis_id] = {
+                "player_id": player_id,
+                "player": str(player.get("player") or player_id),
+                "position": position,
+                "points": 0.0,
+                "fantasy_team": team_names.get(roster_id, "UNROSTERED"),
+                "nfl_team": player.get("nfl_team"),
+                "weeks": [],
+                "through_week": through_week,
+                "evidence_ids": [],
+            }
+        for stat_row in season_source.get("records") or []:
+            gsis_id = str(stat_row.get("player_id") or "").strip()
+            week = _safe_int(stat_row.get("week"))
+            result = totals.get(gsis_id)
+            if result is None or week is None or not 0 < week <= through_week:
+                continue
+            result["points"] += _score_nflverse_row(stat_row, scoring)
+            result["weeks"].append(week)
+            result["evidence_ids"].append(
+                f"nflverse-player-week:{(snapshot.get('league') or {}).get('season') or (snapshot.get('nfl_state') or {}).get('season') or 'unknown'}:{week}:{gsis_id}"
+            )
+        for row in totals.values():
+            row["points"] = round(float(row["points"]), 2)
+            row["weeks"] = sorted(set(row["weeks"]))
+            row["evidence_ids"] = sorted(set(row["evidence_ids"]))
+            current = all_nfl_rookie_by_position.get(row["position"])
+            if current is None or (row["points"], row["player"].casefold()) > (
+                current["points"], current["player"].casefold()
+            ):
+                all_nfl_rookie_by_position[row["position"]] = row
+
     reason = "; ".join(reasons) if reasons else None
+    coverage_summary = {
+        key: len(values)
+        for key, values in (coverage or {}).items()
+        if isinstance(values, list)
+    }
+    unresolved_ids = sorted(set((coverage or {}).get("unknown") or []))
+    manual_verify_ids = sorted(set((coverage or {}).get("manual_verify") or []))
     return {
         "player_season_top_three": {
             "status": status,
             "through_week": through_week,
             "reason": reason,
+            "coverage": coverage_summary,
+            "unresolved_player_weeks": unresolved_ids,
+            "manual_verify_player_weeks": manual_verify_ids,
             "by_position": by_position if status == "READY" else {},
         },
         "rookie_season_leaders": {
-            "status": status,
+            "status": (
+                "READY"
+                if status == "READY" and season_source_complete
+                else ("PARTIAL" if status == "READY" else status)
+            ),
+            "coverage_scope": (
+                "ALL_NFL_ROOKIES" if season_source_complete else "IRONBOUND_ROSTERED_ONLY"
+            ),
             "through_week": through_week,
-            "reason": reason,
-            "by_position": rookie_by_position if status == "READY" else {},
+            "reason": (
+                None
+                if status == "READY" and season_source_complete
+                else (
+                    "Unrostered rookie player histories are not available in the league roster history."
+                    if status == "READY"
+                    else reason
+                )
+            ),
+            "coverage": {
+                **coverage_summary,
+                "nflverse_source_weeks": len(season_source.get("weeks") or []),
+                "unmapped_rookies": int(season_source.get("unmapped_rookies") or 0),
+            },
+            "unresolved_player_weeks": unresolved_ids,
+            "manual_verify_player_weeks": manual_verify_ids,
+            # Prefer the complete NFL-wide calculation when available. Keep the
+            # rostered board visible as partial evidence otherwise.
+            "by_position": (
+                all_nfl_rookie_by_position
+                if season_source_complete
+                else (rookie_by_position if status == "READY" else {})
+            ),
         },
     }
 
@@ -1726,6 +1951,7 @@ def _manager_weekly_awards(
     *,
     current_week: int,
     manager_of_the_week: dict[str, Any] | None,
+    entering_records: dict[str, dict[str, int]] | None = None,
 ) -> dict[str, Any]:
     lineup = list(dossier.get("lineup_efficiency") or [])
     winner_id = _safe_int((manager_of_the_week or {}).get("roster_id"))
@@ -1762,7 +1988,16 @@ def _manager_weekly_awards(
 
     expected_weeks = set(range(1, current_week))
     entering: dict[int, dict[str, int]] = {}
-    if expected_weeks:
+    if entering_records:
+        entering = {
+            int(roster_id): {
+                "wins": int((row or {}).get("wins") or 0),
+                "losses": int((row or {}).get("losses") or 0),
+                "ties": int((row or {}).get("ties") or 0),
+            }
+            for roster_id, row in entering_records.items()
+        }
+    elif expected_weeks:
         for roster_id, results in records.items():
             if set(results) != expected_weeks:
                 continue
@@ -1812,12 +2047,15 @@ def _manager_weekly_awards(
             str(row["team"]).casefold(),
         )
     )
+    # Escape Artist describes the closest verified win. Entering record is a
+    # tie-breaker only; prioritizing winning records selected comfortable wins
+    # over the narrow escapes used in the finished Ironbound issue.
     wins.sort(
         key=lambda row: (
+            row["margin"],
             -(row["entering_record"]["wins"] > row["entering_record"]["losses"])
             if row["entering_record"]
             else 0,
-            row["margin"],
             row["points"] + row["opponent_points"],
             str(row["team"]).casefold(),
         )
@@ -2196,6 +2434,8 @@ def _attach_rookie_draft_context(
                 "roster_id": _safe_int(pick.get("roster_id")),
             }
 
+    source_status = str(draft_source.get("status") or "").casefold()
+    draft_history_available = bool(draft_source.get("records")) or source_status == "available"
     enriched = []
     for row in rows:
         item = dict(row)
@@ -2211,8 +2451,25 @@ def _attach_rookie_draft_context(
             item["ironbound_draft_round"] = pick["round"]
             item["ironbound_draft_slot"] = pick["slot"]
             item["ironbound_drafted_by"] = drafting_team
+            item["ironbound_draft_status"] = "DRAFTED"
+            item["ironbound_draft_provenance"] = {
+                "source": "Sleeper league draft archive",
+                "round": pick["round"],
+                "slot": pick["slot"],
+                "drafting_roster_id": drafting_roster,
+                "drafting_team": drafting_team,
+            }
         else:
             item["ironbound_draft"] = None
+            item["ironbound_draft_status"] = (
+                "NOT_DRAFTED_IN_CAPTURED_LEAGUE_DRAFT"
+                if draft_history_available
+                else "UNAVAILABLE"
+            )
+            item["ironbound_draft_provenance"] = {
+                "source": "Sleeper league draft archive",
+                "source_status": source_status or "not_collected",
+            }
         enriched.append(item)
     return enriched
 

@@ -35,6 +35,54 @@ class EmptyNFLVerseClient:
         return []
 
 
+def test_flagship_context_collects_and_rookie_filters_season_player_stats():
+    from editorial_desk.enriched_collector import (
+        _apply_context_scope,
+        _collect_deep_nfl_context,
+    )
+
+    class HistoricalNFLVerseClient(EmptyNFLVerseClient):
+        def snap_counts(self, season, week):
+            return []
+
+        def play_by_play(self, season, week):
+            return []
+
+        def season_player_stats(self, season, week):
+            return [
+                {"week": 1, "player_id": "gsis-rookie", "passing_yards": 37.5},
+                {"week": 1, "player_id": "gsis-veteran", "passing_yards": 100.0},
+            ]
+
+    shared = _collect_deep_nfl_context(HistoricalNFLVerseClient(), "2026", 1)
+    snapshot = {"nfl_context": {}}
+    _apply_context_scope(
+        snapshot,
+        shared,
+        include_deep=True,
+        player_directory={
+            "rookie-id": {
+                "full_name": "Jack Strand",
+                "position": "QB",
+                "years_exp": 0,
+                "gsis_id": " gsis-rookie ",
+            },
+            "veteran-id": {
+                "full_name": "Veteran QB",
+                "position": "QB",
+                "years_exp": 4,
+                "gsis_id": "gsis-veteran",
+            },
+        },
+    )
+
+    source = snapshot["nfl_context"]["season_player_stats"]
+    assert source["status"] == "available"
+    assert source["weeks"] == [1]
+    assert [row["player_id"] for row in source["records"]] == ["gsis-rookie"]
+    assert source["rookie_player_directory"]["gsis-rookie"]["player_id"] == "rookie-id"
+
+
 class EmptySleeperClient:
     def nfl_state(self):
         return {"season": "2026"}
@@ -233,3 +281,42 @@ def test_flagship_collection_adds_full_sleeper_editorial_context():
     assert set(result["players"]) == {"p1", "p2", "p3", "p4"}
     assert result["players"]["p1"]["age"] == 25
     assert result["players"]["p1"]["college"] == "Test University"
+
+
+def test_publication_enabled_newspaper_collects_shared_sleeper_history():
+    league = LeagueConfig(
+        key="paper",
+        name="Paper League",
+        sleeper_league_id="456",
+        publication="Paper",
+        publication_profile=None,
+        tier="standard",
+        league_format="redraft",
+        ranking_model="redraft",
+        publication_enabled=True,
+    )
+    players = {
+        player_id: {
+            "player_id": player_id,
+            "full_name": f"Player {player_id}",
+            "position": "QB",
+            "fantasy_positions": ["QB"],
+            "age": 25,
+            "college": "Test University",
+        }
+        for player_id in ("p1", "p2", "p3", "p4")
+    }
+
+    result = collect_league(
+        league,
+        1,
+        {"season": "2026"},
+        players,
+        FlagshipSleeperClient(),
+        ranking_sources={},
+    )
+
+    assert result["publication_sleeper"]["schedule"]["status"] == "available"
+    assert len(result["publication_sleeper"]["schedule"]["weeks"]) == 18
+    assert result["flagship_sleeper"] is None
+    assert result["players"]["p1"]["age"] == 25

@@ -36,6 +36,15 @@ def test_discover_seasons_returns_oldest_to_newest():
     ]
 
 
+def test_discover_seasons_treats_numeric_zero_as_no_prior_league():
+    client = ChainClient()
+    client.rows["l26"]["previous_league_id"] = 0
+
+    seasons = discover_seasons(client, "l26")
+
+    assert [(row.season, row.league_id) for row in seasons] == [("2026", "l26")]
+
+
 def test_discover_seasons_rejects_cycles():
     client = ChainClient()
     client.rows["l24"]["previous_league_id"] = "l26"
@@ -58,8 +67,8 @@ class HistoryClient:
     def matchups(self, league_id, week):
         if week == 1:
             return [
-                {"matchup_id": 1, "roster_id": 1, "points": 120.0},
-                {"matchup_id": 1, "roster_id": 2, "points": 110.0},
+                {"matchup_id": 1, "roster_id": 1, "points": 120.0, "players": ["p0"], "players_points": {}},
+                {"matchup_id": 1, "roster_id": 2, "points": 110.0, "players": ["p1"], "players_points": {"p1": 12.0}},
             ]
         return []
 
@@ -106,8 +115,12 @@ def test_backfill_normalizes_durable_history_without_fabricating_health():
     )
     result = backfill_season(HistoryClient(), season, League(), IdentityRegistry.empty())
     event_types = {event.event_type for event in result.events}
-    assert {"MATCHUP_FINAL", "WAIVER_ADD", "DRAFT_PICK", "TRADED_PICK", "PLAYOFF_BRACKET_RESULT"} <= event_types
+    assert {"MATCHUP_FINAL", "PLAYER_FANTASY_WEEK_FINAL", "WAIVER_ADD", "DRAFT_PICK", "TRADED_PICK", "PLAYOFF_BRACKET_RESULT"} <= event_types
     assert "PLAYER_STATUS_CHANGE" not in event_types
     waiver = next(event for event in result.events if event.event_type == "WAIVER_ADD")
     assert waiver.occurred_at is not None
     assert waiver.provenance == "source_exact"
+    zero = next(event for event in result.events if event.event_type == "PLAYER_FANTASY_WEEK_FINAL" and event.entities["player_id"] == "p0")
+    assert zero.evidence["points"] == 0.0
+    assert zero.evidence["score_status"] == "CERTIFIED_ZERO"
+    assert zero.evidence["membership_status"] == "ROSTERED"

@@ -1,4 +1,8 @@
-from editorial_desk.enriched_collector import _apply_context_scope, _collect_deep_nfl_context
+from editorial_desk.enriched_collector import (
+    _apply_context_scope,
+    _build_rookie_player_directory,
+    _collect_deep_nfl_context,
+)
 
 
 class FakeNFLVerse:
@@ -44,3 +48,100 @@ def test_context_scope_keeps_deep_sources_for_flagship_only():
 
     assert result["snap_counts"]["records"][0]["team"] == "TEN"
     assert result["play_by_play"]["records"][0]["posteam"] == "TEN"
+
+
+def test_rookie_directory_maps_only_rookies_with_supported_positions_and_gsis_ids():
+    directory, unmapped = _build_rookie_player_directory(
+        {
+            "100": {
+                "years_exp": 0,
+                "position": "QB",
+                "gsis_id": "gsis-100",
+                "full_name": "Jack Strand",
+                "team": "NYJ",
+            },
+            "101": {"years_exp": 0, "position": "WR", "full_name": "Unmapped Rookie"},
+            "102": {"years_exp": 1, "position": "RB", "gsis_id": "gsis-102"},
+            "103": {"years_exp": 0, "position": "K", "gsis_id": "gsis-103"},
+        },
+        season_stats_rows=[
+            {
+                "player_id": "gsis-unmapped-a",
+                "player_display_name": "Unmapped Rookie",
+                "position": "WR",
+                "team": "NYJ",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-unmapped-b",
+                "player_display_name": "Unmapped Rookie",
+                "position": "WR",
+                "team": "BUF",
+                "week": 2,
+            },
+        ],
+    )
+
+    assert directory == {
+        "gsis-100": {
+            "player_id": "100",
+            "player": "Jack Strand",
+            "position": "QB",
+            "nfl_team": "NYJ",
+            "years_exp": 0,
+        }
+    }
+    assert unmapped == 1
+
+
+def test_rookie_directory_recovers_only_unique_stat_bearing_no_gsis_rookies():
+    directory, unmapped = _build_rookie_player_directory(
+        {
+            "100": {
+                "years_exp": 0,
+                "position": "QB",
+                "full_name": "Jack Strand",
+                "team": "NYJ",
+            },
+            "101": {
+                "years_exp": 0,
+                "position": "WR",
+                "full_name": "Inactive Prospect",
+                "team": "NYJ",
+            },
+            "102": {
+                "years_exp": 0,
+                "position": "RB",
+                "full_name": "Ambiguous Rookie",
+                "team": "BUF",
+            },
+        },
+        season_stats_rows=[
+            {
+                "player_id": "gsis-100",
+                "player_display_name": "Jack Strand",
+                "position": "QB",
+                "team": "NYJ",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-102a",
+                "player_display_name": "Ambiguous Rookie",
+                "position": "RB",
+                "team": "BUF",
+                "week": 1,
+            },
+            {
+                "player_id": "gsis-102b",
+                "player_display_name": "Ambiguous Rookie",
+                "position": "RB",
+                "team": "BUF",
+                "week": 2,
+            },
+        ],
+    )
+
+    assert directory["gsis-100"]["player_id"] == "100"
+    assert "gsis-102a" not in directory
+    assert "gsis-102b" not in directory
+    assert unmapped == 1

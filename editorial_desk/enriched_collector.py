@@ -30,6 +30,14 @@ from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
 from .chronicle_queries import ChronicleQueries
+from .canonical_evidence import build_canonical_league_evidence
+from .transaction_evidence import build_transaction_evidence
+from .publication_sources import build_source_manifest, health_evidence
+from .news_index import build_news_index
+from .publication_complete import (
+    build_publication_complete_packet,
+    write_publication_complete_packet,
+)
 
 
 def collect_all(
@@ -95,7 +103,12 @@ def collect_all(
         if chronicle_revision:
             snapshot["chronicle_revision"] = str(chronicle_revision)
         _apply_player_context(snapshot, player_directory)
-        _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
+        _apply_context_scope(
+            snapshot,
+            shared,
+            include_deep=config.tier == "flagship",
+            player_directory=player_directory,
+        )
         _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
         _ensure_next_matchups(snapshot, sleeper, config.sleeper_league_id, week)
         _write_json(snapshot_path, snapshot)
@@ -113,6 +126,12 @@ def collect_all(
             profile = publications.get(config.publication_profile or "")
             if profile is None:
                 continue
+            chronicle_queries = (
+                ChronicleQueries(Path(chronicle_root))
+                if chronicle_root is not None
+                else None
+            )
+            beat_report = build_beat_report(snapshot, beat_source)
             if profile.tier == "newspaper":
                 generated.extend(
                     _write_newspaper_packet(
@@ -121,6 +140,8 @@ def collect_all(
                         dossier,
                         profile,
                         phase="weekly",
+                        chronicle=chronicle_queries,
+                        beat_report=beat_report,
                     )
                 )
             if profile.story_desk and chronicle_root is not None:
@@ -153,7 +174,6 @@ def collect_all(
                     if story_path.exists()
                     else {}
                 )
-                beat_report = build_beat_report(snapshot, beat_source)
                 issue_network = dict(network_market)
                 issue_network["sleeper_platform_rates"] = load_market_rates(
                     Path(external_inputs_dir) / "sleeper_market_rates.json" if external_inputs_dir else None,
@@ -164,7 +184,7 @@ def collect_all(
                     dossier,
                     beat_report,
                     issue_network,
-                    chronicle=ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None,
+                    chronicle=chronicle_queries,
                 )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,
@@ -172,11 +192,7 @@ def collect_all(
                     story,
                     external_inputs,
                     history_root=output_root,
-                    chronicle=(
-                        ChronicleQueries(Path(chronicle_root))
-                        if chronicle_root is not None
-                        else None
-                    ),
+                    chronicle=chronicle_queries,
                     publication_assets=publication_assets,
                     beat_report=beat_report,
                     roster_market=roster_market,
@@ -189,6 +205,19 @@ def collect_all(
                     (directory / "dossier.md").write_text(render_editorial_review(dossier), encoding="utf-8")
                     generated.extend(
                         write_flagship_research_packet(directory, flagship_packet)
+                    )
+                    generated.extend(
+                        _write_publication_complete_artifacts(
+                            directory,
+                            snapshot,
+                            dossier,
+                            flagship_packet,
+                            external_inputs,
+                            publication_assets=publication_assets,
+                            beat_report=beat_report,
+                            roster_market=roster_market,
+                            chronicle=chronicle_queries,
+                        )
                     )
 
         reading_path = directory / "reading_packet.md"
@@ -257,6 +286,8 @@ def _write_newspaper_packet(
     publication: PublicationConfig,
     *,
     phase: str = "weekly",
+    chronicle: ChronicleQueries | None = None,
+    beat_report: dict[str, Any] | None = None,
 ) -> tuple[Path, ...]:
     packet = build_publication_packet(
         snapshot,
@@ -267,7 +298,73 @@ def _write_newspaper_packet(
     generated = list(write_publication_packet(directory, packet))
     research = build_newspaper_research_packet(snapshot, dossier, packet)
     generated.extend(write_newspaper_research_packet(directory, research))
+    external = load_external_inputs(None, publication.key)
+    generated.extend(
+        _write_publication_complete_artifacts(
+            directory,
+            snapshot,
+            dossier,
+            research,
+            external,
+            publication_assets=None,
+            beat_report=beat_report,
+            roster_market=None,
+            chronicle=chronicle,
+        )
+    )
     return tuple(generated)
+
+
+def _write_publication_complete_artifacts(
+    directory: Path,
+    snapshot: dict[str, Any],
+    dossier: dict[str, Any],
+    research_packet: dict[str, Any],
+    external_inputs,
+    *,
+    publication_assets: dict[str, Any] | None,
+    beat_report: dict[str, Any] | None,
+    roster_market: dict[str, Any] | None = None,
+    chronicle: ChronicleQueries | None = None,
+) -> tuple[Path, Path]:
+    """Compile the immutable factual handoff after all research has completed."""
+    canonical = build_canonical_league_evidence(snapshot, chronicle)
+    transactions = build_transaction_evidence(snapshot, chronicle)
+    manifest = build_source_manifest(
+        snapshot,
+        dossier,
+        external_inputs,
+        beat_report=beat_report,
+        publication_assets=publication_assets,
+        information_cutoff=dossier.get("information_current_through"),
+    )
+    health = health_evidence(
+        snapshot,
+        dossier,
+        beat_report,
+        manifest.get("information_cutoff"),
+    )
+    status_events = list(
+        ((roster_market or {}).get("status_timeline") or {}).get("events") or []
+    )
+    news_index = build_news_index(
+        beat_report,
+        dossier,
+        status_events=status_events,
+    )
+    complete = build_publication_complete_packet(
+        snapshot,
+        dossier,
+        research_packet,
+        external_inputs,
+        canonical_evidence=canonical,
+        transaction_evidence=transactions,
+        source_manifest=manifest,
+        health=health,
+        news_index=news_index,
+        publication_assets=publication_assets,
+    )
+    return write_publication_complete_packet(directory, complete)
 
 
 def _collect_deep_nfl_context(
@@ -290,6 +387,34 @@ def _collect_deep_nfl_context(
                 "records": [],
                 "error": str(exc),
             }
+    try:
+        fetcher = getattr(client, "season_player_stats")
+        records = fetcher(season, week)
+        if not isinstance(records, list):
+            raise ValueError("NFL season player stats response was not a list")
+        observed_weeks = sorted(
+            {
+                _safe_int_value(row.get("week"))
+                for row in records
+                if _safe_int_value(row.get("week")) is not None
+            }
+        )
+        expected_weeks = list(range(1, int(week) + 1))
+        week_coverage_complete = set(expected_weeks).issubset(observed_weeks)
+        sources["season_player_stats"] = {
+            "status": "available" if week_coverage_complete else "partial",
+            "through_week": int(week),
+            "weeks": observed_weeks,
+            "records": records,
+        }
+    except (requests.RequestException, ValueError, KeyError, OSError, AttributeError) as exc:
+        sources["season_player_stats"] = {
+            "status": "unavailable",
+            "through_week": int(week),
+            "weeks": [],
+            "records": [],
+            "error": str(exc),
+        }
     return sources
 
 
@@ -395,6 +520,7 @@ def _apply_context_scope(
     shared: dict[str, Any],
     *,
     include_deep: bool,
+    player_directory: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     context = snapshot.setdefault("nfl_context", {})
     # Complete weekly player stats are intentionally retained for every
@@ -402,11 +528,92 @@ def _apply_context_scope(
     # players rather than only players already present in the league snapshot.
     context["player_stats"] = dict(shared.get("player_stats") or {})
     if include_deep:
+        season_stats = dict(shared.get("season_player_stats") or {})
+        rookie_directory, unmapped_rookies = _build_rookie_player_directory(
+            player_directory or {},
+            season_stats_rows=season_stats.get("records") or [],
+        )
+        known_rookies = set(rookie_directory)
+        season_stats["records"] = [
+            row for row in season_stats.get("records") or []
+            if str(row.get("player_id") or "").strip() in known_rookies
+        ]
+        season_stats["rookie_player_directory"] = rookie_directory
+        season_stats["unmapped_rookies"] = unmapped_rookies
+        context["season_player_stats"] = season_stats
+    if include_deep:
         context["snap_counts"] = dict(shared.get("snap_counts") or {})
         context["play_by_play"] = dict(shared.get("play_by_play") or {})
     else:
         context["snap_counts"] = {"status": "not_collected", "records": []}
         context["play_by_play"] = {"status": "not_collected", "records": []}
+
+
+def _build_rookie_player_directory(
+    player_directory: dict[str, dict[str, Any]],
+    *,
+    season_stats_rows: list[dict[str, Any]] | None = None,
+) -> tuple[dict[str, dict[str, Any]], int]:
+    rookies: dict[str, dict[str, Any]] = {}
+    unmapped = 0
+    for sleeper_id, player in player_directory.items():
+        if _safe_int_value(player.get("years_exp")) != 0:
+            continue
+        position = str(player.get("position") or "").upper()
+        if position not in {"QB", "RB", "WR", "TE"}:
+            continue
+        gsis_id = str(player.get("gsis_id") or "").strip()
+        if not gsis_id:
+            normalized_name = _normalize_rookie_name(
+                player.get("full_name") or player.get("name")
+            )
+            team = str(player.get("team") or "").strip().upper()
+            matching_rows = [
+                row
+                for row in season_stats_rows or []
+                if _normalize_rookie_name(
+                    row.get("player_display_name") or row.get("player_name")
+                ) == normalized_name
+                and str(row.get("position") or "").strip().upper() == position
+                and (
+                    not team
+                    or str(row.get("team") or "").strip().upper() == team
+                )
+            ]
+            candidate_gsis_ids = {
+                str(row.get("player_id") or "").strip()
+                for row in matching_rows
+                if str(row.get("player_id") or "").strip()
+            }
+            if len(candidate_gsis_ids) == 1:
+                gsis_id = candidate_gsis_ids.pop()
+            elif matching_rows:
+                # A stat-bearing rookie without one unique NFLverse identifier
+                # makes the all-rookie board incomplete. Players with no NFL
+                # rows through this week have a verified zero for this window.
+                unmapped += 1
+                continue
+            else:
+                continue
+        rookies[gsis_id] = {
+            "player_id": str(sleeper_id),
+            "player": str(player.get("full_name") or player.get("name") or sleeper_id),
+            "position": position,
+            "nfl_team": player.get("team"),
+            "years_exp": 0,
+        }
+    return rookies, unmapped
+
+
+def _normalize_rookie_name(value: Any) -> str:
+    return "".join(character for character in str(value or "").casefold() if character.isalnum())
+
+
+def _safe_int_value(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _write_json(path: Path, value: Any) -> None:

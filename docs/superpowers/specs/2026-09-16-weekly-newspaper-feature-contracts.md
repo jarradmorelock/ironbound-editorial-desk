@@ -4,6 +4,19 @@ Date: 2026-09-16
 Status: Approved design checkpoint companion
 Parent design: `2026-09-16-editorial-chronicle-story-desk-design-checkpoint.md`
 
+## Superseding clarification — 2026-10-02
+
+The current Rocky Top Rumble / Volunteer Voice configuration has no active publication divisions. Any older requirements below for Volunteer Voice Division Pulse, divisional MVP nominees, or a gold-foil divisional winner are superseded.
+
+The league-wide highest-scoring **STARTED** player is the publication honor with:
+
+- internal key: `KING_OF_THE_HILL`
+- display label: **King of the Hill**
+
+This is a flavor/label correction only. It does not change the underlying highest-scoring-started-player calculation.
+
+The 2026-10-02 Publication-Complete Packet design also supersedes the older blanket statement that every historical claim must originate in Chronicle. Exact same-season league facts that Sleeper retains authoritatively — completed matchup scores, submitted lineups, player fantasy scores, and transactions — may be normalized directly from Sleeper and corroborated by Chronicle. Chronicle remains the durable authority for long-view history, identity continuity, cross-season records, and historical context not fully represented by Sleeper. Any material disagreement between authoritative sources is `MANUAL_VERIFY`, never silently resolved.
+
 ## Purpose
 
 This document locks the recurring editorial/data contracts for the weekly newspaper publications. These requirements are derived from the actual preseason and Week 1 papers and from publication behavior already established in the Editorial Desk.

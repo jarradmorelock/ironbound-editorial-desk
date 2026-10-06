@@ -1,0 +1,48 @@
+{
+  "publication_key": "volunteer_voice",
+  "source_issue": "The Volunteer Voice 2026.02.pdf",
+  "required_departments": [
+    "weekly_results",
+    "record_watch",
+    "manager_decision_evidence",
+    "official_table",
+    "league_median",
+    "ranking_movement",
+    "league_wide_started_mvp",
+    "manager_of_week",
+    "bench_leaders",
+    "rookie_of_week",
+    "free_agent_of_week",
+    "lineup_efficiency",
+    "bad_beat",
+    "escape_artist",
+    "waiver_impact",
+    "bench_blast",
+    "health_status",
+    "next_matchups"
+  ],
+  "observed_printed": [
+    "weekly_results",
+    "record_watch",
+    "manager_decision_evidence",
+    "official_table",
+    "league_median",
+    "ranking_movement",
+    "league_wide_started_mvp",
+    "manager_of_week",
+    "bench_leaders",
+    "rookie_of_week",
+    "free_agent_of_week",
+    "lineup_efficiency",
+    "bad_beat",
+    "escape_artist",
+    "waiver_impact",
+    "bench_blast"
+  ],
+  "superseded": [
+    "Division Pulse",
+    "Gold-Foil MVP",
+    "Mountain MVP"
+  ],
+  "note": "Current contract suppresses dormant divisions and renders the league-wide top started player as King of the Hill."
+}

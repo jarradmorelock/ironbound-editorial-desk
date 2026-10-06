@@ -29,6 +29,56 @@ INJURIES_URL = (
     "injuries/injuries_{season}.csv"
 )
 USER_AGENT = "ironbound-editorial-desk/0.1"
+PLAYER_STAT_FIELDS = (
+    "player_id", "player_name", "player_display_name", "position",
+    "game_id", "team", "opponent_team", "completions", "attempts",
+    "passing_yards", "passing_tds", "passing_interceptions",
+    "passing_first_downs", "passing_2pt_conversions", "carries",
+    "rushing_yards", "rushing_tds", "rushing_first_downs",
+    "rushing_2pt_conversions", "receptions", "targets",
+    "receiving_yards", "receiving_tds", "receiving_first_downs",
+    "receiving_2pt_conversions", "fumbles", "fumbles_lost_total",
+    "special_teams_tds", "def_tackles_solo", "def_tackle_assists",
+    "def_sacks", "def_interceptions", "def_tds", "fg_made", "fg_att",
+    "fg_long", "pat_made", "pat_att", "fantasy_points",
+    "fantasy_points_ppr",
+)
+PLAYER_STAT_TEXT_FIELDS = {
+    "player_id", "player_name", "player_display_name", "position",
+    "game_id", "team", "opponent_team",
+}
+
+
+def parse_season_player_stats_csv(
+    content: bytes | str, season: str, through_week: int
+) -> list[dict[str, Any]]:
+    """Parse a captured nflverse season CSV without making a network request."""
+    text = content.decode("utf-8") if isinstance(content, bytes) else content
+    rows = csv.DictReader(io.StringIO(text, newline=""))
+    return [
+        normalized
+        for normalized in _normalize_player_stats_rows(rows, season)
+        if 0 < normalized["week"] <= int(through_week)
+    ]
+
+
+def _normalize_player_stats_rows(
+    rows: Iterator[dict[str, str]], season: str
+) -> list[dict[str, Any]]:
+    return [
+        {
+            field: (
+                row.get(field)
+                if field in PLAYER_STAT_TEXT_FIELDS
+                else _number(row.get(field))
+            )
+            for field in PLAYER_STAT_FIELDS
+        }
+        | {"week": _integer(row.get("week"))}
+        for row in rows
+        if row.get("season") == str(season)
+        and row.get("season_type") == "REG"
+    ]
 
 
 class NFLVerseClient:
@@ -42,6 +92,7 @@ class NFLVerseClient:
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
         self._raw_cache: dict[str, bytes] = {}
+        self._player_stats_cache: dict[str, list[dict[str, Any]]] = {}
 
     def schedule(self, season: str, week: int) -> list[dict[str, Any]]:
         return [
@@ -71,73 +122,27 @@ class NFLVerseClient:
         ]
 
     def player_stats(self, season: str, week: int) -> list[dict[str, Any]]:
-        rows = self._csv_rows(
-            PLAYER_STATS_URL.format(season=season), compressed=False
-        )
-        fields = (
-            "player_id",
-            "player_name",
-            "player_display_name",
-            "position",
-            "game_id",
-            "team",
-            "opponent_team",
-            "completions",
-            "attempts",
-            "passing_yards",
-            "passing_tds",
-            "passing_interceptions",
-            "passing_first_downs",
-            "passing_2pt_conversions",
-            "carries",
-            "rushing_yards",
-            "rushing_tds",
-            "rushing_first_downs",
-            "rushing_2pt_conversions",
-            "receptions",
-            "targets",
-            "receiving_yards",
-            "receiving_tds",
-            "receiving_first_downs",
-            "receiving_2pt_conversions",
-            "fumbles",
-            "fumbles_lost_total",
-            "special_teams_tds",
-            "def_tackles_solo",
-            "def_tackle_assists",
-            "def_sacks",
-            "def_interceptions",
-            "def_tds",
-            "fg_made",
-            "fg_att",
-            "fg_long",
-            "pat_made",
-            "pat_att",
-            "fantasy_points",
-            "fantasy_points_ppr",
-        )
-        text_fields = {
-            "player_id",
-            "player_name",
-            "player_display_name",
-            "position",
-            "game_id",
-            "team",
-            "opponent_team",
-        }
         return [
-            {
-                field: (
-                    row.get(field)
-                    if field in text_fields
-                    else _number(row.get(field))
-                )
-                for field in fields
-            }
-            for row in rows
-            if row.get("season") == str(season)
-            and row.get("week") == str(week)
-            and row.get("season_type") == "REG"
+            {key: value for key, value in row.items() if key != "week"}
+            for row in self.season_player_stats(season, week)
+            if row["week"] == int(week)
+        ]
+
+    def season_player_stats(
+        self, season: str, through_week: int
+    ) -> list[dict[str, Any]]:
+        """Return all regular-season player-stat rows through a completed week."""
+        season_key = str(season)
+        if season_key not in self._player_stats_cache:
+            rows = self._csv_rows(
+                PLAYER_STATS_URL.format(season=season), compressed=False
+            )
+            self._player_stats_cache[season_key] = _normalize_player_stats_rows(
+                rows, season_key
+            )
+        return [
+            row for row in self._player_stats_cache[season_key]
+            if 0 < row["week"] <= int(through_week)
         ]
 
     def injuries(self, season: str, week: int) -> list[dict[str, Any]]:

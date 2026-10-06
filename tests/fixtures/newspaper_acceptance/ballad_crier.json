@@ -1,0 +1,33 @@
+{
+  "publication_key": "ballad_crier",
+  "source_issue": "The Ballad Crier 2026.02.pdf",
+  "required_departments": [
+    "weekly_results",
+    "league_median",
+    "game_window_context",
+    "final_scorecard",
+    "lineup_flip_candidates",
+    "standings",
+    "ranking_movement",
+    "weekly_honors",
+    "player_position_leaders",
+    "waiver_impact",
+    "health_status",
+    "record_watch",
+    "next_matchups"
+  ],
+  "observed_printed": [
+    "weekly_results",
+    "league_median",
+    "game_window_context",
+    "final_scorecard",
+    "lineup_flip_candidates",
+    "standings",
+    "ranking_movement",
+    "weekly_honors",
+    "player_position_leaders",
+    "waiver_impact",
+    "record_watch"
+  ],
+  "note": "Ward Report and next-card evidence remain required research even when the compact issue does not print them."
+}

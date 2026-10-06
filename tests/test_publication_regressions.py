@@ -59,7 +59,7 @@ def test_volunteer_weekly_contract_has_no_division_assumptions():
         "Official Table",
         "Median Result",
         "Rankings Wire",
-        "Mountain MVP",
+        "King of the Hill",
         "Manager of the Week",
         "Benchwarmer",
         "Rookie of the Week",

@@ -103,7 +103,12 @@ def collect_all(
         if chronicle_revision:
             snapshot["chronicle_revision"] = str(chronicle_revision)
         _apply_player_context(snapshot, player_directory)
-        _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
+        _apply_context_scope(
+            snapshot,
+            shared,
+            include_deep=config.tier == "flagship",
+            player_directory=player_directory,
+        )
         _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
         _ensure_next_matchups(snapshot, sleeper, config.sleeper_league_id, week)
         _write_json(snapshot_path, snapshot)
@@ -382,6 +387,34 @@ def _collect_deep_nfl_context(
                 "records": [],
                 "error": str(exc),
             }
+    try:
+        fetcher = getattr(client, "season_player_stats")
+        records = fetcher(season, week)
+        if not isinstance(records, list):
+            raise ValueError("NFL season player stats response was not a list")
+        observed_weeks = sorted(
+            {
+                _safe_int_value(row.get("week"))
+                for row in records
+                if _safe_int_value(row.get("week")) is not None
+            }
+        )
+        expected_weeks = list(range(1, int(week) + 1))
+        week_coverage_complete = set(expected_weeks).issubset(observed_weeks)
+        sources["season_player_stats"] = {
+            "status": "available" if week_coverage_complete else "partial",
+            "through_week": int(week),
+            "weeks": observed_weeks,
+            "records": records,
+        }
+    except (requests.RequestException, ValueError, KeyError, OSError, AttributeError) as exc:
+        sources["season_player_stats"] = {
+            "status": "unavailable",
+            "through_week": int(week),
+            "weeks": [],
+            "records": [],
+            "error": str(exc),
+        }
     return sources
 
 
@@ -487,6 +520,7 @@ def _apply_context_scope(
     shared: dict[str, Any],
     *,
     include_deep: bool,
+    player_directory: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     context = snapshot.setdefault("nfl_context", {})
     # Complete weekly player stats are intentionally retained for every
@@ -494,11 +528,56 @@ def _apply_context_scope(
     # players rather than only players already present in the league snapshot.
     context["player_stats"] = dict(shared.get("player_stats") or {})
     if include_deep:
+        rookie_directory, unmapped_rookies = _build_rookie_player_directory(
+            player_directory or {}
+        )
+        season_stats = dict(shared.get("season_player_stats") or {})
+        known_rookies = set(rookie_directory)
+        season_stats["records"] = [
+            row for row in season_stats.get("records") or []
+            if str(row.get("player_id") or "").strip() in known_rookies
+        ]
+        season_stats["rookie_player_directory"] = rookie_directory
+        season_stats["unmapped_rookies"] = unmapped_rookies
+        context["season_player_stats"] = season_stats
+    if include_deep:
         context["snap_counts"] = dict(shared.get("snap_counts") or {})
         context["play_by_play"] = dict(shared.get("play_by_play") or {})
     else:
         context["snap_counts"] = {"status": "not_collected", "records": []}
         context["play_by_play"] = {"status": "not_collected", "records": []}
+
+
+def _build_rookie_player_directory(
+    player_directory: dict[str, dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], int]:
+    rookies: dict[str, dict[str, Any]] = {}
+    unmapped = 0
+    for sleeper_id, player in player_directory.items():
+        if _safe_int_value(player.get("years_exp")) != 0:
+            continue
+        position = str(player.get("position") or "").upper()
+        if position not in {"QB", "RB", "WR", "TE"}:
+            continue
+        gsis_id = str(player.get("gsis_id") or "").strip()
+        if not gsis_id:
+            unmapped += 1
+            continue
+        rookies[gsis_id] = {
+            "player_id": str(sleeper_id),
+            "player": str(player.get("full_name") or player.get("name") or sleeper_id),
+            "position": position,
+            "nfl_team": player.get("team"),
+            "years_exp": 0,
+        }
+    return rookies, unmapped
+
+
+def _safe_int_value(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _write_json(path: Path, value: Any) -> None:

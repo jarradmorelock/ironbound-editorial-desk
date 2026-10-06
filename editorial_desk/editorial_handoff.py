@@ -906,7 +906,8 @@ def _render_editorial_material(
             team = row.get("team") or row.get("winner") or "team not supplied"
             points = f", {_fmt(row.get('points'))} points" if row.get("points") is not None else ""
             evidence_ids = team_season_sources.get(int(row["roster_id"]), []) if row.get("roster_id") is not None else []
-            lines.append(_line(f"{label}: {_clean(team)}{points}.", _with_evidence(row, evidence_ids), citations))
+            fact_label = "Escape Artist system pick" if key == "escape_artist" else label
+            lines.append(_line(f"{fact_label}: {_clean(team)}{points}.", _with_evidence(row, evidence_ids), citations))
     player = packet.get("player_honors") or {}
     for key, label in (
         ("overall_player_of_the_week", "Overall Player of the Week"),
@@ -919,11 +920,35 @@ def _render_editorial_material(
             evidence_ids = player_sources.get((int(week), player_id), [])
             lines.append(
                 _line(
-                    f"{label}: {_clean(row.get('player'))} — {_fmt(row.get('points'))} FP for {_clean(row.get('team') or row.get('fantasy_team'))}.",
+                    f"{('Free Agent of the Week system pick' if key == 'free_agent_of_the_week' else label)}: {_clean(row.get('player'))} — {_fmt(row.get('points'))} FP for {_clean(row.get('team') or row.get('fantasy_team'))}.",
                     _with_evidence(row, evidence_ids),
                     citations,
                 )
             )
+    escape_pick = manager.get("escape_artist")
+    if isinstance(escape_pick, dict):
+        alternatives = [
+            row for row in _rows(manager.get("escape_artist_candidates"))
+            if row.get("team") != escape_pick.get("team")
+        ][:3]
+        if alternatives:
+            alternative_text = "; alternatives: " + "; ".join(
+                f"{_clean(row.get('team'))} ({_fmt(row.get('margin'))}-point win)"
+                for row in alternatives
+            )
+        else:
+            alternative_text = ""
+        lines.append(
+            f"- Escape Artist choice: {_clean(escape_pick.get('team'))}{alternative_text}. "
+            "`FINAL: [KEEP CURRENT or enter a different qualified winner]`"
+        )
+    free_agent_pick = player.get("free_agent_of_the_week")
+    if isinstance(free_agent_pick, dict):
+        lines.append(
+            f"- Free Agent of the Week choice: {_clean(free_agent_pick.get('player'))} "
+            f"({_fmt(free_agent_pick.get('points'))} FP). "
+            "`FINAL: [KEEP CURRENT or enter a different qualified winner]`"
+        )
     for position, rows in (player.get("started_position_leaders") or {}).items():
         row = rows if isinstance(rows, dict) else (_rows(rows)[0] if _rows(rows) else {})
         if row:
@@ -989,6 +1014,13 @@ def _render_editorial_material(
         )
         if leaders_text:
             lines.append(_line(f"Cumulative rookie {position} leaders: {leaders_text}.", rows, citations))
+    rookie_season = rookie.get("rookie_season_leaders") or {}
+    if rookie_season.get("coverage_scope") == "IRONBOUND_ROSTERED_ONLY":
+        lines.append(
+            "- Coverage gap: this cumulative rookie board only covers players rostered in the league; "
+            "unrostered NFL rookies are not included, so the league-wide leader is unverified. "
+            "`FINAL: [supply a complete rookie leader or mark this feature for follow-up]`"
+        )
 
     lines.extend(["", "### Rankings and playoff picture", ""])
     ranks = _rows((packet.get("power_rankings") or {}).get("rows"))

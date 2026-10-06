@@ -110,6 +110,7 @@ def build_source_manifest(
             }
             for key in (
                 "player_stats",
+                "season_player_stats",
                 "snap_counts",
                 "play_by_play",
                 "injuries",

@@ -213,7 +213,7 @@ def _research():
             "season_efficiency_top_three": [{"roster_id": 1, "weeks": 3}],
             "season_team_score_top_three": [{"roster_id": 1, "weeks": 3}],
             "player_season_top_three": {"status": "READY", "by_position": {"QB": [{"player_id": "q"}]}},
-            "rookie_season_leaders": {"status": "READY", "by_position": {"WR": [{"player_id": "rookie0"}]}},
+            "rookie_season_leaders": {"status": "READY", "coverage_scope": "ALL_NFL_ROOKIES", "by_position": {"WR": [{"player_id": "rookie0"}]}},
             "rotating_award_candidates": [],
             "rotating_award_manual_review": [],
             "award_audit": {"BY_A_RIVET": {"availability": "AVAILABLE"}},
@@ -262,8 +262,8 @@ def _health():
     }
 
 
-def _packet(transactions=None):
-    research = _research()
+def _packet(transactions=None, research=None):
+    research = research or _research()
     external = ExternalEditorialInputs("ironbound_weekly", schema_version=3)
     return build_publication_complete_packet(
         _snapshot(),
@@ -328,6 +328,56 @@ def test_optional_market_enrichment_does_not_block_publication():
         gap["section"] == "optional_market"
         for gap in packet["readiness"]["optional_gaps"]
     )
+
+
+def test_rostered_only_rookie_leaderboard_blocks_publication_ready():
+    packet = _packet()
+    packet["rookie_watch"]["rookie_season_leaders"].update(
+        {
+            "status": "PARTIAL",
+            "coverage_scope": "IRONBOUND_ROSTERED_ONLY",
+            "reason": "Unrostered rookie player histories were not collected.",
+        }
+    )
+    packet["readiness"] = validate_publication_complete_packet(packet)
+
+    assert packet["readiness"]["publication_ready"] is False
+    assert any(
+        gap["code"] == "ROOKIE_SEASON_SCOPE_INCOMPLETE"
+        and "unrostered" in gap["detail"].casefold()
+        for gap in packet["readiness"]["blocking_gaps"]
+    )
+
+
+def test_nflverse_rookie_week_evidence_is_indexed_for_offline_citations():
+    research = _research()
+    evidence_id = "nflverse-player-week:2026:1:gsis-rookie"
+    research["weekly_honors"]["rookie_season_leaders"] = {
+        "status": "READY",
+        "coverage_scope": "ALL_NFL_ROOKIES",
+        "by_position": {
+            "QB": [
+                {
+                    "player_id": "rookie-sleeper-id",
+                    "player": "Jack Strand",
+                    "points": 1.5,
+                    "evidence_ids": [evidence_id],
+                }
+            ]
+        },
+    }
+
+    packet = _packet(research=research)
+
+    assert packet["evidence_index"][evidence_id] == {
+        "evidence_id": evidence_id,
+        "kind": "nflverse_player_week",
+        "source": "nflverse",
+        "season": "2026",
+        "week": 1,
+        "player_id": "rookie-sleeper-id",
+        "gsis_id": "gsis-rookie",
+    }
 
 
 def test_packet_does_not_require_fixed_page_count():

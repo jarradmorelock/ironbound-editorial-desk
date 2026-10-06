@@ -212,7 +212,7 @@ def _build_packet(input_name):
                 for idx, name in enumerate(data.get("season_team_points_top_three") or teams[:3])
             ],
             "player_season_top_three": {"status": "READY", "by_position": {"QB": [{"player_id": "q"}]}},
-            "rookie_season_leaders": {"status": "READY", "by_position": {"WR": [{"player_id": "rookie1"}]}},
+            "rookie_season_leaders": {"status": "READY", "coverage_scope": "ALL_NFL_ROOKIES", "by_position": {"WR": [{"player_id": "rookie1"}]}},
             "rotating_award_candidates": no_fear,
             "rotating_award_manual_review": [],
             "award_audit": {"BY_A_RIVET": {"availability": "AVAILABLE"}},

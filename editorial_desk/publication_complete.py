@@ -389,6 +389,27 @@ def build_publication_complete_packet(
         normalized_health,
         compiled_week_ahead,
     )
+    rookie_board = (
+        (research_packet.get("weekly_honors") or {}).get("rookie_season_leaders")
+        or {}
+    )
+    for rows in (rookie_board.get("by_position") or {}).values():
+        for row in rows if isinstance(rows, list) else [rows]:
+            for raw_id in row.get("evidence_ids") or []:
+                evidence_id = str(raw_id)
+                parts = evidence_id.split(":", 3)
+                if len(parts) != 4 or parts[0] != "nflverse-player-week":
+                    continue
+                _, evidence_season, evidence_week, gsis_id = parts
+                evidence_index[evidence_id] = {
+                    "evidence_id": evidence_id,
+                    "kind": "nflverse_player_week",
+                    "source": "nflverse",
+                    "season": evidence_season,
+                    "week": int(evidence_week),
+                    "player_id": row.get("player_id"),
+                    "gsis_id": gsis_id,
+                }
 
     packet: dict[str, Any] = {
         "schema_version": 1,
@@ -656,7 +677,18 @@ def _flagship_readiness(packet: dict[str, Any]) -> dict[str, Any]:
             + ", ".join(str(value) for value in incomplete_rookies),
         )
     rookie_season = rookie.get("rookie_season_leaders") or {}
-    if rookie_season.get("status") != "READY":
+    if rookie_season.get("coverage_scope") != "ALL_NFL_ROOKIES":
+        detail = str(
+            rookie_season.get("reason")
+            or "The cumulative rookie board does not prove complete NFL-wide player coverage."
+        )
+        _block(
+            blocking,
+            "rookie_watch",
+            "ROOKIE_SEASON_SCOPE_INCOMPLETE",
+            detail,
+        )
+    elif rookie_season.get("status") != "READY":
         detail = str(rookie_season.get("reason") or rookie_season.get("status"))
         unresolved = rookie_season.get("unresolved_player_weeks") or []
         if unresolved and "unresolved player-week evidence" not in detail:

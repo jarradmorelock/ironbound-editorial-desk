@@ -241,6 +241,36 @@ def test_writer_brief_leaves_editable_page_headline_before_each_game_breakdown()
     assert "Use any completed Game-page headline verbatim" in text
 
 
+def test_writer_brief_flags_limited_rookie_scope_and_exposes_award_review_choices():
+    packet = _packet()
+    packet["rookie_watch"]["rookie_season_leaders"] = {
+        "status": "PARTIAL",
+        "coverage_scope": "IRONBOUND_ROSTERED_ONLY",
+        "reason": "Unrostered rookie player histories were not collected.",
+        "by_position": {"QB": [{"player": "Cade Klubnik", "points": 0.0}]},
+    }
+    packet["manager_honors"].update(
+        {
+            "escape_artist": {"team": "Madtown Coyotes"},
+            "escape_artist_candidates": [
+                {"team": "Madtown Coyotes", "margin": 22.39},
+                {"team": "Granite Mountain Drakes", "margin": 1.73},
+            ],
+        }
+    )
+    packet["player_honors"]["free_agent_of_the_week"] = {
+        "player": "Noah Fant", "points": 17.8, "team": "NO"
+    }
+
+    text = render_offline_writer_brief(packet, build_issue_plan(packet))
+
+    assert "only covers players rostered in the league" in text
+    assert "Escape Artist system pick: Madtown Coyotes" in text
+    assert "Granite Mountain Drakes" in text
+    assert "Free Agent of the Week system pick: Noah Fant" in text
+    assert "FINAL: [KEEP CURRENT or enter a different qualified winner]" in text
+
+
 def test_power_board_writer_inputs_show_score_components_weights_and_distinct_standings():
     packet = _packet()
     packet["power_board"]["writeup_inputs"] = [

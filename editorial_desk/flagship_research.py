@@ -631,20 +631,38 @@ def validate_flagship_research_packet(packet: dict[str, Any]) -> dict[str, Any]:
         has_applicable_positions = key == "rookie_season_leaders" or bool(
             board.get("by_position")
         )
-        board_ready = board.get("status") == "READY" and has_applicable_positions
+        rookie_scope_complete = (
+            key != "rookie_season_leaders"
+            or board.get("coverage_scope") == "ALL_NFL_ROOKIES"
+        )
+        board_ready = (
+            board.get("status") == "READY"
+            and has_applicable_positions
+            and rookie_scope_complete
+        )
+        detail = str(board.get("reason") or board.get("status") or "unavailable")
+        if key == "rookie_season_leaders" and not rookie_scope_complete:
+            detail = (
+                "Complete NFL rookie scoring history is required; current-league-rostered "
+                "players are not a complete rookie player pool. "
+                + detail
+            )
         _check(
             checks,
             check_name,
             board_ready,
             f"complete through Week {season_week}"
             if board_ready
-            else str(board.get("reason") or board.get("status") or "unavailable"),
+            else detail,
         )
         if not board_ready:
-            manual.append(
-                f"{label} requires complete per-player scoring history through Week {season_week}; "
-                + str(board.get("reason") or "source history unavailable")
-            )
+            if key == "rookie_season_leaders" and not rookie_scope_complete:
+                manual.append(detail)
+            else:
+                manual.append(
+                    f"{label} requires complete per-player scoring history through Week {season_week}; "
+                    + str(board.get("reason") or "source history unavailable")
+                )
 
     for key, label in (
         ("power_rankings_chart", "Power Rankings"),
@@ -1818,6 +1836,60 @@ def _season_player_boards(
             if rookie_candidates:
                 rookie_by_position[position] = rookie_candidates[0]
 
+    season_source = (snapshot.get("nfl_context") or {}).get("season_player_stats") or {}
+    rookie_directory = season_source.get("rookie_player_directory") or {}
+    expected_source_weeks = list(range(1, through_week + 1))
+    season_source_complete = (
+        season_source.get("status") == "available"
+        and int(season_source.get("through_week") or 0) == through_week
+        and list(season_source.get("weeks") or []) == expected_source_weeks
+        and int(season_source.get("unmapped_rookies") or 0) == 0
+        and bool(rookie_directory)
+    )
+    all_nfl_rookie_by_position: dict[str, dict[str, Any]] = {}
+    if season_source_complete:
+        from .weekly_features import _score_nflverse_row
+
+        scoring = (snapshot.get("league") or {}).get("scoring_settings") or {}
+        totals: dict[str, dict[str, Any]] = {}
+        for gsis_id, player in rookie_directory.items():
+            player_id = str(player.get("player_id") or "")
+            position = str(player.get("position") or "").upper()
+            if not player_id or position not in CORE_POSITIONS:
+                continue
+            roster_id = current_roster_by_player.get(player_id)
+            totals[gsis_id] = {
+                "player_id": player_id,
+                "player": str(player.get("player") or player_id),
+                "position": position,
+                "points": 0.0,
+                "fantasy_team": team_names.get(roster_id, "UNROSTERED"),
+                "nfl_team": player.get("nfl_team"),
+                "weeks": [],
+                "through_week": through_week,
+                "evidence_ids": [],
+            }
+        for stat_row in season_source.get("records") or []:
+            gsis_id = str(stat_row.get("player_id") or "").strip()
+            week = _safe_int(stat_row.get("week"))
+            result = totals.get(gsis_id)
+            if result is None or week is None or not 0 < week <= through_week:
+                continue
+            result["points"] += _score_nflverse_row(stat_row, scoring)
+            result["weeks"].append(week)
+            result["evidence_ids"].append(
+                f"nflverse-player-week:{(snapshot.get('league') or {}).get('season') or (snapshot.get('nfl_state') or {}).get('season') or 'unknown'}:{week}:{gsis_id}"
+            )
+        for row in totals.values():
+            row["points"] = round(float(row["points"]), 2)
+            row["weeks"] = sorted(set(row["weeks"]))
+            row["evidence_ids"] = sorted(set(row["evidence_ids"]))
+            current = all_nfl_rookie_by_position.get(row["position"])
+            if current is None or (row["points"], row["player"].casefold()) > (
+                current["points"], current["player"].casefold()
+            ):
+                all_nfl_rookie_by_position[row["position"]] = row
+
     reason = "; ".join(reasons) if reasons else None
     coverage_summary = {
         key: len(values)
@@ -1837,13 +1909,38 @@ def _season_player_boards(
             "by_position": by_position if status == "READY" else {},
         },
         "rookie_season_leaders": {
-            "status": status,
+            "status": (
+                "READY"
+                if status == "READY" and season_source_complete
+                else ("PARTIAL" if status == "READY" else status)
+            ),
+            "coverage_scope": (
+                "ALL_NFL_ROOKIES" if season_source_complete else "IRONBOUND_ROSTERED_ONLY"
+            ),
             "through_week": through_week,
-            "reason": reason,
-            "coverage": coverage_summary,
+            "reason": (
+                None
+                if status == "READY" and season_source_complete
+                else (
+                    "Unrostered rookie player histories are not available in the league roster history."
+                    if status == "READY"
+                    else reason
+                )
+            ),
+            "coverage": {
+                **coverage_summary,
+                "nflverse_source_weeks": len(season_source.get("weeks") or []),
+                "unmapped_rookies": int(season_source.get("unmapped_rookies") or 0),
+            },
             "unresolved_player_weeks": unresolved_ids,
             "manual_verify_player_weeks": manual_verify_ids,
-            "by_position": rookie_by_position if status == "READY" else {},
+            # Prefer the complete NFL-wide calculation when available. Keep the
+            # rostered board visible as partial evidence otherwise.
+            "by_position": (
+                all_nfl_rookie_by_position
+                if season_source_complete
+                else (rookie_by_position if status == "READY" else {})
+            ),
         },
     }
 
@@ -1950,12 +2047,15 @@ def _manager_weekly_awards(
             str(row["team"]).casefold(),
         )
     )
+    # Escape Artist describes the closest verified win. Entering record is a
+    # tie-breaker only; prioritizing winning records selected comfortable wins
+    # over the narrow escapes used in the finished Ironbound issue.
     wins.sort(
         key=lambda row: (
+            row["margin"],
             -(row["entering_record"]["wins"] > row["entering_record"]["losses"])
             if row["entering_record"]
             else 0,
-            row["margin"],
             row["points"] + row["opponent_points"],
             str(row["team"]).casefold(),
         )

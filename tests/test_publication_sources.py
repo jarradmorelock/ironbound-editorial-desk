@@ -21,6 +21,12 @@ def _snapshot():
         },
         "nfl_context": {
             "player_stats": {"status": "available", "records": []},
+            "season_player_stats": {
+                "status": "available",
+                "through_week": 3,
+                "weeks": [1, 2, 3],
+                "records": [{"player_id": "gsis-rookie", "week": 1}],
+            },
             "snap_counts": {"status": "available", "records": []},
             "play_by_play": {"status": "available", "records": []},
             "injuries": {"status": "available", "records": []},
@@ -54,6 +60,10 @@ def test_source_manifest_reports_history_projection_and_ranking_status():
     assert manifest["rankings"]["status"] == "READY"
     assert manifest["rankings"]["results_through_week"] == 3
     assert manifest["publication_assets"]["status"] == "READY"
+    assert manifest["nflverse"]["season_player_stats"] == {
+        "status": "AVAILABLE",
+        "record_count": 1,
+    }
 
 
 def test_health_evidence_excludes_observation_after_cutoff():

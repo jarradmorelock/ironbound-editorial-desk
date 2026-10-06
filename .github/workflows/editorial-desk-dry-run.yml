@@ -718,6 +718,21 @@ jobs:
               'rookie_stat_rows_matched_by_gsis': sum(1 for row in all_stats if str(row.get('player_id') or '').strip() in rookie_gsis_ids),
               'unique_rookie_gsis_ids_with_stats': len({str(row.get('player_id') or '').strip() for row in all_stats
                                                          if str(row.get('player_id') or '').strip() in rookie_gsis_ids}),
+              'sample_unmapped_rookies': [
+                  {'name': name, 'position': position, 'team': team}
+                  for name, position, team in unmapped_rookie_entries[:8]
+              ],
+              'sample_nflverse_rows': [
+                  {'player_id': row.get('player_id'),
+                   'player': row.get('player_display_name') or row.get('player_name'),
+                   'position': row.get('position'), 'team': row.get('team'), 'week': row.get('week')}
+                  for row in all_stats[:8]
+              ],
+              'player_directory_years_exp_counts': {
+                  str(exp): sum(1 for player in player_directory.values() if str(player.get('years_exp')) == str(exp))
+                  for exp in sorted({str(player.get('years_exp')) for player in player_directory.values()})
+              },
+              'player_directory_total': len(player_directory),
           }
           print('Week 3 season-history coverage diagnostics: ' + json.dumps(season_stats_audit, sort_keys=True))
           snapshot.setdefault('nfl_context', {})['season_player_stats'] = {

@@ -240,6 +240,31 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
     }
 
 
+def test_player_finals_do_not_infer_missing_score_as_zero():
+    from editorial_desk.chronicle_collect import _normalize_player_fantasy_finals
+
+    events = _normalize_player_fantasy_finals(
+        "a",
+        "2026",
+        1,
+        [
+            {
+                "roster_id": 1,
+                "matchup_id": 1,
+                "players": ["scored", "zero", "missing"],
+                "players_points": {"scored": 12.5, "zero": 0.0},
+            }
+        ],
+        {},
+        "2026-09-15T12:00:00+00:00",
+    )
+
+    assert {event.entities["player_id"]: event.evidence["points"] for event in events} == {
+        "scored": 12.5,
+        "zero": 0.0,
+    }
+
+
 def test_failed_health_refresh_does_not_create_fake_healthy_transition(
     tmp_path: Path,
 ):

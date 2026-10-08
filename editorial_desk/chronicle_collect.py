@@ -298,34 +298,48 @@ def _normalize_player_fantasy_finals(
     matchups: list[dict[str, Any]],
     players: dict[str, Any],
     observed_at: str,
+    existing_rows: list[dict[str, Any]] = (),
 ) -> list[ChronicleEvent]:
     """Persist each rostered player's finalized Sleeper fantasy score."""
+    existing_by_key = {
+        (int(row.get("week") or 0), int(row.get("roster_id") or 0), str(row.get("player_id") or "")): row
+        for row in existing_rows
+    }
     events: list[ChronicleEvent] = []
     for matchup in matchups:
         roster_id = int(matchup.get("roster_id") or 0)
         if not roster_id:
             continue
-        raw_points = (
-            matchup.get("players_points")
-            or matchup.get("players_points_custom")
-            or {}
-        )
-        points = {str(player_id): float(value or 0) for player_id, value in raw_points.items()}
-        player_ids = sorted(
-            {str(player_id) for player_id in matchup.get("players") or []}
-            | {str(player_id) for player_id in matchup.get("starters") or []}
-            | set(points)
-        )
+        points = {
+            str(player_id): value
+            for source in (matchup.get("players_points"), matchup.get("players_points_custom"))
+            if isinstance(source, dict)
+            for player_id, value in source.items()
+        }
         matchup_id = matchup.get("matchup_id")
-        for player_id in player_ids:
+        for player_id in sorted(points):
+            try:
+                player_points = round(float(points[player_id]), 2)
+            except (TypeError, ValueError):
+                continue
             player = players.get(player_id) or {}
             positions = player.get("fantasy_positions") or []
             position = player.get("position") or (positions[0] if positions else None)
             evidence = {
                 "matchup_id": matchup_id,
                 "position": str(position).upper() if position else None,
-                "points": round(points.get(player_id, 0.0), 2),
+                "points": player_points,
             }
+            existing = existing_by_key.get((int(week), roster_id, player_id))
+            correction_of = None
+            if existing is not None:
+                try:
+                    unchanged = round(float(existing.get("points")), 2) == player_points
+                except (TypeError, ValueError):
+                    unchanged = False
+                if unchanged:
+                    continue
+                correction_of = existing.get("event_id")
             events.append(
                 make_event(
                     event_type="PLAYER_FANTASY_WEEK_FINAL",
@@ -341,6 +355,7 @@ def _normalize_player_fantasy_finals(
                     entities={"roster_id": roster_id, "player_id": player_id},
                     observed_at=observed_at,
                     evidence=evidence,
+                    correction_of=correction_of,
                 )
             )
     return events

@@ -234,7 +234,9 @@ class ChronicleQueries:
     ) -> list[dict[str, Any]]:
         """Return finalized per-player fantasy scores for one season."""
         wanted = str(season)
-        rows: list[dict[str, Any]] = []
+        latest_by_key: dict[tuple[int, int, str], dict[str, Any]] = {}
+        events = self.league_events(league_key, {"PLAYER_FANTASY_WEEK_FINAL"})
+        matching_events = []
         for event in self.league_events(
             league_key, {"PLAYER_FANTASY_WEEK_FINAL"}
         ):
@@ -247,17 +249,38 @@ class ChronicleQueries:
             week = int(event.get("week") or 0)
             if not roster_id or not player_id or week <= 0:
                 continue
-            rows.append(
-                {
-                    "season": wanted,
-                    "week": week,
-                    "roster_id": roster_id,
-                    "player_id": player_id,
-                    "position": evidence.get("position"),
-                    "points": float(evidence.get("points") or 0),
-                    "event_id": event.get("event_id"),
-                }
+            matching_events.append(event)
+        replaced = {
+            str(event.get("correction_of"))
+            for event in matching_events
+            if event.get("correction_of")
+        }
+        for event in matching_events:
+            if str(event.get("event_id") or "") in replaced:
+                continue
+            evidence = dict(event.get("evidence") or {})
+            entities = dict(event.get("entities") or {})
+            key = (
+                int(event.get("week") or 0),
+                int(entities.get("roster_id") or 0),
+                str(entities.get("player_id") or ""),
             )
+            candidate = {
+                "season": wanted,
+                "week": key[0],
+                "roster_id": key[1],
+                "player_id": key[2],
+                "position": evidence.get("position"),
+                "points": float(evidence.get("points") or 0),
+                "event_id": event.get("event_id"),
+                "source": event.get("source"),
+                "observed_at": event.get("observed_at"),
+                "correction_of": event.get("correction_of"),
+            }
+            previous = latest_by_key.get(key)
+            if previous is None or str(candidate["observed_at"] or "") > str(previous["observed_at"] or ""):
+                latest_by_key[key] = candidate
+        rows = list(latest_by_key.values())
         rows.sort(
             key=lambda row: (
                 row["week"],

@@ -1,4 +1,6 @@
 import json
+import zipfile
+from io import BytesIO
 
 import pytest
 
@@ -11,6 +13,7 @@ from editorial_desk.emailer import (
     build_supplement_email,
     send_supplement_email,
 )
+import editorial_desk.emailer as emailer
 
 
 def _weekly_packet(tmp_path, week=1):
@@ -55,6 +58,50 @@ def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
     attachments = list(message.iter_attachments())
     assert len(attachments) == 1
     assert attachments[0].get_filename() == "ironbound-week-01.md"
+
+
+def test_research_archive_contains_all_current_week_files_once(tmp_path):
+    first = _weekly_packet(tmp_path)
+    second = tmp_path / "2026" / "week-01" / "free_ironbound"
+    second.mkdir(parents=True)
+    (second / "dossier.json").write_text(json.dumps({"season": "2026"}), encoding="utf-8")
+    (second / "dossier.md").write_text("# second league\n", encoding="utf-8")
+    (first / "publication_complete_packet.json").write_text('{"ready": true}\n', encoding="utf-8")
+    (first / "cover.png").write_bytes(b"image bytes")
+    support = first / "supporting_files"
+    support.mkdir()
+    (support / "sources.json").write_text('{"sources": []}\n', encoding="utf-8")
+    (second / "writer_brief.md").write_text("writer brief\n", encoding="utf-8")
+
+    archive_bytes = emailer._build_research_archive(tmp_path, "2026", 1)
+
+    with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
+        members = archive.namelist()
+        assert set(members) == {
+            "2026/week-01/ironbound/dossier.md",
+            "2026/week-01/ironbound/dossier.json",
+            "2026/week-01/ironbound/publication_complete_packet.json",
+            "2026/week-01/ironbound/cover.png",
+            "2026/week-01/ironbound/supporting_files/sources.json",
+            "2026/week-01/free_ironbound/dossier.json",
+            "2026/week-01/free_ironbound/dossier.md",
+            "2026/week-01/free_ironbound/writer_brief.md",
+        }
+        assert len(members) == len(set(members))
+        assert archive.read("2026/week-01/ironbound/cover.png") == b"image bytes"
+
+
+def test_research_archive_excludes_other_weeks(tmp_path):
+    first = _weekly_packet(tmp_path, week=1)
+    later = _weekly_packet(tmp_path, week=2)
+    (first / "packet.json").write_text("week one", encoding="utf-8")
+    (later / "packet.json").write_text("week two", encoding="utf-8")
+
+    archive_bytes = emailer._build_research_archive(tmp_path, "2026", 1)
+
+    with zipfile.ZipFile(BytesIO(archive_bytes)) as archive:
+        assert all("week-02" not in name for name in archive.namelist())
+        assert archive.read("2026/week-01/ironbound/packet.json") == b"week one"
 
 
 def test_build_dossier_email_can_attach_validated_monthly_chronicle_archive(tmp_path):

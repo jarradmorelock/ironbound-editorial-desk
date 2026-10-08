@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from email.message import EmailMessage
+from io import BytesIO
 import json
 from pathlib import Path
 import smtplib
 from typing import Any
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from .reading_packet import reading_packet_from_artifacts
 
@@ -18,6 +20,36 @@ from .chronicle_backup import (
 
 class EmailDeliveryError(RuntimeError):
     """Raised when a weekly email cannot be prepared or delivered."""
+
+
+def _build_research_archive(output_root: Path, season: str, week: int) -> bytes:
+    """Package every publication file for one season and week with stable paths."""
+    root = Path(output_root)
+    week_root = root / str(season) / f"week-{int(week):02d}"
+    dossier_paths = sorted(week_root.glob("*/dossier.json"))
+    publication_dirs: set[Path] = set()
+    for dossier_path in dossier_paths:
+        try:
+            dossier = json.loads(dossier_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EmailDeliveryError(
+                f"Cannot read the matching dossier data for {dossier_path}"
+            ) from exc
+        if str(dossier.get("season") or "unknown") == str(season):
+            publication_dirs.add(dossier_path.parent)
+    files = sorted(
+        (path for directory in publication_dirs for path in directory.rglob("*") if path.is_file()),
+        key=lambda path: path.relative_to(root).as_posix(),
+    )
+    if not files:
+        raise EmailDeliveryError(
+            f"No generated publication files found for {season} week {week} under {week_root}"
+        )
+    buffer = BytesIO()
+    with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
+        for path in files:
+            archive.write(path, arcname=path.relative_to(root).as_posix())
+    return buffer.getvalue()
 
 
 def build_dossier_email(

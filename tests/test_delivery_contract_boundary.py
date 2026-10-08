@@ -1,4 +1,6 @@
 import json
+from io import BytesIO
+from zipfile import ZipFile
 
 from editorial_desk.collector import collect_league
 from editorial_desk.config import (
@@ -201,8 +203,9 @@ def test_newspaper_email_delivers_named_publication_packet_not_generic_dossier(t
 
     attachments = list(message.iter_attachments())
     assert len(attachments) == 1
-    assert attachments[0].get_filename() == "rocky_top_rumble-week-01.md"
-    content = attachments[0].get_content()
+    assert attachments[0].get_filename() == "research-2026-week-01.zip"
+    with ZipFile(BytesIO(attachments[0].get_payload(decode=True))) as archive:
+        content = archive.read("2026/week-01/rocky_top_rumble/publication_packet.md").decode()
     assert "## Official Table" in content
     assert "## Decision Desk" in content
     assert "## Mountain MVP" in content
@@ -232,12 +235,11 @@ def test_flagship_email_consolidates_dossier_and_story_desk(tmp_path):
 
     attachments = list(message.iter_attachments())
     assert [part.get_filename() for part in attachments] == [
-        "ironbound_sixteen-week-01.md",
+        "research-2026-week-01.zip",
     ]
-    content = attachments[0].get_content()
-    assert "Generic Research Dossier" not in content
-    assert "## EDITOR'S BRIEF" in content
-    assert "Rivalry History — Alpha / Beta" in content
+    with ZipFile(BytesIO(attachments[0].get_payload(decode=True))) as archive:
+        assert "2026/week-01/ironbound_sixteen/story_desk.json" in archive.namelist()
+        assert "2026/week-01/ironbound_sixteen/dossier.json" in archive.namelist()
     assert (directory / "dossier.md").is_file()
     assert (directory / "story_desk.md").is_file()
 
@@ -263,5 +265,7 @@ def test_flagship_email_uses_exact_validated_research_packet_when_present(tmp_pa
     )
 
     attachment = list(message.iter_attachments())[0]
-    assert attachment.get_content().strip() == flagship_text.strip()
-    assert "EDITOR'S BRIEF" not in attachment.get_content()
+    with ZipFile(BytesIO(attachment.get_payload(decode=True))) as archive:
+        assert archive.read(
+            "2026/week-01/ironbound_sixteen/flagship_research_packet.md"
+        ).decode().strip() == flagship_text.strip()

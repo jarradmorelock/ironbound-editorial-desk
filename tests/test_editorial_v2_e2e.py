@@ -551,6 +551,6 @@ def test_editorial_desk_v2_end_to_end(tmp_path, monkeypatch):
     assert attachment_count == 2
     assert len(delivered) == 1
     filenames = {part.get_filename() for part in delivered[0].iter_attachments()}
-    assert "ironbound_sixteen-week-07.md" in filenames
+    assert "research-2026-week-07.zip" in filenames
     assert "chronicle-fixture.zip" in filenames
     assert monthly_receipt_path(chronicle_root, accepted_at).exists()

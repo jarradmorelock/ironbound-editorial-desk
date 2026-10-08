@@ -1,5 +1,7 @@
 import copy
+from io import BytesIO
 import json
+from zipfile import ZipFile
 
 import pytest
 
@@ -8,6 +10,7 @@ from editorial_desk.metrics import build_weekly_dossier
 from editorial_desk.publication_packets import build_publication_packet
 from editorial_desk.publication_render import render_publication_packet
 from editorial_desk.review import build_editorial_review
+from editorial_desk.reading_packet import reading_packet_from_artifacts
 from test_delivery_contract_boundary import _publication, _snapshot
 
 
@@ -67,11 +70,17 @@ def test_email_consolidates_readiness_and_named_stories_without_raw_evidence(tmp
     for name, value in [('dossier', dossier), ('story_desk', story)]:
         (directory / f'{name}.json').write_text(json.dumps(value))
         (directory / f'{name}.md').write_text('RAW EVIDENCE SENTINEL')
+    (directory / 'reading_packet.md').write_text(
+        reading_packet_from_artifacts(directory, dossier), encoding='utf-8'
+    )
     before = {p.name: p.read_bytes() for p in directory.iterdir()}
     message = build_dossier_email(tmp_path, 1, 'a@example.com', 'b@example.com')
     parts = list(message.iter_attachments())
     assert len(parts) == 1
-    text = parts[0].get_content()
+    assert parts[0].get_filename() == 'research-2026-week-01.zip'
+    with ZipFile(BytesIO(parts[0].get_payload(decode=True))) as archive:
+        text = archive.read('2026/week-01/' + key + '/reading_packet.md').decode()
+        assert '2026/week-01/' + key + '/story_desk.json' in archive.namelist()
     assert text.index("## EDITOR'S BRIEF") < text.index('## COMMISSIONER REQUESTS') < text.index('## STORY DESK')
     assert 'Supply official Power Rankings.' in text
     assert 'Snap counts already supplied.' in text
@@ -183,7 +192,9 @@ def test_enriched_collection_writes_same_reading_packet_as_email(tmp_path, monke
     assert reading_path in generated
     text = reading_path.read_text()
     email = build_dossier_email(tmp_path, 1, 'a@example.com', 'b@example.com')
-    assert list(email.iter_attachments())[0].get_content().strip() == text.strip()
+    attachment = list(email.iter_attachments())[0]
+    with ZipFile(BytesIO(attachment.get_payload(decode=True))) as archive:
+        assert archive.read('2026/week-01/demo/reading_packet.md').decode().strip() == text.strip()
     assert 'Holler' not in text and 'division_id' not in text
     assert json.loads(snapshot_path.read_text())['rosters'][0]['settings']['division'] == 1
 

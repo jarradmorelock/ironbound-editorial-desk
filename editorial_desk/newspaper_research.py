@@ -6,6 +6,7 @@ from typing import Any
 
 from .publication_policy import publication_view
 from .reading_packet import fact_lines
+from .player_scoring_history import season_leaders
 
 
 PROFILE_CONTRACTS: dict[str, dict[str, Any]] = {
@@ -196,6 +197,8 @@ def build_newspaper_research_packet(
         },
         publication_packet,
     )
+    if snapshot.get("player_scoring_history"):
+        packet["season_player_leaders"] = season_leaders(snapshot)
     packet["validation"] = validate_newspaper_research_packet(packet)
     return packet
 
@@ -222,6 +225,8 @@ def validate_newspaper_research_packet(packet: dict[str, Any]) -> dict[str, Any]
             manual.append(f"Required department {feature!r} is missing from the newspaper contract.")
             continue
         if section.get("status") == "unavailable":
+            checks[-1]["passed"] = False
+            checks[-1]["detail"] = "source unavailable"
             manual.append(
                 f"{section.get('display_name') or feature}: source unavailable"
                 + (f" ({section.get('reason')})" if section.get("reason") else "")
@@ -245,6 +250,11 @@ def validate_newspaper_research_packet(packet: dict[str, Any]) -> dict[str, Any]
         if division_leak:
             manual.append("Volunteer Voice contains dormant Rocky Top division data; suppress it before publication.")
 
+    for name, board in (packet.get("season_player_leaders") or {}).items():
+        available = board.get("status") == "READY"
+        checks.append({"name": name, "passed": available, "detail": board.get("reason") or board.get("status")})
+        if not available:
+            manual.append(f"{name}: {board.get('reason') or 'incomplete scoring history'}")
     return {
         "contract_valid": all(row["passed"] for row in checks),
         "research_complete": not manual and all(row["passed"] for row in checks),
@@ -299,6 +309,15 @@ def render_newspaper_research_packet(packet: dict[str, Any]) -> str:
             if data not in (None, [], {}, ()) and not facts:
                 lines.extend(f"- {row}" for row in _compact_evidence(data))
 
+    for key, board in (packet.get("season_player_leaders") or {}).items():
+        title = "Cumulative player leaders" if key == "player_season_top_three" else "Cumulative rookie leaders"
+        lines.extend(["", f"## {title} through Week {board.get('through_week')}", "", f"Status: **{board.get('status')}**",
+                      board.get("policy") or ""])
+        if board.get("reason"):
+            lines.append(str(board["reason"]))
+        for position, entries in (board.get("by_position") or {}).items():
+            for row in entries if isinstance(entries, list) else [entries]:
+                lines.append(f"- {position}: {row['player']} — {row['fantasy_team']} — {row['points']:.2f} FP")
     lines.extend(
         [
             "",
@@ -401,7 +420,9 @@ def _render_feature(feature: str, data: Any) -> list[str]:
             prior = row.get("previous_rank")
             movement = row.get("movement")
             if prior is None:
-                move_text = "movement unavailable (no prior published baseline)"
+                move_text = (f"carried forward from Week {row.get('ranking_source_week')}; no new movement claimed"
+                             if row.get("movement_status") == "carried_forward"
+                             else "movement unavailable (no prior published baseline)")
             elif int(movement or 0) > 0:
                 move_text = f"up {int(movement)} from #{int(prior)}"
             elif int(movement or 0) < 0:

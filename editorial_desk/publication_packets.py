@@ -504,6 +504,8 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
         power_status = "Data Power ranking inputs unavailable"
     if not rows:
         return unavailable("ranking_movement", power_status)
+    carried = isinstance(power, dict) and power.get("ranking_status") == "carried_forward"
+    prior_week = (rankings.get("prior_published_ranking") or {}).get("week")
     previous = {
         int(row.get("roster_id") or 0): row
         for row in ((rankings.get("prior_published_ranking") or {}).get("rows") or [])
@@ -514,7 +516,7 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
         roster_id = int(row.get("roster_id") or 0)
         current_rank = int(row.get("rank") or index)
         prior = previous.get(roster_id) or {}
-        previous_rank = prior.get("rank")
+        previous_rank = None if carried else prior.get("rank")
         movement = (
             int(previous_rank) - current_rank
             if previous_rank is not None
@@ -528,20 +530,24 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
                 "previous_rank": previous_rank,
                 "movement": movement,
                 "movement_status": (
-                    "available" if previous_rank is not None else "prior_publication_unavailable"
+                    "carried_forward" if carried else "available" if previous_rank is not None else "prior_publication_unavailable"
                 ),
+                "ranking_source_week": power.get("ranking_source_week") if isinstance(power, dict) else None,
                 "consensus_rank_average": row.get("consensus_rank_average"),
                 "starter_strength_rank": row.get("dynasty_starter_strength_rank"),
                 "projection_rank": row.get("optimal_starting_lineup_projection_rank"),
             }
         )
+    if not carried and int(dossier.get("week") or 1) > 1 and any(r["previous_rank"] is None for r in rendered):
+        return FeatureResult("ranking_movement", "unavailable", data=rendered,
+                             reason="Current order is available, but the prior research ranking is missing or incomplete; movement cannot be verified.")
     return ready(
         "ranking_movement",
         rendered,
         reason=(
-            None
-            if previous
-            else "Current Data Power order is available; prior published ranking baseline is not yet archived, so movement is not claimed."
+            f"Research rankings carried forward from Week {power.get('carried_from_week')}; no new movement or model score is claimed."
+            if carried else f"Compared with the Week {prior_week} research ranking." if previous
+            else "First week establishes the research ranking baseline; no prior-week movement is expected."
         ),
     )
 

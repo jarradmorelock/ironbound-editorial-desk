@@ -329,7 +329,28 @@ For normal commissioner use, the only workflow to launch manually is
 
 The obsolete Phase 4 verification workflow has been removed.
 
-The Tuesday ranking handoff is read from the public
+Every publication now includes `player_scoring_history.json`. For each week
+through the requested report week, the collector preserves exact Sleeper
+matchup player scores and historical ownership. For players who were not owned
+that week, it calculates fantasy points from Sleeper's full weekly NFL stat
+feed using that league's scoring settings. The full weekly feed is cached across
+leagues. A missing stat line is recorded as zero only when a nonempty feed
+covers the league's recorded nonzero scorers; an unavailable or unverified feed
+leaves missing history and blocks cumulative leaders. Each row identifies its
+source. Cumulative player and rookie boards show full season points for players
+currently rostered; their team labels identify current ownership, not which
+team earned those points in past matchups.
+
+Newspaper Data Power rankings are saved in Chronicle on production runs.
+Movement compares the new research ranking with the latest earlier same-season
+research ranking, bootstrapping from a saved prior dossier when needed. If the
+current model has no ranking, the prior order can be carried forward with its
+original source week and without new scores or movement. A missing prior
+baseline after Week 1 marks movement unavailable while retaining current ranks.
+These are the newspapers' own research rankings, separate from Discord's
+Saturday rankings.
+
+The flagship Tuesday ranking handoff is read from the public
 `jarradmorelock/Ironbound_power_ranks` repository when available. The ranking
 engine is the sole authority for current rank, previous rank, movement, ranking
 score, playoff forecast, and the rendered ranking graphics. Editorial Desk does

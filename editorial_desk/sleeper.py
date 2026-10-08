@@ -20,6 +20,7 @@ class SleeperClient:
         self.session = session or requests.Session()
         self.timeout_seconds = timeout_seconds
         self._players_cache: dict[str, Any] | None = None
+        self._weekly_stats_cache: dict[tuple[str, int], dict[str, Any]] = {}
 
     def get_json(self, path: str) -> Any:
         response = self.session.get(
@@ -79,3 +80,13 @@ class SleeperClient:
         if not isinstance(payload, dict):
             raise ValueError("Sleeper projection response was not an object")
         return payload
+
+    def weekly_stats(self, season: str, week: int) -> dict[str, Any]:
+        """Full NFL weekly stat lines, independent of fantasy roster ownership."""
+        key = (str(season), int(week))
+        if key not in self._weekly_stats_cache:
+            payload = self.get_json(f"stats/nfl/regular/{season}/{week}")
+            if not isinstance(payload, dict) or not payload:
+                raise ValueError("Sleeper weekly statistics response was empty or invalid")
+            self._weekly_stats_cache[key] = payload
+        return self._weekly_stats_cache[key]

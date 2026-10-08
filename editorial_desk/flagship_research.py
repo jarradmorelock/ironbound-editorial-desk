@@ -249,6 +249,7 @@ def build_flagship_research_packet(
             "status": _external_status(external.power_rankings_supplied),
             "authority": "Ironbound_power_ranks",
             "movement_policy": "Use previous_rank and movement supplied by the Power Rankings engine. Do not recalculate movement in Editorial Desk.",
+            "source_metadata": dict(external.source_metadata),
             "asset_key": "power_rankings",
             "rows": [
                 {
@@ -1131,11 +1132,21 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
 
     lines.extend(["", "## POWER RANKINGS CHART INPUT", ""])
     power = packet.get("power_rankings_chart") or {}
+    ranking_metadata = power.get("source_metadata") or {}
     lines.append(f"Status: {power.get('status')}")
-    lines.append(
-        "Authority: Ironbound_power_ranks. Movement below is imported from the "
-        "ranking engine's shared Saturday/Tuesday publication history and must not be recalculated."
-    )
+    if ranking_metadata.get("ranking_status") == "carried_forward":
+        lines.append(
+            f"Source: carried forward from Week {ranking_metadata.get('carried_from_week')}; "
+            f"original ranking source Week {ranking_metadata.get('ranking_source_week')}. "
+            "No current-week movement or score is supplied."
+        )
+    elif ranking_metadata.get("ranking_status") == "current":
+        lines.append(f"Source: current ranking handoff for Week {ranking_metadata.get('ranking_source_week')}.")
+    else:
+        lines.append(
+            "Authority: Ironbound_power_ranks. Movement below is imported from the "
+            "ranking engine's shared Saturday/Tuesday publication history and must not be recalculated."
+        )
     for row in sorted(power.get("rows") or [], key=lambda item: int(item.get("rank") or 999)):
         label = row.get("team") or row.get("franchise_key") or f"Roster {row.get('roster_id')}"
         previous = row.get("previous_rank")
@@ -1148,10 +1159,12 @@ def render_flagship_research_packet(packet: dict[str, Any]) -> str:
             movement_text = f"down {abs(int(movement))} from #{int(previous)}"
         else:
             movement_text = f"unchanged from #{int(previous)}"
-        lines.append(
-            f"- #{row.get('rank')} {label} — {movement_text}; "
-            f"ranking score {float(row.get('score') or 0):.1f}"
+        score_text = (
+            f"ranking score {float(row['score']):.1f}"
+            if row.get("score") is not None
+            else "ranking score not supplied"
         )
+        lines.append(f"- #{row.get('rank')} {label} — {movement_text}; {score_text}")
 
     lines.extend(["", "## RANKING PUBLICATION ASSETS", ""])
     assets = packet.get("ranking_publication_assets") or {}

@@ -287,6 +287,11 @@ def dynasty_market(snapshot: dict[str, Any]) -> FeatureResult:
 
 def offense_defense_splits(snapshot: dict[str, Any]) -> FeatureResult:
     players = snapshot.get("players") or {}
+    matchups = {
+        int(row.get("roster_id") or 0): row
+        for row in snapshot.get("matchups") or []
+        if row.get("roster_id") is not None
+    }
     rows = []
     for roster in snapshot.get("rosters") or []:
         roster_id = int(roster.get("roster_id") or 0)
@@ -301,16 +306,53 @@ def offense_defense_splits(snapshot: dict[str, Any]) -> FeatureResult:
                 defense += 1
             else:
                 other += 1
-        rows.append(
-            {
-                "roster_id": roster_id,
-                "team": _team_name(snapshot, roster_id),
-                "offense_players": offense,
-                "idp_players": idp,
-                "team_defenses": defense,
-                "other_players": other,
+        result = {
+            "roster_id": roster_id,
+            "team": _team_name(snapshot, roster_id),
+            "offense_players": offense,
+            "idp_players": idp,
+            "team_defenses": defense,
+            "other_players": other,
+        }
+        matchup = matchups.get(roster_id)
+        if matchup:
+            points = {
+                str(player_id): float(value or 0)
+                for player_id, value in (matchup.get("players_points") or {}).items()
             }
-        )
+            offensive_starters = []
+            defensive_starters = []
+            for player_id in (matchup.get("starters") or []):
+                player_id = str(player_id)
+                player = players.get(player_id) or {}
+                position = str(player.get("position") or "")
+                player_row = {
+                    "player_id": player_id,
+                    "player": _player_name(player_id, player, {}),
+                    "position": position,
+                    "points": round(points.get(player_id, 0.0), 2),
+                }
+                if position in OFFENSE_POSITIONS:
+                    offensive_starters.append(player_row)
+                elif position in IDP_POSITIONS:
+                    defensive_starters.append(player_row)
+
+            offensive_starters.sort(key=lambda row: (-row["points"], row["player"]))
+            defensive_starters.sort(key=lambda row: (-row["points"], row["player"]))
+            result.update(
+                {
+                    "starter_offense_points": round(
+                        sum(row["points"] for row in offensive_starters), 2
+                    ),
+                    "starter_defense_points": round(
+                        sum(row["points"] for row in defensive_starters), 2
+                    ),
+                    "starter_offense_mvp": offensive_starters[0] if offensive_starters else None,
+                    "starter_defense_mvp": defensive_starters[0] if defensive_starters else None,
+                    "starter_split_source": "sleeper_matchups",
+                }
+            )
+        rows.append(result)
     if not rows:
         return ready_no_items("offense_defense_splits", reason="No rosters available")
     return ready("offense_defense_splits", rows)

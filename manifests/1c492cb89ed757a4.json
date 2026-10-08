@@ -1,0 +1,289 @@
+{
+  "event_counts": {
+    "added": 75,
+    "skipped": 306
+  },
+  "finalize_matchups": true,
+  "leagues": {
+    "ballad_of_broken_hearts": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 151,
+            "scores_present": 151,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 154,
+            "scores_present": 154,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 157,
+            "scores_present": 157,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 162,
+            "scores_present": 162,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "best_characters_dynasty": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 273,
+            "scores_present": 273,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 277,
+            "scores_present": 277,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 279,
+            "scores_present": 279,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 280,
+            "scores_present": 280,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "dont_tell_my_wife": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 360,
+            "scores_present": 360,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 362,
+            "scores_present": 362,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 366,
+            "scores_present": 366,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 372,
+            "scores_present": 372,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "free_ironbound_sixteen": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 330,
+            "scores_present": 330,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 332,
+            "scores_present": 332,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 334,
+            "scores_present": 334,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 337,
+            "scores_present": 337,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "ironbound_sixteen": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 337,
+            "scores_present": 337,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 337,
+            "scores_present": 337,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 339,
+            "scores_present": 339,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 340,
+            "scores_present": 340,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "nine_five": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 151,
+            "scores_present": 151,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 152,
+            "scores_present": 152,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 157,
+            "scores_present": 157,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 156,
+            "scores_present": 156,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "rocky_top_rumble": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 109,
+            "scores_present": 109,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 110,
+            "scores_present": 110,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 111,
+            "scores_present": 111,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 111,
+            "scores_present": 111,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    },
+    "sec_dynasty": {
+      "error": null,
+      "player_week_history": {
+        "complete": true,
+        "warnings": [],
+        "weeks": {
+          "1": {
+            "missing_player_ids": [],
+            "players_expected": 506,
+            "scores_present": 506,
+            "status": "complete"
+          },
+          "2": {
+            "missing_player_ids": [],
+            "players_expected": 509,
+            "scores_present": 509,
+            "status": "complete"
+          },
+          "3": {
+            "missing_player_ids": [],
+            "players_expected": 511,
+            "scores_present": 511,
+            "status": "complete"
+          },
+          "4": {
+            "missing_player_ids": [],
+            "players_expected": 513,
+            "scores_present": 513,
+            "status": "complete"
+          }
+        }
+      },
+      "status": "fresh"
+    }
+  },
+  "observed_at": "2026-10-08T16:22:38.840279+00:00",
+  "run_id": "1c492cb89ed757a4",
+  "season": "2026",
+  "source_freshness": {
+    "player_health": "fresh"
+  },
+  "warnings": [],
+  "week": 4
+}

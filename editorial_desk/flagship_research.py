@@ -148,7 +148,7 @@ def build_flagship_research_packet(
     intelligence = dossier.get("nfl_game_intelligence") or {}
     manager_awards = _manager_weekly_awards(
         dossier,
-        history,
+        _manager_record_history(snapshot, history),
         current_week=week,
         manager_of_the_week=honors_research.get("manager_of_the_week"),
     )
@@ -1588,6 +1588,9 @@ def _season_player_boards(
     snapshot: dict[str, Any],
 ) -> dict[str, Any]:
     """Aggregate finalized weekly player scores without presenting gaps as full totals."""
+    if snapshot.get("player_scoring_history"):
+        from .player_scoring_history import season_leaders
+        return season_leaders(snapshot)
     from .weekly_features import _rostered_player_weeks
 
     through_week = int(snapshot.get("week") or 0)
@@ -1734,6 +1737,35 @@ def _season_player_boards(
             "by_position": rookie_by_position if status == "READY" else {},
         },
     }
+
+
+def _manager_record_history(
+    snapshot: dict[str, Any], history: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Fill missing entering-record weeks from collected, complete league games."""
+    result = list(history)
+    existing = {int(row.get("week") or 0) for row in history}
+    expected = {int(row["roster_id"]) for row in snapshot.get("rosters") or []}
+    schedule = ((snapshot.get("flagship_sleeper") or {}).get("schedule") or {}).get("weeks") or {}
+    for week in range(1, int(snapshot.get("week") or 0)):
+        if week in existing or not expected:
+            continue
+        rows = schedule.get(str(week)) or []
+        ids = [_safe_int(row.get("roster_id")) for row in rows]
+        if len(ids) != len(expected) or set(ids) != expected:
+            continue
+        games: dict[int, list[dict[str, Any]]] = {}
+        for row in rows:
+            matchup_id = _safe_int(row.get("matchup_id"))
+            points = _safe_float(row.get("custom_points") if row.get("custom_points") is not None else row.get("points"))
+            if matchup_id is None or points is None:
+                break
+            games.setdefault(matchup_id, []).append({"roster_id": row["roster_id"], "points": points})
+        else:
+            if all(len(teams) == 2 for teams in games.values()):
+                result.append({"week": week, "source": "collected_sleeper_schedule",
+                               "scoreboard": [{"matchup_id": mid, "teams": teams} for mid, teams in games.items()]})
+    return result
 
 
 def _manager_weekly_awards(

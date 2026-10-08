@@ -1061,3 +1061,32 @@ def test_free_agent_display_is_explicitly_unrostered():
     )
 
     assert result["fantasy_team"] == "UNROSTERED"
+
+
+def test_manager_history_uses_complete_collected_schedule_without_old_report_files():
+    from editorial_desk.flagship_research import _manager_record_history, _manager_weekly_awards
+
+    snapshot = {'week': 2, 'rosters': [{'roster_id': i} for i in range(1, 5)],
+                'flagship_sleeper': {'schedule': {'weeks': {'1': [
+                    {'roster_id': 1, 'matchup_id': 1, 'points': 90, 'custom_points': 110},
+                    {'roster_id': 2, 'matchup_id': 1, 'points': 100},
+                    {'roster_id': 3, 'matchup_id': 2, 'points': 120},
+                    {'roster_id': 4, 'matchup_id': 2, 'points': 115},
+                ]}}}}
+    dossier = {'scoreboard': [
+        {'matchup_id': 1, 'teams': [{'roster_id': 1, 'points': 130}, {'roster_id': 2, 'points': 131}]},
+        {'matchup_id': 2, 'teams': [{'roster_id': 3, 'points': 100}, {'roster_id': 4, 'points': 99}]},
+    ]}
+    history = _manager_record_history(snapshot, [])
+    awards = _manager_weekly_awards(dossier, history, current_week=2, manager_of_the_week=None)
+    assert awards['bad_beat']['roster_id'] == 1
+    assert awards['bad_beat']['entering_record'] == {'wins': 1, 'losses': 0, 'ties': 0}
+    assert awards['escape_artist']['roster_id'] == 3
+    # Saved report history remains authoritative where already supplied.
+    assert _manager_record_history(snapshot, history) == history
+    rows = snapshot['flagship_sleeper']['schedule']['weeks']['1']
+    rows.append(dict(rows[0]))
+    assert _manager_record_history(snapshot, []) == []
+    rows.pop()
+    rows.pop()
+    assert _manager_record_history(snapshot, []) == []

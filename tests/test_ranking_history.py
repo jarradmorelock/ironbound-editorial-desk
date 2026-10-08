@@ -3,9 +3,23 @@ from pathlib import Path
 
 from editorial_desk.external_inputs import ExternalEditorialInputs, OfficialPowerRanking
 from editorial_desk.ranking_history import (
+    ranking_snapshot_events,
     resolve_power_ranking_input,
     seed_from_prior_issue,
 )
+
+
+def test_roster_identified_handoff_is_saved_and_can_seed_next_issue(tmp_path):
+    rows = [{"roster_id": 8, "franchise_key": None, "rank": 1, "team": "Leader"}]
+    events = ranking_snapshot_events('ironbound', '2026', 3, rows,
+                                     source_metadata={}, observed_at='2026-10-01T00:00:00Z')
+    assert len(events) == 1
+    p = tmp_path/'2026'/'week-03'/'ironbound'/'flagship_research_packet.json'
+    p.parent.mkdir(parents=True)
+    p.write_text(json.dumps({'publication_key':'ironbound_weekly','season':'2026','week':3,
+                             'power_rankings_chart':{'rows':rows}}))
+    seed = seed_from_prior_issue(tmp_path, season='2026', week=4)
+    assert seed['ironbound_weekly'][0].roster_id == 8
 
 
 def test_current_rankings_override_prior_snapshot():

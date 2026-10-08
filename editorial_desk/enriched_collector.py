@@ -33,10 +33,13 @@ from .story_artifacts import write_story_desk_artifacts
 from .chronicle_queries import ChronicleQueries
 from .chronicle_collect import _collect_player_week_history
 from .chronicle_store import ChronicleStore
+from .player_scoring_history import collect_player_scoring_history
 from .ranking_history import (
     ranking_snapshot_events,
     resolve_power_ranking_input,
     seed_from_prior_issue,
+    prior_newspaper_ranking,
+    apply_newspaper_ranking_history,
 )
 
 
@@ -108,12 +111,42 @@ def collect_all(
         _apply_context_scope(snapshot, shared, include_deep=config.tier == "flagship")
         _ensure_draft_context(snapshot, sleeper, config.sleeper_league_id)
         _ensure_next_matchups(snapshot, sleeper, config.sleeper_league_id, week)
+        snapshot["player_scoring_history"] = collect_player_scoring_history(sleeper, snapshot)
         _write_json(snapshot_path, snapshot)
 
         dossier = build_editorial_review(snapshot)
         if chronicle_revision:
             dossier["chronicle_revision"] = str(chronicle_revision)
         directory = snapshot_path.parent
+        scoring_path = directory / "player_scoring_history.json"
+        _write_json(scoring_path, snapshot["player_scoring_history"])
+        generated.append(scoring_path)
+        profile = publications.get(config.publication_profile or "") if publications else None
+        if profile is not None and profile.tier == "newspaper":
+            prior = (ChronicleQueries(Path(chronicle_root)).latest_power_ranking_snapshot(config.key, season, before_week=week)
+                     if chronicle_root is not None else None)
+            for prior_root in [previous_issue_root, output_root]:
+                archived = prior_newspaper_ranking(Path(prior_root), config.key, season, week) if prior_root else None
+                if archived and (not prior or archived["week"] > prior["week"]):
+                    prior = archived
+            apply_newspaper_ranking_history(dossier, prior)
+            power = dossier["rankings"]["data_power_ranking"]
+            ranking_rows = [{**row, "franchise_key": f"league:{config.key}:roster:{row['roster_id']}"}
+                            for row in power.get("rows") or []]
+            metadata = {"label": "Weekly research ranking", "publication_key": profile.key,
+                        "ranking_status": power.get("ranking_status"),
+                        "ranking_source_week": power.get("ranking_source_week"),
+                        "carried_from_week": power.get("carried_from_week")}
+            ranking_path = directory / "ranking_history.json"
+            _write_json(ranking_path, {"season": season, "week": week, "league_key": config.key,
+                                      "rows": ranking_rows, "source_metadata": metadata})
+            generated.append(ranking_path)
+            if persist_ranking_history and chronicle_root is not None and ranking_rows:
+                ChronicleStore(Path(chronicle_root)).append_events(ranking_snapshot_events(
+                    config.key, season, week, ranking_rows, source_metadata=metadata,
+                    observed_at=datetime.now(timezone.utc).isoformat(),
+                    provenance="carried_forward" if power.get("ranking_status") == "carried_forward" else "model_estimate",
+                ))
         _write_json(directory / "dossier.json", dossier)
         (directory / "dossier.md").write_text(
             render_editorial_review(dossier), encoding="utf-8"

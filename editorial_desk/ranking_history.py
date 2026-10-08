@@ -9,6 +9,81 @@ from .chronicle_events import ChronicleEvent, make_event
 from .external_inputs import ExternalEditorialInputs, OfficialPowerRanking
 
 
+def _ranking_identity(row: dict[str, Any]) -> str:
+    identity = str(row.get("franchise_key") or "").strip()
+    if identity:
+        return identity
+    try:
+        roster_id = int(row.get("roster_id") or 0)
+    except (TypeError, ValueError):
+        return ""
+    return f"roster:{roster_id}" if roster_id > 0 else ""
+
+
+def prior_newspaper_ranking(root: Path, league_key: str, season: str, week: int) -> dict[str, Any] | None:
+    """Bootstrap from the same league's saved research issue, never another season."""
+    candidates = []
+    for path in (Path(root) / str(season)).glob(f"week-*/{league_key}/dossier.json"):
+        try:
+            dossier = json.loads(path.read_text(encoding="utf-8"))
+            prior_week = int(dossier.get("week") or 0)
+            if str(dossier.get("season")) != str(season) or not 0 < prior_week < week:
+                continue
+            power = (dossier.get("rankings") or {}).get("data_power_ranking") or {}
+            if isinstance(power, dict) and power.get("status") not in (None, "calculated", "component_inputs_collected", "carried_forward"):
+                continue
+            rows = power if isinstance(power, list) else power.get("rows") or []
+            rows = [{**r, "rank": r.get("rank") or index} for index, r in enumerate(rows, 1)]
+            if rows:
+                candidates.append({"season": str(season), "week": prior_week, "rows": rows,
+                                   "source_metadata": {"label": "Previous research issue", "ranking_source_week": power.get("ranking_source_week", prior_week) if isinstance(power, dict) else prior_week}})
+        except (ValueError, OSError, TypeError):
+            continue
+    return max(candidates, key=lambda r: r["week"], default=None)
+
+
+def apply_newspaper_ranking_history(dossier: dict[str, Any], prior: dict[str, Any] | None) -> None:
+    rankings = dossier.setdefault("rankings", {})
+    week = int(dossier.get("week") or 0)
+    power = rankings.get("data_power_ranking") or {}
+    if isinstance(power, list):
+        power = {"status": "calculated", "rows": power}
+    rankings["data_power_ranking"] = power
+    supplied = power.get("rows") or []
+    sources_ready = power.get("status") in (None, "calculated", "component_inputs_collected")
+    current = supplied if sources_ready else []
+    if supplied and not sources_ready:
+        power["unavailable_component_rows"] = supplied
+    current = [{**r, "rank": r.get("rank") or index} for index, r in enumerate(current, 1)]
+    power["rows"] = current
+    expected = {int(r["roster_id"]) for r in supplied}
+    # Official standings are also present when the current ranking model fails.
+    if not expected:
+        expected = {int(r["roster_id"]) for r in rankings.get("official_standings") or []}
+    rows = (prior or {}).get("rows") or []
+    try:
+        ids = [int(r["roster_id"]) for r in rows]
+        ranks = [int(r["rank"]) for r in rows]
+        prior_week = int((prior or {}).get("week") or 0)
+        valid = (0 < prior_week < week and bool(rows) and len(set(ids)) == len(ids)
+                 and sorted(ranks) == list(range(1, len(rows) + 1))
+                 and (not expected or set(ids) == expected)
+                 and str((prior or {}).get("season", dossier.get("season"))) == str(dossier.get("season")))
+    except (KeyError, ValueError, TypeError):
+        valid = False
+    rankings["prior_published_ranking"] = {
+        "status": "available" if valid else "awaiting_publication_archive",
+        "week": prior_week if valid else None, "rows": rows if valid else [],
+    }
+    power["ranking_status"] = "current" if current else "unavailable"
+    power["ranking_source_week"] = week if current else None
+    if not current and valid:
+        power.update({"status": "carried_forward", "ranking_status": "carried_forward",
+                      "ranking_source_week": ((prior or {}).get("source_metadata") or {}).get("ranking_source_week", prior_week),
+                      "carried_from_week": prior_week,
+                      "rows": [{k: r.get(k) for k in ("roster_id", "rank", "team")} for r in rows]})
+
+
 def ranking_snapshot_events(
     league_key: str,
     season: str,
@@ -23,7 +98,7 @@ def ranking_snapshot_events(
     events = []
     for raw in rows:
         row = dict(raw)
-        franchise_key = str(row.get("franchise_key") or "").strip()
+        franchise_key = _ranking_identity(row)
         rank = int(row.get("rank") or 0)
         if not franchise_key or rank <= 0:
             continue
@@ -82,7 +157,7 @@ def resolve_power_ranking_input(
     rankings = []
     for raw in rows:
         row = dict(raw)
-        franchise_key = str(row.get("franchise_key") or "").strip() or None
+        franchise_key = _ranking_identity(row) or None
         rank = int(row.get("rank") or 0)
         if not franchise_key or rank <= 0:
             continue
@@ -152,7 +227,7 @@ def seed_from_prior_issue(
             if not isinstance(raw, dict):
                 valid = False
                 break
-            franchise_key = str(raw.get("franchise_key") or "").strip()
+            franchise_key = _ranking_identity(raw)
             try:
                 rank = int(raw.get("rank") or 0)
             except (TypeError, ValueError):

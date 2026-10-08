@@ -442,3 +442,65 @@ def test_player_score_correction_resolves_to_latest_value(tmp_path):
     assert len(rows) == 1
     assert rows[0]["points"] == 24.1
     assert rows[0]["event_id"] == correction.event_id
+
+
+def test_power_ranking_snapshot_isolated_by_league_season_week(tmp_path):
+    from editorial_desk.chronicle_store import ChronicleStore
+    from editorial_desk.ranking_history import ranking_snapshot_events
+
+    store = ChronicleStore(tmp_path)
+    rows = [
+        {"franchise_key": "franchise:a", "roster_id": 1, "team": "Forge", "rank": 1},
+        {"franchise_key": "franchise:b", "roster_id": 2, "team": "Anvil", "rank": 2},
+    ]
+    source_events = ranking_snapshot_events(
+        "ironbound", "2026", 3, rows,
+        source_metadata={"label": "Editorial Power Board", "source_week": 3},
+        observed_at="2026-09-30T12:00:00+00:00",
+    )
+    assert store.append_events(source_events).added == 2
+    repeated = store.append_events(source_events)
+    assert repeated.added == 0
+    assert repeated.skipped == 2
+    store.append_events(ranking_snapshot_events(
+        "other_league", "2026", 3,
+        [{"franchise_key": "franchise:x", "rank": 1}],
+        source_metadata={"label": "Other"},
+        observed_at="2026-09-30T12:00:00+00:00",
+    ))
+    store.append_events(ranking_snapshot_events(
+        "ironbound", "2025", 3,
+        [{"franchise_key": "franchise:old", "rank": 1}],
+        source_metadata={"label": "Prior season"},
+        observed_at="2025-09-30T12:00:00+00:00",
+    ))
+
+    snapshot = ChronicleQueries(tmp_path).power_ranking_snapshot("ironbound", "2026", 3)
+
+    assert [(row["franchise_key"], row["rank"]) for row in snapshot] == [
+        ("franchise:a", 1), ("franchise:b", 2)
+    ]
+    assert snapshot[0]["source_metadata"]["label"] == "Editorial Power Board"
+    assert snapshot[0]["source_metadata"]["source_week"] == 3
+
+
+def test_latest_power_ranking_snapshot_ignores_future_weeks(tmp_path):
+    from editorial_desk.chronicle_store import ChronicleStore
+    from editorial_desk.ranking_history import ranking_snapshot_events
+
+    store = ChronicleStore(tmp_path)
+    for week, rank in ((2, 4), (5, 1)):
+        store.append_events(ranking_snapshot_events(
+            "ironbound", "2026", week,
+            [{"franchise_key": "franchise:a", "rank": rank}],
+            source_metadata={"label": "Official", "source_week": week},
+            observed_at=f"2026-09-{week + 10:02d}T12:00:00+00:00",
+        ))
+
+    latest = ChronicleQueries(tmp_path).latest_power_ranking_snapshot(
+        "ironbound", "2026", before_week=4
+    )
+
+    assert latest["week"] == 2
+    assert latest["rows"][0]["rank"] == 4
+    assert latest["source_metadata"]["source_week"] == 2

@@ -78,6 +78,20 @@ def test_ranking_fallback_downloads_same_season_issue_and_persists_only_producti
     )
 
 
+def test_delivery_baseline_and_monthly_backup_pin_post_ranking_chronicle_sha():
+    text = _text(WEEKLY)
+    assert "Capture finalized delivery Chronicle SHA" in text
+    assert 'CHRONICLE_SHA: ${{ steps.delivery_chronicle_sha.outputs.sha }}' in text
+    assert '--chronicle-revision "${{ steps.delivery_chronicle_sha.outputs.sha }}"' in text
+    _assert_order(
+        text,
+        "Commit resolved ranking snapshots to Chronicle",
+        "Capture finalized delivery Chronicle SHA",
+        "Write Tuesday Chronicle baseline",
+        "Build monthly Chronicle archive when due",
+    )
+
+
 def test_wednesday_updates_chronicle_then_uses_ledger_since_tuesday_baseline():
     text = _text(WEEKLY)
     assert "Collect Wednesday Chronicle pulse" in text

@@ -235,7 +235,6 @@ class ChronicleQueries:
         """Return finalized per-player fantasy scores for one season."""
         wanted = str(season)
         latest_by_key: dict[tuple[int, int, str], dict[str, Any]] = {}
-        events = self.league_events(league_key, {"PLAYER_FANTASY_WEEK_FINAL"})
         matching_events = []
         for event in self.league_events(
             league_key, {"PLAYER_FANTASY_WEEK_FINAL"}

@@ -108,6 +108,7 @@ def build_flagship_research_packet(
     publication_assets: dict[str, dict[str, Any]] | None = None,
     beat_report: dict[str, Any] | None = None,
     roster_market: dict[str, Any] | None = None,
+    player_week_history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Build the deterministic factual contract that feeds flagship production.
 
@@ -133,11 +134,13 @@ def build_flagship_research_packet(
 
     honors_research = research_honors(snapshot, dossier, external, history, chronicle)
     games = _game_research(snapshot, dossier)
-    player_score_rows = (
-        chronicle.season_player_fantasy_finals(league_key, season)
-        if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
-        else []
-    )
+    player_score_rows = player_week_history
+    if player_score_rows is None:
+        player_score_rows = (
+            chronicle.season_player_fantasy_finals(league_key, season)
+            if chronicle is not None and hasattr(chronicle, "season_player_fantasy_finals")
+            else []
+        )
     player_boards = _season_player_boards(player_score_rows, snapshot)
     if beat_report is not None:
         games = _attach_beat_context_to_games(games, beat_report)

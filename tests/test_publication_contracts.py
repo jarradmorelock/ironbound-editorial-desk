@@ -45,6 +45,7 @@ def test_saturday_standard_keeps_divisions_and_idp_first_class():
     assert weekly["division_metrics"].display_name == "East and West Division Pulse"
     assert "divisional_started_mvps" in weekly
     assert "idp_position_metrics" in weekly
+    assert "offense_defense_splits" in weekly
 
 
 def test_stampede_workload_department_uses_locked_name_and_no_retired_label():

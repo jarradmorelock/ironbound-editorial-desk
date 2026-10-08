@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import shutil
 from typing import Any
@@ -30,6 +31,13 @@ from .review import build_editorial_review, render_editorial_review
 from .sleeper import SleeperClient
 from .story_artifacts import write_story_desk_artifacts
 from .chronicle_queries import ChronicleQueries
+from .chronicle_collect import _collect_player_week_history
+from .chronicle_store import ChronicleStore
+from .ranking_history import (
+    ranking_snapshot_events,
+    resolve_power_ranking_input,
+    seed_from_prior_issue,
+)
 
 
 def collect_all(
@@ -45,6 +53,8 @@ def collect_all(
     chronicle_revision: str | None = None,
     beat_ledger_path: Path | None = None,
     beat_ledger_revision: str | None = None,
+    previous_issue_root: Path | None = None,
+    persist_ranking_history: bool = False,
 ) -> list[Path]:
     """Run the existing collector, then enrich publication dossiers for review."""
     sleeper = client or SleeperClient()
@@ -142,6 +152,41 @@ def collect_all(
                     else None
                 )
                 external_inputs = load_external_inputs(external_path, profile.key)
+                chronicle = ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None
+                prior_snapshot = (
+                    chronicle.latest_power_ranking_snapshot(
+                        config.key, season, before_week=week
+                    )
+                    if chronicle is not None
+                    else None
+                )
+                if prior_snapshot is None and previous_issue_root is not None:
+                    seeded = seed_from_prior_issue(
+                        Path(previous_issue_root), season=season, week=week
+                    ).get(profile.key) or []
+                    if seeded:
+                        prior_snapshot = {
+                            "week": week - 1,
+                            "source_metadata": {
+                                "label": "Previous completed publication issue",
+                                "ranking_source_week": week - 1,
+                            },
+                            "rows": [
+                                {
+                                    "franchise_key": row.franchise_key,
+                                    "rank": row.rank,
+                                    "roster_id": row.roster_id,
+                                    "team": row.team,
+                                }
+                                for row in seeded
+                            ],
+                        }
+                external_inputs = resolve_power_ranking_input(
+                    external_inputs,
+                    prior_snapshot,
+                    season=season,
+                    week=week,
+                )
                 publication_assets, copied_asset_paths = _materialize_publication_assets(
                     external_inputs,
                     directory,
@@ -166,22 +211,66 @@ def collect_all(
                     issue_network,
                     chronicle=ChronicleQueries(Path(chronicle_root)) if chronicle_root is not None else None,
                 )
+                stored_player_history = (
+                    chronicle.season_player_fantasy_finals(config.key, season)
+                    if chronicle is not None
+                    else []
+                )
+                if stored_player_history and _stored_player_history_is_complete(
+                    Path(chronicle_root), config.key, season, week
+                ):
+                    player_week_history = stored_player_history
+                else:
+                    player_week_history, _history_events, _history_coverage = _collect_player_week_history(
+                        sleeper,
+                        config.key,
+                        config.sleeper_league_id,
+                        season,
+                        week,
+                        player_directory,
+                        datetime.now(timezone.utc).isoformat(),
+                        existing_rows=stored_player_history,
+                    )
                 flagship_packet = build_flagship_research_packet(
                     snapshot,
                     dossier,
                     story,
                     external_inputs,
                     history_root=output_root,
-                    chronicle=(
-                        ChronicleQueries(Path(chronicle_root))
-                        if chronicle_root is not None
-                        else None
-                    ),
+                    chronicle=chronicle,
                     publication_assets=publication_assets,
                     beat_report=beat_report,
                     roster_market=roster_market,
+                    player_week_history=player_week_history,
                 )
                 if flagship_packet is not None:
+                    if persist_ranking_history and chronicle_root is not None and external_inputs.official_power_rankings:
+                        ranking_events = ranking_snapshot_events(
+                            config.key,
+                            season,
+                            week,
+                            [
+                                {
+                                    "franchise_key": row.franchise_key,
+                                    "rank": row.rank,
+                                    "roster_id": row.roster_id,
+                                    "team": row.team,
+                                    "previous_rank": row.previous_rank,
+                                    "movement": row.movement,
+                                    "score": row.score,
+                                    "components": dict(row.components),
+                                }
+                                for row in external_inputs.official_power_rankings
+                            ],
+                            source_metadata=external_inputs.source_metadata,
+                            observed_at=datetime.now(timezone.utc).isoformat(),
+                            provenance=(
+                                "carried_forward"
+                                if external_inputs.source_metadata.get("ranking_status") == "carried_forward"
+                                else "source_exact"
+                            ),
+                        )
+                        ChronicleStore(Path(chronicle_root)).append_events(ranking_events)
                     honors = flagship_packet["weekly_honors"]
                     dossier.setdefault("awards", {})["manager_of_the_week"] = honors["manager_of_the_week"]
                     dossier["awards"]["exceptional_loss_review"] = honors["exceptional_loss_review"]
@@ -196,6 +285,35 @@ def collect_all(
         generated.append(reading_path)
 
     return generated
+
+
+def _stored_player_history_is_complete(
+    chronicle_root: Path, league_key: str, season: str, through_week: int
+) -> bool:
+    """Use persisted production history only when its latest manifest proves coverage."""
+    manifests = Path(chronicle_root) / "manifests"
+    if not manifests.is_dir():
+        return False
+    candidates = []
+    for path in manifests.glob("*.json"):
+        try:
+            document = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(document.get("season") or "") != str(season) or int(document.get("week") or 0) != int(through_week):
+            continue
+        history = ((document.get("leagues") or {}).get(league_key) or {}).get("player_week_history")
+        if history is not None:
+            candidates.append((str(document.get("observed_at") or ""), history))
+    if not candidates:
+        return False
+    _observed_at, latest = max(candidates, key=lambda item: item[0])
+    expected_weeks = {str(value) for value in range(1, int(through_week) + 1)}
+    weeks = latest.get("weeks") or {}
+    return bool(latest.get("complete")) and expected_weeks.issubset(weeks) and all(
+        (weeks.get(value) or {}).get("status") == "complete"
+        for value in expected_weeks
+    )
 
 
 def _materialize_publication_assets(

@@ -716,6 +716,7 @@
         "East and West Division Pulse",
         "East and West Power Polls",
         "Lineup Efficiency",
+        "Starter Offense / IDP Board",
         "Portal Film Room",
         "Portal Commitments",
         "Saturday Honors",
@@ -785,6 +786,11 @@
           {
             "feature": "lineup_efficiency",
             "display_name": "Lineup Efficiency",
+            "required_in_phase": true
+          },
+          {
+            "feature": "offense_defense_splits",
+            "display_name": "Starter Offense / IDP Board",
             "required_in_phase": true
           },
           {

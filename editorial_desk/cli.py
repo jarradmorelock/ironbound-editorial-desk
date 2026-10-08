@@ -59,6 +59,8 @@ def parser() -> argparse.ArgumentParser:
     collect.add_argument("--external-inputs-dir", type=Path)
     collect.add_argument("--beat-ledger", type=Path)
     collect.add_argument("--beat-ledger-revision")
+    collect.add_argument("--previous-issue-dir", type=Path)
+    collect.add_argument("--persist-ranking-history", action="store_true")
 
     chronicle = subcommands.add_parser("chronicle-collect")
     chronicle.add_argument("--config", type=Path, required=True)
@@ -346,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
         chronicle_revision=args.chronicle_revision,
         beat_ledger_path=args.beat_ledger,
         beat_ledger_revision=args.beat_ledger_revision,
+        previous_issue_root=args.previous_issue_dir,
+        persist_ranking_history=args.persist_ranking_history,
     )
     print(f"Dry run complete: {len(generated)} files generated")
     return 0

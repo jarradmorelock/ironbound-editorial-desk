@@ -148,6 +148,27 @@ def test_positional_strength_and_offense_defense_split_treat_idp_as_first_class(
     assert one["idp_players"] == 1
 
 
+def test_offense_defense_split_adds_starter_totals_and_mvps_from_matchups():
+    snapshot = _snapshot()
+    snapshot["matchups"] = [
+        {
+            "roster_id": 1,
+            "starters": ["qb", "rb", "lb"],
+            "players_points": {"qb": 12.5, "rb": 8.0, "lb": 20.0},
+        }
+    ]
+
+    result = offense_defense_splits(snapshot)
+    one = next(row for row in result.data if row["roster_id"] == 1)
+
+    assert one["starter_offense_points"] == 20.5
+    assert one["starter_defense_points"] == 20.0
+    assert one["starter_offense_mvp"]["player"] == "Quarter Back"
+    assert one["starter_offense_mvp"]["points"] == 12.5
+    assert one["starter_defense_mvp"]["player"] == "Line Backer"
+    assert one["starter_defense_mvp"]["points"] == 20.0
+
+
 def test_future_pick_ledger_preserves_original_and_current_owner_slots():
     result = future_pick_ledger(_snapshot())
     assert result.status == "ready"

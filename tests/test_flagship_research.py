@@ -910,6 +910,31 @@ def test_season_player_boards_merge_current_week_and_report_missing_history():
     assert incomplete["player_season_top_three"]["status"] == "UNAVAILABLE"
     assert incomplete["player_season_top_three"]["by_position"] == {}
     assert "Beta RB" in incomplete["player_season_top_three"]["reason"]
+    assert "Week 1" in incomplete["player_season_top_three"]["reason"]
+
+
+def test_flagship_packet_uses_supplied_player_week_history(tmp_path, monkeypatch):
+    import editorial_desk.flagship_research as research
+
+    snapshot, dossier = _fixture()
+    supplied = [{
+        "week": 1, "roster_id": 1, "player_id": "historical-player",
+        "position": "RB", "points": 12.5,
+    }]
+    observed = {}
+    original = research._season_player_boards
+
+    def capture(rows, current_snapshot):
+        observed["rows"] = rows
+        return original(rows, current_snapshot)
+
+    monkeypatch.setattr(research, "_season_player_boards", capture)
+    research.build_flagship_research_packet(
+        snapshot, dossier, {}, _external(), history_root=tmp_path,
+        player_week_history=supplied,
+    )
+
+    assert observed["rows"] == supplied
 
 
 def test_honors_research_reports_projection_gaps_and_enriches_overall(tmp_path):

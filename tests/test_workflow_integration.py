@@ -62,6 +62,36 @@ def test_tuesday_baseline_records_pinned_sha_and_event_cutoff():
     assert "steps.chronicle_sha.outputs.sha" in text
 
 
+def test_ranking_fallback_downloads_same_season_issue_and_persists_only_production():
+    text = _text(WEEKLY)
+    assert "actions: read" in text
+    assert "Fetch preceding issue artifact for ranking fallback" in text
+    assert "gh run download" in text
+    assert "--previous-issue-dir previous-issue" in text
+    assert "--persist-ranking-history" in text
+    assert 'steps.plan.outputs.job' in text
+    _assert_order(
+        text,
+        "Fetch preceding issue artifact for ranking fallback",
+        "Collect complete weekly dossiers",
+        "Commit resolved ranking snapshots to Chronicle",
+    )
+
+
+def test_delivery_baseline_and_monthly_backup_pin_post_ranking_chronicle_sha():
+    text = _text(WEEKLY)
+    assert "Capture finalized delivery Chronicle SHA" in text
+    assert 'CHRONICLE_SHA: ${{ steps.delivery_chronicle_sha.outputs.sha }}' in text
+    assert '--chronicle-revision "${{ steps.delivery_chronicle_sha.outputs.sha }}"' in text
+    _assert_order(
+        text,
+        "Commit resolved ranking snapshots to Chronicle",
+        "Capture finalized delivery Chronicle SHA",
+        "Write Tuesday Chronicle baseline",
+        "Build monthly Chronicle archive when due",
+    )
+
+
 def test_wednesday_updates_chronicle_then_uses_ledger_since_tuesday_baseline():
     text = _text(WEEKLY)
     assert "Collect Wednesday Chronicle pulse" in text
@@ -157,6 +187,15 @@ def test_cli_supports_backup_due_build_receipt_email_and_ledger_supplement():
     )
     assert supplement.chronicle_root == Path("chronicle-data")
     assert supplement.baseline_time == "2026-09-15T22:00:00+00:00"
+
+    collect = parser().parse_args(
+        [
+            "collect", "--config", "config.json", "--week", "7",
+            "--previous-issue-dir", "previous-issue", "--persist-ranking-history",
+        ]
+    )
+    assert collect.previous_issue_dir == Path("previous-issue")
+    assert collect.persist_ranking_history is True
 
 
 def test_readme_documents_story_desk_manual_inputs_without_owning_rankings_workflow():

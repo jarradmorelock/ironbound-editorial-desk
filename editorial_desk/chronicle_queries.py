@@ -234,7 +234,8 @@ class ChronicleQueries:
     ) -> list[dict[str, Any]]:
         """Return finalized per-player fantasy scores for one season."""
         wanted = str(season)
-        rows: list[dict[str, Any]] = []
+        latest_by_key: dict[tuple[int, int, str], dict[str, Any]] = {}
+        matching_events = []
         for event in self.league_events(
             league_key, {"PLAYER_FANTASY_WEEK_FINAL"}
         ):
@@ -247,17 +248,38 @@ class ChronicleQueries:
             week = int(event.get("week") or 0)
             if not roster_id or not player_id or week <= 0:
                 continue
-            rows.append(
-                {
-                    "season": wanted,
-                    "week": week,
-                    "roster_id": roster_id,
-                    "player_id": player_id,
-                    "position": evidence.get("position"),
-                    "points": float(evidence.get("points") or 0),
-                    "event_id": event.get("event_id"),
-                }
+            matching_events.append(event)
+        replaced = {
+            str(event.get("correction_of"))
+            for event in matching_events
+            if event.get("correction_of")
+        }
+        for event in matching_events:
+            if str(event.get("event_id") or "") in replaced:
+                continue
+            evidence = dict(event.get("evidence") or {})
+            entities = dict(event.get("entities") or {})
+            key = (
+                int(event.get("week") or 0),
+                int(entities.get("roster_id") or 0),
+                str(entities.get("player_id") or ""),
             )
+            candidate = {
+                "season": wanted,
+                "week": key[0],
+                "roster_id": key[1],
+                "player_id": key[2],
+                "position": evidence.get("position"),
+                "points": float(evidence.get("points") or 0),
+                "event_id": event.get("event_id"),
+                "source": event.get("source"),
+                "observed_at": event.get("observed_at"),
+                "correction_of": event.get("correction_of"),
+            }
+            previous = latest_by_key.get(key)
+            if previous is None or str(candidate["observed_at"] or "") > str(previous["observed_at"] or ""):
+                latest_by_key[key] = candidate
+        rows = list(latest_by_key.values())
         rows.sort(
             key=lambda row: (
                 row["week"],
@@ -266,6 +288,69 @@ class ChronicleQueries:
             )
         )
         return rows
+
+    def power_ranking_snapshot(
+        self, league_key: str, season: str, week: int
+    ) -> list[dict[str, Any]]:
+        """Return the latest observed ranking row per franchise for one issue week."""
+        wanted_season = str(season)
+        wanted_week = int(week)
+        latest: dict[str, dict[str, Any]] = {}
+        for event in self.league_events(league_key, {"POWER_RANKING_WEEK_FINAL"}):
+            if str(event.get("season") or "") != wanted_season or int(event.get("week") or 0) != wanted_week:
+                continue
+            franchise_key = str((event.get("entities") or {}).get("franchise_key") or "")
+            evidence = dict(event.get("evidence") or {})
+            if not franchise_key or int(evidence.get("rank") or 0) <= 0:
+                continue
+            row = {
+                "franchise_key": franchise_key,
+                "rank": int(evidence["rank"]),
+                "roster_id": evidence.get("roster_id"),
+                "team": evidence.get("team"),
+                "score": evidence.get("score"),
+                "previous_rank": evidence.get("previous_rank"),
+                "movement": evidence.get("movement"),
+                "components": dict(evidence.get("components") or {}),
+                "source_metadata": dict(evidence.get("source_metadata") or {}),
+                "source": event.get("source"),
+                "observed_at": event.get("observed_at"),
+                "event_id": event.get("event_id"),
+            }
+            previous = latest.get(franchise_key)
+            if previous is None or (
+                str(row["observed_at"] or ""), str(row["event_id"] or "")
+            ) > (
+                str(previous["observed_at"] or ""), str(previous["event_id"] or "")
+            ):
+                latest[franchise_key] = row
+        return sorted(latest.values(), key=lambda row: (row["rank"], row["franchise_key"]))
+
+    def latest_power_ranking_snapshot(
+        self, league_key: str, season: str, before_week: int
+    ) -> dict[str, Any] | None:
+        """Return the most recent complete saved ranking week before ``before_week``."""
+        wanted_season = str(season)
+        weeks = [
+            int(event.get("week") or 0)
+            for event in self.league_events(league_key, {"POWER_RANKING_WEEK_FINAL"})
+            if str(event.get("season") or "") == wanted_season
+            and 0 < int(event.get("week") or 0) < int(before_week)
+        ]
+        if not weeks:
+            return None
+        week = max(weeks)
+        rows = self.power_ranking_snapshot(league_key, wanted_season, week)
+        if not rows:
+            return None
+        metadata_row = max(rows, key=lambda row: (str(row.get("observed_at") or ""), str(row.get("event_id") or "")))
+        return {
+            "league_key": league_key,
+            "season": wanted_season,
+            "week": week,
+            "source_metadata": dict(metadata_row.get("source_metadata") or {}),
+            "rows": rows,
+        }
 
     def season_efficiency(
         self, league_key: str, season: str

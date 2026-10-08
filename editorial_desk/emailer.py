@@ -9,8 +9,6 @@ import smtplib
 from typing import Any
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from .reading_packet import reading_packet_from_artifacts
-
 from .chronicle_backup import (
     ChronicleBackupError,
     validate_chronicle_backup,
@@ -66,7 +64,7 @@ def build_dossier_email(
             f"No publication dossiers found for week {week} under {output_root}"
         )
 
-    packets: list[tuple[Path, str, dict[str, Any]]] = []
+    packets: list[tuple[Path, dict[str, Any]]] = []
     seasons: set[str] = set()
     for markdown_path in dossier_paths:
         dossier_path = markdown_path.with_suffix(".json")
@@ -76,11 +74,7 @@ def build_dossier_email(
             raise EmailDeliveryError(
                 f"Cannot read the matching dossier data for {markdown_path}"
             ) from exc
-        try:
-            content = reading_packet_from_artifacts(markdown_path.parent, dossier)
-        except (ValueError, OSError) as exc:
-            raise EmailDeliveryError(f"Cannot read publication artifacts for {markdown_path}") from exc
-        packets.append((markdown_path, content, dossier))
+        packets.append((markdown_path, dossier))
         seasons.add(str(dossier.get("season") or "unknown"))
 
     if len(seasons) != 1:
@@ -105,11 +99,12 @@ def build_dossier_email(
     )
 
     packet_lines = []
-    for _, _, dossier in packets:
+    for _, dossier in packets:
         league = dossier.get("league") or {}
         packet_lines.append(
             f"- {league.get('publication')}: {league.get('configured_name')}"
         )
+    research_archive = _build_research_archive(output_root, season, week)
     publication_assets = sorted(
         output_root.glob(f"*/week-{week:02d}/*/publication-assets/*.png")
     )
@@ -120,12 +115,12 @@ def build_dossier_email(
     )
     asset_note = (
         "\nThe exact Power Rankings / Playoff Forecast PNGs from the ranking "
-        "engine are also attached for magazine placement. Use them unchanged.\n"
+        "engine are included unchanged inside the research ZIP.\n"
         if publication_assets
         else ""
     )
     message.set_content(
-        "The weekly reading packets are attached: Editor's Brief, Commissioner Requests, then Story Desk where applicable. Full evidence remains in the workflow artifacts.\n\n"
+        "One ZIP contains the complete generated research packet for this week, including the reading packets, source evidence, supporting files, and publication assets.\n\n"
         + "\n".join(packet_lines)
         + "\n\nThese are research dossiers, not final publication copy. "
         "The data-only league is intentionally excluded.\n"
@@ -133,21 +128,12 @@ def build_dossier_email(
         + archive_note
     )
 
-    for markdown_path, content, dossier in packets:
-        league = dossier.get("league") or {}
-        league_key = str(league.get("league_key") or markdown_path.parent.name)
-        message.add_attachment(
-            content,
-            subtype="markdown",
-            filename=f"{league_key}-week-{week:02d}.md",
-        )
-    for path in publication_assets:
-        message.add_attachment(
-            path.read_bytes(),
-            maintype="image",
-            subtype="png",
-            filename=path.name,
-        )
+    message.add_attachment(
+        research_archive,
+        maintype="application",
+        subtype="zip",
+        filename=f"research-{season}-week-{week:02d}.zip",
+    )
     for path in attachments:
         if path.suffix.lower() == ".zip":
             maintype, subtype = "application", "zip"

@@ -57,7 +57,8 @@ def test_build_dossier_email_attaches_publication_packets_only(tmp_path):
     )
     attachments = list(message.iter_attachments())
     assert len(attachments) == 1
-    assert attachments[0].get_filename() == "ironbound-week-01.md"
+    assert attachments[0].get_filename() == "research-2026-week-01.zip"
+    assert attachments[0].get_content_type() == "application/zip"
 
 
 def test_research_archive_contains_all_current_week_files_once(tmp_path):
@@ -104,6 +105,53 @@ def test_research_archive_excludes_other_weeks(tmp_path):
         assert archive.read("2026/week-01/ironbound/packet.json") == b"week one"
 
 
+def test_build_dossier_email_attaches_one_research_zip(tmp_path):
+    publication_root = _weekly_packet(tmp_path)
+    (publication_root / "publication_complete_packet.json").write_text(
+        '{"ready": true}\n', encoding="utf-8"
+    )
+    (publication_root / "cover.png").write_bytes(b"cover bytes")
+
+    message = build_dossier_email(tmp_path, 1, "desk@example.com", "reader@example.com")
+
+    attachments = list(message.iter_attachments())
+    assert len(attachments) == 1
+    assert attachments[0].get_filename() == "research-2026-week-01.zip"
+    assert attachments[0].get_content_type() == "application/zip"
+    with zipfile.ZipFile(BytesIO(attachments[0].get_payload(decode=True))) as archive:
+        assert "2026/week-01/ironbound/publication_complete_packet.json" in archive.namelist()
+        assert archive.read("2026/week-01/ironbound/cover.png") == b"cover bytes"
+    body = message.get_body().get_content()
+    assert "One ZIP contains the complete generated research packet" in body
+    assert "Ironbound Sixteen" in body
+
+
+def test_build_dossier_email_preserves_monthly_chronicle_archive(tmp_path):
+    _weekly_packet(tmp_path)
+    chronicle = tmp_path / "chronicle"
+    (chronicle / "registry").mkdir(parents=True)
+    (chronicle / "registry" / "identity.json").write_text("{}\n", encoding="utf-8")
+    archive = create_chronicle_backup(
+        chronicle,
+        tmp_path / "chronicle-backup.zip",
+        chronicle_revision="chronicle-sha-123",
+    )
+
+    message = build_dossier_email(
+        tmp_path, 1, "desk@example.com", "reader@example.com",
+        chronicle_archive=archive,
+    )
+
+    attachments = list(message.iter_attachments())
+    assert [part.get_filename() for part in attachments] == [
+        "research-2026-week-01.zip", "chronicle-backup.zip"
+    ]
+    assert [part.get_content_type() for part in attachments] == [
+        "application/zip", "application/zip"
+    ]
+    assert "Chronicle archive" in message.get_body().get_content()
+
+
 def test_build_dossier_email_can_attach_validated_monthly_chronicle_archive(tmp_path):
     _weekly_packet(tmp_path)
     chronicle = tmp_path / "chronicle"
@@ -125,7 +173,7 @@ def test_build_dossier_email_can_attach_validated_monthly_chronicle_archive(tmp_
 
     attachments = list(message.iter_attachments())
     assert [part.get_filename() for part in attachments] == [
-        "ironbound-week-01.md",
+        "research-2026-week-01.zip",
         "chronicle-backup.zip",
     ]
     assert attachments[-1].get_content_type() == "application/zip"
@@ -337,11 +385,12 @@ def test_build_dossier_email_attaches_authoritative_ranking_assets(tmp_path):
 
     attachments = list(message.iter_attachments())
     filenames = [part.get_filename() for part in attachments]
-    assert filenames == [
-        "ironbound-week-01.md",
-        "ironbound_weekly-playoff-forecast.png",
-        "ironbound_weekly-power-rankings.png",
-    ]
-    assert "Use them unchanged" in message.get_body().get_content()
-    image_parts = attachments[1:]
-    assert all(part.get_content_type() == "image/png" for part in image_parts)
+    assert filenames == ["research-2026-week-01.zip"]
+    assert "included unchanged inside the research ZIP" in message.get_body().get_content()
+    with zipfile.ZipFile(BytesIO(attachments[0].get_payload(decode=True))) as archive:
+        assert archive.read(
+            "2026/week-01/ironbound/publication-assets/ironbound_weekly-playoff-forecast.png"
+        ) == b"playoffs"
+        assert archive.read(
+            "2026/week-01/ironbound/publication-assets/ironbound_weekly-power-rankings.png"
+        ) == b"rankings"

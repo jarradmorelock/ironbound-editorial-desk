@@ -187,7 +187,7 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
     client = FakeClient()
     client.player_payload["p1"]["position"] = "WR"
     client.player_payload["p2"]["position"] = "RB"
-    client.matchups = lambda league_id, week: [
+    current_week_matchups = [
         {
             "roster_id": 1,
             "matchup_id": 1,
@@ -205,6 +205,7 @@ def test_finalized_pulse_persists_idempotent_player_fantasy_finals(tmp_path: Pat
             "players_points_custom": {"p1": 21.0},
         },
     ]
+    client.matchups = lambda league_id, week: current_week_matchups if week == 2 else []
 
     for observed_at in (
         "2026-09-17T02:00:00+00:00",
@@ -263,6 +264,60 @@ def test_player_finals_do_not_infer_missing_score_as_zero():
         "scored": 12.5,
         "zero": 0.0,
     }
+
+
+def test_finalized_pulse_backfills_player_finals_for_all_completed_weeks(tmp_path):
+    store = ChronicleStore(tmp_path)
+    client = FakeClient()
+
+    def matchups(_league_id, week):
+        roster_id = 1 if week == 1 else 2
+        return [{
+            "roster_id": roster_id,
+            "matchup_id": week,
+            "players": ["traded-player"],
+            "starters": ["traded-player"],
+            "players_points": {"traded-player": week * 10.0},
+        }]
+
+    client.matchups = matchups
+    collect_pulse(
+        [League("a", "1")], client, store, 2, "2026-09-17T02:00:00+00:00",
+        finalize_matchups=True,
+    )
+
+    finals = [
+        row for row in store.read_events("a", "2026")
+        if row["event_type"] == "PLAYER_FANTASY_WEEK_FINAL"
+    ]
+    assert {
+        (row["week"], row["entities"]["roster_id"], row["entities"]["player_id"], row["evidence"]["points"])
+        for row in finals
+    } == {(1, 1, "traded-player", 10.0), (2, 2, "traded-player", 20.0)}
+
+
+def test_finalized_pulse_backfill_covers_each_configured_league(tmp_path):
+    store = ChronicleStore(tmp_path)
+    client = FakeClient()
+    client.matchups = lambda league_id, week: [{
+        "roster_id": 1,
+        "matchup_id": week,
+        "players": [f"{league_id}-player"],
+        "players_points": {f"{league_id}-player": float(week)},
+    }]
+
+    result = collect_pulse(
+        [League("a", "1"), League("b", "2")], client, store, 2,
+        "2026-09-17T02:00:00+00:00", finalize_matchups=True,
+    )
+
+    for key in ("a", "b"):
+        finals = [
+            row for row in store.read_events(key, "2026")
+            if row["event_type"] == "PLAYER_FANTASY_WEEK_FINAL"
+        ]
+        assert {row["week"] for row in finals} == {1, 2}
+        assert result["leagues"][key]["player_week_history"]["complete"] is True
 
 
 def test_failed_health_refresh_does_not_create_fake_healthy_transition(

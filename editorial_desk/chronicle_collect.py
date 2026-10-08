@@ -7,6 +7,7 @@ from typing import Any, Iterable
 import requests
 
 from .chronicle_events import ChronicleEvent, make_event
+from .chronicle_queries import ChronicleQueries
 from .chronicle_store import ChronicleStore
 from .metrics import optimal_lineup, starter_slots
 
@@ -493,6 +494,103 @@ def _mark_first_success(
         store.write_coverage(coverage)
 
 
+def _collect_player_week_history(
+    client: Any,
+    league_key: str,
+    sleeper_league_id: str,
+    season: str,
+    through_week: int,
+    players: dict[str, Any],
+    observed_at: str,
+    current_week_matchups: list[dict[str, Any]] | None = None,
+    existing_rows: Iterable[dict[str, Any]] = (),
+) -> tuple[list[dict[str, Any]], list[ChronicleEvent], dict[str, Any]]:
+    """Fetch and normalize exact player scores for every completed week."""
+    existing = [dict(row) for row in existing_rows]
+    events: list[ChronicleEvent] = []
+    coverage: dict[str, Any] = {"complete": True, "weeks": {}, "warnings": []}
+    for history_week in range(1, max(0, int(through_week)) + 1):
+        try:
+            matchups = (
+                current_week_matchups
+                if history_week == through_week and current_week_matchups is not None
+                else client.matchups(sleeper_league_id, history_week)
+            )
+            if not isinstance(matchups, list):
+                raise ValueError("Sleeper matchup response was not a list")
+        except (requests.RequestException, ValueError, KeyError, OSError) as exc:
+            coverage["complete"] = False
+            warning = f"week {history_week}: {exc}"
+            coverage["warnings"].append(warning)
+            coverage["weeks"][str(history_week)] = {
+                "status": "unavailable", "error": str(exc),
+                "players_expected": 0, "scores_present": 0, "missing_player_ids": [],
+            }
+            continue
+
+        expected: set[tuple[int, str]] = set()
+        scored: set[tuple[int, str]] = set()
+        for matchup in matchups:
+            roster_id = int(matchup.get("roster_id") or 0)
+            if not roster_id:
+                continue
+            for player_id in matchup.get("players") or []:
+                expected.add((roster_id, str(player_id)))
+            raw_standard = matchup.get("players_points")
+            raw_custom = matchup.get("players_points_custom")
+            point_ids = set(raw_standard) if isinstance(raw_standard, dict) else set()
+            point_ids.update(raw_custom if isinstance(raw_custom, dict) else {})
+            scored.update((roster_id, str(player_id)) for player_id in point_ids)
+        missing = sorted(player_id for roster_id, player_id in expected - scored)
+        week_complete = bool(matchups) and not missing
+        if not matchups:
+            coverage["complete"] = False
+            coverage["warnings"].append(f"week {history_week}: no matchup rows returned")
+        if not week_complete:
+            coverage["complete"] = False
+            if missing:
+                coverage["warnings"].append(
+                    f"week {history_week}: missing scores for {len(missing)} rostered players"
+                )
+        coverage["weeks"][str(history_week)] = {
+            "status": "complete" if week_complete else "incomplete",
+            "players_expected": len(expected),
+            "scores_present": len(expected & scored),
+            "missing_player_ids": missing,
+        }
+        events.extend(
+            _normalize_player_fantasy_finals(
+                league_key, season, history_week, matchups, players, observed_at,
+                existing_rows=existing,
+            )
+        )
+
+    resolved = {
+        (int(row.get("week") or 0), int(row.get("roster_id") or 0), str(row.get("player_id") or "")): dict(row)
+        for row in existing
+        if int(row.get("week") or 0) <= through_week
+    }
+    for event in events:
+        key = (
+            int(event.week or 0),
+            int(event.entities.get("roster_id") or 0),
+            str(event.entities.get("player_id") or ""),
+        )
+        evidence = event.evidence
+        resolved[key] = {
+            "season": season,
+            "week": key[0],
+            "roster_id": key[1],
+            "player_id": key[2],
+            "position": evidence.get("position"),
+            "points": float(evidence.get("points") or 0),
+            "event_id": event.event_id,
+            "observed_at": event.observed_at,
+            "correction_of": event.correction_of,
+        }
+    return list(resolved.values()), events, coverage
+
+
 def collect_pulse(
     leagues: Iterable[Any],
     client: Any,
@@ -537,6 +635,7 @@ def collect_pulse(
         key = str(league_config.key)
         league_id = str(league_config.sleeper_league_id)
         previous = store.read_current_state(f"league-{key}")
+        player_week_history = None
         try:
             league = client.league(league_id)
             rosters = client.rosters(league_id)
@@ -570,9 +669,19 @@ def collect_pulse(
                     key, season, week, matchups, observed_at
                 )
                 if players is not None:
-                    events += _normalize_player_fantasy_finals(
-                        key, season, week, matchups, players, observed_at
+                    _history_rows, history_events, history_coverage = _collect_player_week_history(
+                        client,
+                        key,
+                        league_id,
+                        season,
+                        week,
+                        players,
+                        observed_at,
+                        current_week_matchups=matchups,
+                        existing_rows=ChronicleQueries(store.root).season_player_fantasy_finals(key, season),
                     )
+                    events += history_events
+                    player_week_history = history_coverage
                     events += _normalize_efficiency_finals(
                         key,
                         season,
@@ -600,6 +709,8 @@ def collect_pulse(
             manifest["event_counts"]["added"] += result.added
             manifest["event_counts"]["skipped"] += result.skipped
             manifest["leagues"][key] = {"status": "fresh", "error": None}
+            if player_week_history is not None:
+                manifest["leagues"][key]["player_week_history"] = player_week_history
         except (requests.RequestException, ValueError, KeyError, OSError) as exc:
             for roster in (previous.get("rosters") or {}).values():
                 tracked_ids.update(str(v) for v in roster.get("players") or [])

@@ -14,6 +14,7 @@ from .config import LeagueConfig, PublicationConfig
 from .nflverse import NFLVerseClient
 from .reading_packet import reading_packet_from_artifacts
 from .external_inputs import load_external_inputs
+from .ranking_story_context import build_ranking_story_context
 from .flagship_research import (
     build_flagship_research_packet,
     write_flagship_research_packet,
@@ -233,6 +234,18 @@ def collect_all(
                 power.update({"status": "awaiting_authoritative_handoff", "rows": [],
                               "ranking_status": "unavailable", "authority": "external_power_rankings"})
             ranking_rows = power.get("rows") or []
+            dossier["ranking_story_context"] = build_ranking_story_context(
+                ranking_rows,
+                (dossier.get("rankings") or {}).get("official_standings") or [],
+                list(official.playoff_odds),
+            )
+            if ranking_rows:
+                publication_assets, copied_asset_paths = _materialize_publication_assets(
+                    official, directory
+                )
+                generated.extend(copied_asset_paths)
+                dossier["ranking_publication_assets"] = publication_assets or {}
+
             metadata = dict(official.source_metadata)
             metadata.update({"label": "Authoritative Power Rankings", "publication_key": profile.key,
                              "ranking_status": power.get("ranking_status"),

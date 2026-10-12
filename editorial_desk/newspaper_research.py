@@ -192,6 +192,8 @@ def build_newspaper_research_packet(
             "editorial_notes": list(contract.get("editorial_notes") or []),
             "sections": list(publication_packet.get("departments") or []),
             "health": dossier.get("roster_health") or {},
+            "ranking_story_context": dossier.get("ranking_story_context") or {},
+            "ranking_publication_assets": dossier.get("ranking_publication_assets") or {},
             "source_status": _source_status(snapshot, dossier),
             "input_forbidden_group_leak": raw_division_leak,
         },
@@ -292,6 +294,33 @@ def render_newspaper_research_packet(packet: dict[str, Any]) -> str:
     lines.extend(["", "### Source Coverage"])
     for name, status in source_status.items():
         lines.append(f"- {name.replace('_', ' ').title()}: {status}")
+
+    ranking = packet.get("ranking_story_context") or {}
+    if ranking.get("status") == "ready":
+        lines.extend(["", "## AUTHORITATIVE POWER RANKING STORY LEADS", "",
+                      "Publisher rankings are model estimates, not the official standings. Story leads require editor verification."])
+        for lead in ranking.get("angles") or []:
+            team = lead.get("team") or "Unknown team"
+            kind = str(lead.get("type") or "").replace("_", " ")
+            rank = lead.get("power_rank")
+            standing = lead.get("standing_rank")
+            movement = lead.get("movement")
+            odds = lead.get("playoff_odds") or {}
+            detail = f"- {team}: {kind}; power #{rank}"
+            if standing is not None:
+                detail += f", standings #{standing}"
+            if movement is not None:
+                detail += f", movement {movement:+}"
+            if odds.get("playoff") is not None:
+                detail += f", estimated playoff chance {odds['playoff']}%"
+            lines.append(detail + ".")
+        assets = packet.get("ranking_publication_assets") or {}
+        for key, value in assets.items():
+            if isinstance(value, dict) and value.get("status") == "READY":
+                lines.append(f"- Supplied chart: {key}, use unchanged ({value.get('package_path')}).")
+    else:
+        lines.extend(["", "## AUTHORITATIVE POWER RANKING STORY LEADS", "",
+                      "No current authoritative ranking handoff is available; do not invent ranking movement or playoff narratives."])
 
     for section in packet.get("sections") or []:
         feature = str(section.get("feature") or "")

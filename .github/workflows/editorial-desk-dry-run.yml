@@ -230,6 +230,26 @@ jobs:
               echo "WARNING: No current ranking handoff for ${publication_key}; packet will mark those inputs awaiting."
             fi
           done
+          # Other league handoffs use the same schema and are consumed by all
+          # newspaper profiles. Missing handoffs are not replaced by a local poll.
+          for pair in "broken_hearts:ballad_crier" "rocky_top_rumble:volunteer_voice" "nine_to_five:the_stampede" "best_characters:hollywood_beat" "sec:saturday_standard"; do
+            source_key="${pair%%:*}"
+            publication_key="${pair##*:}"
+            base="https://raw.githubusercontent.com/jarradmorelock/OTHER_LEAGUE_POWER_RANKS/main/handoff"
+            if curl --fail --silent --show-error --location "${base}/${source_key}.json" -o "editorial-inputs/${publication_key}.json"; then
+              echo "Loaded authoritative rankings for ${publication_key}."
+              for asset in power-rankings playoff-forecast; do
+                filename="${publication_key}-${asset}.png"
+                if ! curl --fail --silent --show-error --location "${base}/assets/${filename}" -o "editorial-inputs/assets/${filename}"; then
+                  rm -f "editorial-inputs/assets/${filename}"
+                  echo "WARNING: Missing authoritative ${filename}."
+                fi
+              done
+            else
+              rm -f "editorial-inputs/${publication_key}.json"
+              echo "WARNING: Missing authoritative ranking handoff for ${publication_key}."
+            fi
+          done
 
       - name: Fetch durable beat/news ledger
         id: beat_news

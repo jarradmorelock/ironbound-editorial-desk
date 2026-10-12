@@ -156,6 +156,49 @@ def collect_all(
                     or (expected_ids and set(actual_ids) != expected_ids)):
                     raise ValueError(f"Invalid authoritative ranking roster/rank coverage for {config.key}")
                 raw_rows.sort(key=lambda row: int(row["rank"]))
+                if profile.key == "saturday_standard":
+                    # Division boards are projections of the SAME overall order.
+                    # Never compare a division rank against a league-wide rank.
+                    roster_division = {
+                        int(r["roster_id"]): (r.get("settings") or {}).get("division")
+                        for r in (snapshot.get("rosters") or [])
+                    }
+                    divisional: dict[str, list[dict[str, Any]]] = {}
+                    for row in raw_rows:
+                        division = roster_division.get(int(row["roster_id"]))
+                        row["division_id"] = division
+                        divisional.setdefault(str(division), []).append(row)
+                    for division_rows in divisional.values():
+                        division_rows.sort(key=lambda row: int(row["rank"]))
+                        prior_rows = sorted(
+                            [row for row in division_rows if row.get("previous_rank") is not None],
+                            key=lambda row: int(row["previous_rank"])
+                        )
+                        full_prior = len(prior_rows) == len(division_rows) and len({
+                            int(row["previous_rank"]) for row in prior_rows
+                        }) == len(division_rows)
+                        prior_positions = (
+                            {int(row["roster_id"]): idx for idx, row in enumerate(prior_rows, 1)}
+                            if full_prior else {}
+                        )
+                        for index, row in enumerate(division_rows, 1):
+                            row["overall_rank"] = row["rank"]
+                            row["division_rank"] = index
+                            row["previous_division_rank"] = prior_positions.get(int(row["roster_id"]))
+                            row["division_movement"] = (
+                                row["previous_division_rank"] - index
+                                if row["previous_division_rank"] is not None else None
+                            )
+                    power["division_polls"] = {
+                        key: [
+                            {"roster_id": r["roster_id"], "team": r["team"],
+                             "rank": r["division_rank"], "overall_rank": r["overall_rank"],
+                             "previous_rank": r["previous_division_rank"],
+                             "movement": r["division_movement"], "score": r["score"]}
+                            for r in rows
+                        ]
+                        for key, rows in divisional.items()
+                    }
                 carried = official.source_metadata.get("ranking_status") == "carried_forward"
                 power.update({
                     "status": "carried_forward" if carried else "calculated",

@@ -524,6 +524,11 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
                 "roster_id": roster_id,
                 "team": row.get("team"),
                 "rank": current_rank,
+                "overall_rank": current_rank,
+                "division_id": row.get("division_id"),
+                "division_rank": row.get("division_rank"),
+                "previous_division_rank": row.get("previous_division_rank"),
+                "division_movement": row.get("division_movement"),
                 "previous_rank": previous_rank,
                 "movement": movement,
                 "movement_status": (

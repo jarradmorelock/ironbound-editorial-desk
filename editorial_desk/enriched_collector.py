@@ -130,6 +130,22 @@ def collect_all(
                 else None
             )
             official = load_external_inputs(external_path, profile.key)
+            if official.official_power_rankings:
+                origin = official.source_metadata
+                expected_league = str(config.sleeper_league_id)
+                actual_league = str(origin.get("league_id") or expected_league)
+                if actual_league != expected_league:
+                    raise ValueError(f"Authoritative ranking league mismatch: {config.key}")
+                origin_season = str(origin.get("season") or season)
+                if origin_season != season:
+                    raise ValueError(f"Authoritative ranking season mismatch: {config.key}")
+                source_week = origin.get("results_through_week")
+                if source_week is not None and int(source_week) != int(week):
+                    # Never silently print Week N ranks using an older handoff.
+                    raise ValueError(
+                        f"Authoritative ranking for {config.key} covers Week {source_week}, "
+                        f"not completed Week {week}"
+                    )
             prior = (ChronicleQueries(Path(chronicle_root)).latest_power_ranking_snapshot(
                 config.key, season, before_week=week)
                 if chronicle_root is not None else None)

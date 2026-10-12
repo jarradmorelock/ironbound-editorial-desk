@@ -511,17 +511,14 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
         for row in ((rankings.get("prior_published_ranking") or {}).get("rows") or [])
         if row.get("roster_id") is not None
     }
+    authoritative = isinstance(power, dict) and power.get('authority') == 'external_power_rankings'
     rendered = []
     for index, row in enumerate(rows, start=1):
         roster_id = int(row.get("roster_id") or 0)
         current_rank = int(row.get("rank") or index)
         prior = previous.get(roster_id) or {}
-        previous_rank = None if carried else prior.get("rank")
-        movement = (
-            int(previous_rank) - current_rank
-            if previous_rank is not None
-            else None
-        )
+        previous_rank = (None if carried else row.get('previous_rank')) if authoritative else (None if carried else prior.get('rank'))
+        movement = ((int(row['movement']) if row.get('movement') is not None else int(previous_rank) - current_rank) if previous_rank is not None else None)
         rendered.append(
             {
                 "roster_id": roster_id,
@@ -538,7 +535,7 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
                 "projection_rank": row.get("optimal_starting_lineup_projection_rank"),
             }
         )
-    if not carried and int(dossier.get("week") or 1) > 1 and any(r["previous_rank"] is None for r in rendered):
+    if not authoritative and not carried and int(dossier.get("week") or 1) > 1 and any(r["previous_rank"] is None for r in rendered):
         return FeatureResult("ranking_movement", "unavailable", data=rendered,
                              reason="Current order is available, but the prior research ranking is missing or incomplete; movement cannot be verified.")
     return ready(
@@ -546,7 +543,8 @@ def _ranking_wire(dossier: dict[str, Any]) -> FeatureResult:
         rendered,
         reason=(
             f"Research rankings carried forward from Week {power.get('carried_from_week')}; no new movement or model score is claimed."
-            if carried else f"Compared with the Week {prior_week} research ranking." if previous
+            if carried else "Official publisher movement; comparisons use its historical model." if authoritative
+            else f"Compared with the Week {prior_week} research ranking." if previous
             else "First week establishes the research ranking baseline; no prior-week movement is expected."
         ),
     )

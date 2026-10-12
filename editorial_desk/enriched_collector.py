@@ -123,20 +123,120 @@ def collect_all(
         generated.append(scoring_path)
         profile = publications.get(config.publication_profile or "") if publications else None
         if profile is not None and profile.tier == "newspaper":
-            prior = (ChronicleQueries(Path(chronicle_root)).latest_power_ranking_snapshot(config.key, season, before_week=week)
-                     if chronicle_root is not None else None)
-            for prior_root in [previous_issue_root, output_root]:
-                archived = prior_newspaper_ranking(Path(prior_root), config.key, season, week) if prior_root else None
-                if archived and (not prior or archived["week"] > prior["week"]):
-                    prior = archived
-            apply_newspaper_ranking_history(dossier, prior)
-            power = dossier["rankings"]["data_power_ranking"]
-            ranking_rows = [{**row, "franchise_key": f"league:{config.key}:roster:{row['roster_id']}"}
-                            for row in power.get("rows") or []]
-            metadata = {"label": "Weekly research ranking", "publication_key": profile.key,
-                        "ranking_status": power.get("ranking_status"),
-                        "ranking_source_week": power.get("ranking_source_week"),
-                        "carried_from_week": power.get("carried_from_week")}
+            external_path = (
+                Path(external_inputs_dir) / f"{profile.key}.json"
+                if external_inputs_dir is not None
+                and (Path(external_inputs_dir) / f"{profile.key}.json").is_file()
+                else None
+            )
+            official = load_external_inputs(external_path, profile.key)
+            if official.official_power_rankings:
+                origin = official.source_metadata
+                expected_league = str(config.sleeper_league_id)
+                actual_league = str(origin.get("league_id") or expected_league)
+                if actual_league != expected_league:
+                    raise ValueError(f"Authoritative ranking league mismatch: {config.key}")
+                origin_season = str(origin.get("season") or season)
+                if origin_season != season:
+                    raise ValueError(f"Authoritative ranking season mismatch: {config.key}")
+                source_week = origin.get("results_through_week")
+                if source_week is not None and int(source_week) != int(week):
+                    # Never silently print Week N ranks using an older handoff.
+                    raise ValueError(
+                        f"Authoritative ranking for {config.key} covers Week {source_week}, "
+                        f"not completed Week {week}"
+                    )
+            prior = (ChronicleQueries(Path(chronicle_root)).latest_power_ranking_snapshot(
+                config.key, season, before_week=week)
+                if chronicle_root is not None else None)
+            # No independent newspaper model may replace the official rankings.
+            official = resolve_power_ranking_input(official, prior, season=season, week=week)
+            power = dossier.setdefault("rankings", {}).setdefault("data_power_ranking", {})
+            if not isinstance(power, dict):
+                power = {}
+                dossier["rankings"]["data_power_ranking"] = power
+            power["superseded_research_rows"] = power.get("rows") or []
+            if official.official_power_rankings:
+                raw_rows = [{
+                    "roster_id": row.roster_id, "team": row.team,
+                    "rank": row.rank, "previous_rank": row.previous_rank,
+                    "movement": row.movement, "score": row.score,
+                    "components": row.components,
+                    "franchise_key": row.franchise_key or f"league:{config.key}:roster:{row.roster_id}",
+                } for row in official.official_power_rankings]
+                expected_ids = {int(team["roster_id"]) for team in (snapshot.get("rosters") or [])
+                                if isinstance(team, dict) and team.get("roster_id") is not None}
+                actual_ids = [int(row["roster_id"]) for row in raw_rows]
+                if (len(actual_ids) != len(set(actual_ids))
+                    or sorted(int(row["rank"]) for row in raw_rows) != list(range(1, len(raw_rows) + 1))
+                    or (expected_ids and set(actual_ids) != expected_ids)):
+                    raise ValueError(f"Invalid authoritative ranking roster/rank coverage for {config.key}")
+                raw_rows.sort(key=lambda row: int(row["rank"]))
+                if profile.key == "saturday_standard":
+                    # Division boards are projections of the SAME overall order.
+                    # Never compare a division rank against a league-wide rank.
+                    roster_division = {
+                        int(r["roster_id"]): (r.get("settings") or {}).get("division")
+                        for r in (snapshot.get("rosters") or [])
+                    }
+                    divisional: dict[str, list[dict[str, Any]]] = {}
+                    for row in raw_rows:
+                        division = roster_division.get(int(row["roster_id"]))
+                        row["division_id"] = division
+                        divisional.setdefault(str(division), []).append(row)
+                    for division_rows in divisional.values():
+                        division_rows.sort(key=lambda row: int(row["rank"]))
+                        prior_rows = sorted(
+                            [row for row in division_rows if row.get("previous_rank") is not None],
+                            key=lambda row: int(row["previous_rank"])
+                        )
+                        full_prior = len(prior_rows) == len(division_rows) and len({
+                            int(row["previous_rank"]) for row in prior_rows
+                        }) == len(division_rows)
+                        prior_positions = (
+                            {int(row["roster_id"]): idx for idx, row in enumerate(prior_rows, 1)}
+                            if full_prior else {}
+                        )
+                        for index, row in enumerate(division_rows, 1):
+                            row["overall_rank"] = row["rank"]
+                            row["division_rank"] = index
+                            row["previous_division_rank"] = prior_positions.get(int(row["roster_id"]))
+                            row["division_movement"] = (
+                                row["previous_division_rank"] - index
+                                if row["previous_division_rank"] is not None else None
+                            )
+                    power["division_polls"] = {
+                        key: [
+                            {"roster_id": r["roster_id"], "team": r["team"],
+                             "rank": r["division_rank"], "overall_rank": r["overall_rank"],
+                             "previous_rank": r["previous_division_rank"],
+                             "movement": r["division_movement"], "score": r["score"]}
+                            for r in rows
+                        ]
+                        for key, rows in divisional.items()
+                    }
+                carried = official.source_metadata.get("ranking_status") == "carried_forward"
+                power.update({
+                    "status": "carried_forward" if carried else "calculated",
+                    "ranking_status": "carried_forward" if carried else "current",
+                    "ranking_source_week": official.source_metadata.get("results_through_week") or week,
+                    "rows": raw_rows,
+                    "source_metadata": dict(official.source_metadata),
+                    "authority": "external_power_rankings",
+                })
+                dossier["rankings"]["prior_published_ranking"] = {
+                    "status": "provided_by_authoritative_publisher",
+                    "week": (prior or {}).get("week"),
+                    "rows": (prior or {}).get("rows") or [],
+                }
+            else:
+                power.update({"status": "awaiting_authoritative_handoff", "rows": [],
+                              "ranking_status": "unavailable", "authority": "external_power_rankings"})
+            ranking_rows = power.get("rows") or []
+            metadata = dict(official.source_metadata)
+            metadata.update({"label": "Authoritative Power Rankings", "publication_key": profile.key,
+                             "ranking_status": power.get("ranking_status"),
+                             "ranking_source_week": power.get("ranking_source_week")})
             ranking_path = directory / "ranking_history.json"
             _write_json(ranking_path, {"season": season, "week": week, "league_key": config.key,
                                       "rows": ranking_rows, "source_metadata": metadata})
@@ -145,7 +245,7 @@ def collect_all(
                 ChronicleStore(Path(chronicle_root)).append_events(ranking_snapshot_events(
                     config.key, season, week, ranking_rows, source_metadata=metadata,
                     observed_at=datetime.now(timezone.utc).isoformat(),
-                    provenance="carried_forward" if power.get("ranking_status") == "carried_forward" else "model_estimate",
+                    provenance="carried_forward" if power.get("ranking_status") == "carried_forward" else "source_exact",
                 ))
         _write_json(directory / "dossier.json", dossier)
         (directory / "dossier.md").write_text(

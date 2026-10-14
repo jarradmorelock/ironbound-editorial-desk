@@ -270,6 +270,7 @@ def _mvp_dossier(tmp_path, league_key, league_name, week=1, base_points=30.0):
     root = tmp_path / "2026" / f"week-{week:02d}" / league_key
     root.mkdir(parents=True, exist_ok=True)
     mvps = []
+    stat_records = []
     for division_id, division_name in enumerate(
         ("Hammer", "Anvil", "Crucible", "Forge"), start=1
     ):
@@ -288,6 +289,19 @@ def _mvp_dossier(tmp_path, league_key, league_name, week=1, base_points=30.0):
                 "gold_foil": division_id == 4,
             }
         )
+        stat_records.append(
+            {
+                "sleeper_player_id": f"{league_key}-p{division_id}",
+                "nfl_player_id": f"nfl-{division_id}",
+                "nfl_team": "DET",
+                "opponent": "GB",
+                "receptions": division_id + 3,
+                "targets": division_id + 5,
+                "receiving_yards": 20 * division_id,
+                "receiving_tds": 1,
+                "nfl_stat_line": f"{division_id + 3} catches for {20 * division_id} yards, 1 TD",
+            }
+        )
     (root / "dossier.json").write_text(
         json.dumps(
             {
@@ -298,6 +312,9 @@ def _mvp_dossier(tmp_path, league_key, league_name, week=1, base_points=30.0):
                     "publication": "Weekly",
                 },
                 "weekly_features": {"divisional_mvp_nominees": mvps},
+                "nfl_game_intelligence": {
+                    "stat_book": {"status": "available", "records": stat_records}
+                },
             }
         ),
         encoding="utf-8",
@@ -334,6 +351,28 @@ def test_build_divisional_mvp_email_contains_exactly_eight_card_candidates(tmp_p
         sum(1 for row in league["mvps"] if row["gold_foil"]) == 1
         for league in payload["leagues"]
     )
+    assert all(
+        row["nfl_stat_line"] and row["nfl_stats"]
+        for league in payload["leagues"]
+        for row in league["mvps"]
+    )
+    first = payload["leagues"][0]["mvps"][0]
+    assert first["nfl_stat_line"] == "4 catches for 20 yards, 1 TD"
+    assert first["nfl_stats"]["receiving_yards"] == 20
+    assert first["nfl_stats"]["receptions"] == 4
+    assert first["nfl_player_id"] == "nfl-1"
+
+
+def test_divisional_mvp_email_rejects_missing_player_stat_line(tmp_path):
+    root = _mvp_dossier(tmp_path, "ironbound_sixteen", "Ironbound Sixteen")
+    _mvp_dossier(tmp_path, "free_ironbound_sixteen", "Free Ironbound Sixteen")
+    path = root / "dossier.json"
+    dossier = json.loads(path.read_text(encoding="utf-8"))
+    dossier["nfl_game_intelligence"]["stat_book"]["records"].pop(0)
+    path.write_text(json.dumps(dossier), encoding="utf-8")
+
+    with pytest.raises(EmailDeliveryError, match="NFL stat line.*Player 1"):
+        build_divisional_mvp_email(tmp_path, 1, "desk@example.com", "reader@example.com")
 
 
 def test_divisional_mvp_email_rejects_nonstarter_or_wrong_gold(tmp_path):

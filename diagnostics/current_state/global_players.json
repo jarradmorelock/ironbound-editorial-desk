@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-14T15:52:59.282687+00:00",
+  "observed_at": "2026-10-14T20:11:47.646098+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -298,7 +298,7 @@
       "status": "Active"
     },
     "11625": {
-      "injury_status": "Questionable",
+      "injury_status": "Doubtful",
       "status": "Active"
     },
     "11626": {
@@ -689,10 +689,6 @@
       "injury_status": null,
       "status": "Active"
     },
-    "12543": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "12544": {
       "injury_status": null,
       "status": "Active"
@@ -735,10 +731,6 @@
     },
     "12571": {
       "injury_status": null,
-      "status": "Active"
-    },
-    "12573": {
-      "injury_status": "Questionable",
       "status": "Active"
     },
     "12574": {
@@ -1001,10 +993,6 @@
       "injury_status": null,
       "status": "Active"
     },
-    "13336": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "13337": {
       "injury_status": null,
       "status": "Active"
@@ -1254,11 +1242,7 @@
       "status": "Active"
     },
     "1479": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "1737": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "19": {
@@ -1379,10 +1363,6 @@
     },
     "4017": {
       "injury_status": null,
-      "status": "Active"
-    },
-    "4018": {
-      "injury_status": "Questionable",
       "status": "Active"
     },
     "4033": {
@@ -1682,11 +1662,11 @@
       "status": "Active"
     },
     "5960": {
-      "injury_status": "Questionable",
+      "injury_status": "Doubtful",
       "status": "Active"
     },
     "5967": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "5991": {
@@ -1711,10 +1691,6 @@
     },
     "6119": {
       "injury_status": "Questionable",
-      "status": "Active"
-    },
-    "6124": {
-      "injury_status": "Sus",
       "status": "Active"
     },
     "6125": {
@@ -1885,10 +1861,6 @@
       "injury_status": null,
       "status": "Active"
     },
-    "6923": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "6931": {
       "injury_status": null,
       "status": "Active"
@@ -1934,10 +1906,6 @@
       "status": "Active"
     },
     "7136": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "7346": {
       "injury_status": null,
       "status": "Active"
     },
@@ -2037,10 +2005,6 @@
       "injury_status": "Doubtful",
       "status": "Active"
     },
-    "7647": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "7648": {
       "injury_status": null,
       "status": "Active"
@@ -2094,7 +2058,7 @@
       "status": "Active"
     },
     "7811": {
-      "injury_status": "Questionable",
+      "injury_status": "Out",
       "status": "Active"
     },
     "7828": {
@@ -2118,10 +2082,6 @@
       "status": "Active"
     },
     "8116": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "8117": {
       "injury_status": null,
       "status": "Active"
     },
@@ -2210,7 +2170,7 @@
       "status": "Active"
     },
     "8155": {
-      "injury_status": "Questionable",
+      "injury_status": "Doubtful",
       "status": "Active"
     },
     "8161": {
@@ -2310,10 +2270,6 @@
       "status": "Active"
     },
     "8330": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "8333": {
       "injury_status": null,
       "status": "Active"
     },
@@ -2525,14 +2481,6 @@
       "injury_status": null,
       "status": null
     },
-    "CHI": {
-      "injury_status": null,
-      "status": null
-    },
-    "CIN": {
-      "injury_status": null,
-      "status": null
-    },
     "CLE": {
       "injury_status": null,
       "status": null
@@ -2594,10 +2542,6 @@
       "status": null
     },
     "SF": {
-      "injury_status": null,
-      "status": null
-    },
-    "WAS": {
       "injury_status": null,
       "status": null
     }

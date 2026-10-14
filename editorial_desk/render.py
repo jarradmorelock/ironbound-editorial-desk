@@ -50,7 +50,18 @@ def render_markdown(dossier: dict[str, Any]) -> str:
                 f"{row['points_for']:.2f} points"
             )
     power = rankings.get("data_power_ranking") or {}
-    if power.get("status") == "calculated":
+    if power.get("authority") == "external_power_rankings":
+        lines.append("")
+        for row in power.get("rows") or []:
+            details = []
+            if row.get("score") is not None:
+                details.append(f"score {row['score']}")
+            if row.get("movement") is not None:
+                movement = int(row["movement"])
+                details.append(f"moved {'+' if movement > 0 else ''}{movement}")
+            suffix = f" ({'; '.join(details)})" if details else ""
+            lines.append(f"- Power #{row['rank']} {row['team']}{suffix}")
+    elif power.get("status") == "calculated":
         lines.append("")
         for row in power.get("rows") or []:
             lines.append(

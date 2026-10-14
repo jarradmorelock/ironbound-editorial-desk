@@ -249,6 +249,33 @@ def test_flagship_supplement_exposes_magazine_level_sleeper_evidence():
     assert "### Draft Archive" in markdown
 
 
+def test_renderer_uses_authoritative_power_ranking_handoff_fields():
+    dossier = {
+        "league": {"publication": "The Paper", "configured_name": "Test League"},
+        "week": 5,
+        "rankings": {
+            "official_standings_status": "season_not_started",
+            "data_power_ranking": {
+                "status": "calculated",
+                "authority": "external_power_rankings",
+                "rows": [
+                    {
+                        "rank": 1,
+                        "team": "The Testers",
+                        "score": 87.5,
+                        "movement": 2,
+                    }
+                ],
+            },
+        },
+    }
+
+    markdown = render_markdown(dossier)
+
+    assert "Power #1 The Testers (score 87.5; moved +2)" in markdown
+    assert "submitted projection" not in markdown
+
+
 def test_thursday_and_monday_swings_use_nfl_game_timing_and_late_plays():
     timed = deepcopy(snapshot())
     timed["players"]["qb1"].update({"team": "BUF", "gsis_id": "g1"})

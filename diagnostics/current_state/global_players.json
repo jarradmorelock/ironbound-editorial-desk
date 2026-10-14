@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-13T17:37:32.090225+00:00",
+  "observed_at": "2026-10-14T03:07:50.594068+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -478,8 +478,8 @@
       "status": "Active"
     },
     "12472": {
-      "injury_status": "Questionable",
-      "status": "Active"
+      "injury_status": "IR",
+      "status": "Inactive"
     },
     "12474": {
       "injury_status": null,
@@ -674,6 +674,10 @@
       "status": "Inactive"
     },
     "12542": {
+      "injury_status": null,
+      "status": "Active"
+    },
+    "12543": {
       "injury_status": null,
       "status": "Active"
     },
@@ -1257,6 +1261,10 @@
       "injury_status": null,
       "status": "Active"
     },
+    "2197": {
+      "injury_status": null,
+      "status": "Active"
+    },
     "2216": {
       "injury_status": null,
       "status": "Active"
@@ -1355,6 +1363,10 @@
     },
     "4017": {
       "injury_status": null,
+      "status": "Active"
+    },
+    "4018": {
+      "injury_status": "",
       "status": "Active"
     },
     "4033": {
@@ -1686,7 +1698,7 @@
       "status": "Active"
     },
     "6124": {
-      "injury_status": null,
+      "injury_status": "Sus",
       "status": "Active"
     },
     "6125": {
@@ -1857,6 +1869,10 @@
       "injury_status": null,
       "status": "Active"
     },
+    "6923": {
+      "injury_status": null,
+      "status": "Active"
+    },
     "6931": {
       "injury_status": null,
       "status": "Active"
@@ -1902,6 +1918,10 @@
       "status": "Active"
     },
     "7136": {
+      "injury_status": null,
+      "status": "Active"
+    },
+    "7346": {
       "injury_status": null,
       "status": "Active"
     },
@@ -1999,6 +2019,10 @@
     },
     "7641": {
       "injury_status": "Out",
+      "status": "Active"
+    },
+    "7647": {
+      "injury_status": null,
       "status": "Active"
     },
     "7648": {
@@ -2538,6 +2562,10 @@
       "status": null
     },
     "SF": {
+      "injury_status": null,
+      "status": null
+    },
+    "WAS": {
       "injury_status": null,
       "status": null
     }

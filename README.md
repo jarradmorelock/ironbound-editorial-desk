@@ -466,9 +466,11 @@ divisions in each league. Each league receives exactly one gold-foil flag,
 assigned to the highest scorer among its four divisional winners.
 
 The email body is human-readable and carries division, player, fantasy team,
-position, and fantasy points. A JSON attachment preserves player/roster IDs and
-the gold-foil flag for deterministic trading-card production. These MVP rows do
-not appear in the flagship magazine research packet.
+position, fantasy points, and the actual NFL game stat line. A JSON attachment
+preserves player/roster IDs, the gold-foil flag, the NFL stat line, and numeric
+box-score/usage fields for deterministic trading-card production. The handoff
+stops if an MVP has no matched NFL stat line. These MVP rows do not appear in
+the flagship magazine research packet.
 
 ## Weekly reading packets
 

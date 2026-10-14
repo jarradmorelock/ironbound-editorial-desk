@@ -221,6 +221,28 @@ FLAGSHIP_MVP_LEAGUES = (
     "free_ironbound_sixteen",
 )
 
+MVP_NFL_STAT_FIELDS = (
+    "completions",
+    "attempts",
+    "passing_yards",
+    "passing_tds",
+    "passing_interceptions",
+    "carries",
+    "rushing_yards",
+    "rushing_tds",
+    "receptions",
+    "targets",
+    "receiving_yards",
+    "receiving_tds",
+    "offense_snaps",
+    "snap_share",
+    "carry_share",
+    "target_share",
+    "red_zone_opportunities",
+    "inside_10_opportunities",
+    "inside_5_opportunities",
+)
+
 
 def build_divisional_mvp_email(
     output_root: Path,
@@ -252,7 +274,7 @@ def build_divisional_mvp_email(
             lines.append(
                 f"- {foil}{row['division_name']} | {row['player']} | "
                 f"{row['team']} | {row.get('position') or 'N/A'} | "
-                f"{float(row['points']):.2f} FP"
+                f"{float(row['points']):.2f} FP | {row['nfl_stat_line']}"
             )
         lines.append("")
     lines.append(
@@ -321,6 +343,16 @@ def _divisional_mvp_payload(output_root: Path, week: int) -> dict[str, Any]:
     for league_key in FLAGSHIP_MVP_LEAGUES:
         dossier = dossiers[league_key]
         league = dossier.get("league") or {}
+        stat_book = (
+            (dossier.get("nfl_game_intelligence") or {}).get("stat_book") or {}
+        )
+        if stat_book.get("status") != "available":
+            raise EmailDeliveryError(f"{league_key} NFL stat book is unavailable for MVP cards")
+        stats_by_player = {
+            str(record.get("sleeper_player_id")): record
+            for record in stat_book.get("records") or []
+            if record.get("sleeper_player_id")
+        }
         nominees = list(
             ((dossier.get("weekly_features") or {}).get("divisional_mvp_nominees"))
             or []
@@ -359,8 +391,29 @@ def _divisional_mvp_payload(output_root: Path, week: int) -> dict[str, Any]:
                 f"{league_key} gold-foil MVP is not the highest-scoring divisional winner"
             )
 
+        enriched = []
+        for row in nominees:
+            stat = stats_by_player.get(str(row.get("player_id") or ""))
+            if not stat or not stat.get("nfl_stat_line"):
+                raise EmailDeliveryError(
+                    f"{league_key} NFL stat line missing for MVP {row.get('player')} "
+                    f"(Sleeper player {row.get('player_id')})"
+                )
+            enriched.append(
+                {
+                    **row,
+                    "nfl_player_id": stat.get("nfl_player_id"),
+                    "nfl_team": stat.get("nfl_team"),
+                    "nfl_opponent": stat.get("opponent"),
+                    "nfl_stat_line": stat["nfl_stat_line"],
+                    "nfl_stats": {
+                        key: stat[key] for key in MVP_NFL_STAT_FIELDS if key in stat
+                    },
+                }
+            )
+
         ordered = sorted(
-            (dict(row) for row in nominees),
+            enriched,
             key=lambda row: (
                 int(row.get("division_id"))
                 if str(row.get("division_id") or "").isdigit()

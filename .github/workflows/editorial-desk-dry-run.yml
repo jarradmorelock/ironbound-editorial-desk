@@ -22,7 +22,7 @@ on:
         default: false
         type: boolean
   schedule:
-    - cron: "17 21 * * 2"
+    - cron: "17 15 * * 2"
       timezone: "America/New_York"
     - cron: "17 5 * * 3"
       timezone: "America/New_York"
@@ -128,7 +128,7 @@ jobs:
           PY
             fi
           else
-            if [[ "${{ github.event.schedule }}" == "17 21 * * 2" ]]; then
+            if [[ "${{ github.event.schedule }}" == "17 15 * * 2" ]]; then
               echo "job=primary" >> "$GITHUB_OUTPUT"
             else
               echo "job=backup" >> "$GITHUB_OUTPUT"

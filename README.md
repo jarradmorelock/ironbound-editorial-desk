@@ -13,7 +13,7 @@ is opt-in and uses repository secrets.
 - NFL game dates, weekly box scores, and late-play context come from the public
   read-only [nflverse data releases](https://github.com/nflverse/nflverse-data).
 - The existing transaction and Discord reporters are not imported or changed.
-- GitHub runs the complete collection Tuesday at 9:17 p.m. Eastern and a
+- GitHub runs the complete collection Tuesday at 3:17 p.m. Eastern and a
   delta-only safety check Wednesday at 5:17 a.m. Eastern.
 - Generated editorial output is ignored by Git. Complete and supplemental
   packets are uploaded only as temporary workflow artifacts.
@@ -490,7 +490,7 @@ regular-season NFL week. It does not assume that Sleeper's current week is the
 week that just ended, and it will not send anything before every NFL game in
 the reviewed week has a final score.
 
-At 9:17 p.m. Eastern every Tuesday, the workflow serializes with the Chronicle
+At 3:17 p.m. Eastern every Tuesday, the workflow serializes with the Chronicle
 pulse collector, finalizes the completed fantasy week into Chronicle,
 materializes derived history, commits any change, and captures that exact
 Chronicle SHA. Full newspaper packets and Ironbound/Unbound Story Desk artifacts
@@ -508,9 +508,13 @@ but refuses to send a duplicate full packet.
 
 The slight offset from the top of the hour reduces the chance of a GitHub
 Actions scheduling delay. Both schedules use the `America/New_York` timezone,
-so they remain 9:17 p.m. and 5:17 a.m. across daylight-saving changes.
+so they remain 3:17 p.m. Tuesday and 5:17 a.m. Wednesday across daylight-saving
+changes.
 
 ## Manual GitHub run
+
+The Tuesday delivery runs automatically at 3:17 p.m. Eastern. Use a manual run
+for validation, a preview, or a production retry.
 
 Open **Actions -> RUN THIS - Weekly Editorial Delivery -> Run workflow**. Select
 **Production**, enter the completed NFL week, and enable **send_email** if you

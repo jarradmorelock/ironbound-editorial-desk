@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-10-15T19:53:13.987045+00:00",
+  "observed_at": "2026-10-15T23:42:12.402427+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -118,7 +118,7 @@
       "status": "Active"
     },
     "10930": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "10933": {
@@ -194,7 +194,7 @@
       "status": "Active"
     },
     "11560": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "11563": {
@@ -438,7 +438,7 @@
       "status": "Active"
     },
     "11739": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "11740": {
@@ -606,7 +606,7 @@
       "status": "Active"
     },
     "12510": {
-      "injury_status": null,
+      "injury_status": "Out",
       "status": "Active"
     },
     "12511": {
@@ -666,7 +666,7 @@
       "status": "Inactive"
     },
     "12533": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "12534": {
@@ -734,7 +734,7 @@
       "status": "Inactive"
     },
     "12571": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "12574": {
@@ -766,7 +766,7 @@
       "status": "Active"
     },
     "12631": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "12634": {
@@ -1110,7 +1110,7 @@
       "status": "Active"
     },
     "13390": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "13391": {
@@ -1174,7 +1174,7 @@
       "status": "Inactive"
     },
     "13418": {
-      "injury_status": null,
+      "injury_status": "Out",
       "status": "Active"
     },
     "13420": {
@@ -1270,7 +1270,7 @@
       "status": "Active"
     },
     "2216": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "2227": {
@@ -1402,7 +1402,7 @@
       "status": "Active"
     },
     "4071": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "4081": {
@@ -1454,7 +1454,7 @@
       "status": "Active"
     },
     "4663": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "4718": {
@@ -1642,7 +1642,7 @@
       "status": "Active"
     },
     "5892": {
-      "injury_status": "Doubtful",
+      "injury_status": "Out",
       "status": "Active"
     },
     "5894": {
@@ -1658,7 +1658,7 @@
       "status": "Active"
     },
     "5927": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "5944": {
@@ -1890,7 +1890,7 @@
       "status": "Active"
     },
     "7021": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "7039": {
@@ -1910,7 +1910,7 @@
       "status": "Active"
     },
     "7090": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "7113": {
@@ -2038,7 +2038,7 @@
       "status": "Active"
     },
     "7677": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "7687": {
@@ -2134,7 +2134,7 @@
       "status": "Active"
     },
     "8135": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "8136": {
@@ -2270,7 +2270,7 @@
       "status": "Active"
     },
     "8314": {
-      "injury_status": "Doubtful",
+      "injury_status": "Out",
       "status": "Active"
     },
     "8323": {
@@ -2426,7 +2426,7 @@
       "status": "Active"
     },
     "9500": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "9501": {
@@ -2482,7 +2482,7 @@
       "status": "Active"
     },
     "9997": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "BAL": {

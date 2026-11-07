@@ -121,6 +121,17 @@ def collect_team_avatars(
         meta = user.get("metadata") or {}
         name = str(meta.get("team_name") or user.get("display_name") or f"Roster {roster_id}")
         aid, source = choose_avatar(user, roster)
+        if not aid and owner_id:
+            # Individual Sleeper profile can sometimes have an avatar even
+            # when the league-user record omits it.
+            try:
+                profile = client.get_json(f"user/{owner_id}")
+                if isinstance(profile, dict):
+                    aid, source = choose_avatar(profile, roster)
+                    if source:
+                        source = "individual_profile." + source
+            except (requests.RequestException, ValueError, KeyError):
+                pass
         row: dict[str, Any] = {
             "roster_id": roster_id,
             "owner_id": owner_id,

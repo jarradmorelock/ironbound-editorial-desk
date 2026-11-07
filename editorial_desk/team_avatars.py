@@ -132,6 +132,19 @@ def collect_team_avatars(
     by_owner = {str(u.get("user_id")): u for u in users if isinstance(u, dict)}
     directory = Path(output_root) / league.key / season
     directory.mkdir(parents=True, exist_ok=True)
+    existing = directory / "manifest.json"
+    manually_provided: dict[int, dict[str, Any]] = {}
+    if existing.is_file():
+        prior = json.loads(existing.read_text(encoding="utf-8"))
+        if (str(prior.get("league_id")) == league.sleeper_league_id
+            and str(prior.get("season")) == season
+            and str(prior.get("league_key")) == league.key):
+            manually_provided = {
+                int(row["roster_id"]): row
+                for row in (prior.get("teams") or [])
+                if row.get("avatar_source") == "commissioner_supplied"
+                and row.get("status") == "downloaded"
+            }
     records: list[dict[str, Any]] = []
     for roster in sorted(rosters, key=lambda row: int(row.get("roster_id") or 0)):
         roster_id = int(roster.get("roster_id") or 0)
@@ -139,6 +152,14 @@ def collect_team_avatars(
         user = by_owner.get(owner_id) or {}
         meta = user.get("metadata") or {}
         name = str(meta.get("team_name") or user.get("display_name") or f"Roster {roster_id}")
+        manual = manually_provided.get(roster_id)
+        if manual:
+            original = directory / str(manual.get("original_path") or "")
+            image = directory / str(manual.get("image_path") or "")
+            if (original.is_file() and image.is_file()
+                and sha256(original.read_bytes()).hexdigest() == manual.get("sha256")):
+                records.append({**manual, "team_name": name, "owner_id": owner_id})
+                continue
         image_url, source = choose_avatar(user, roster)
         row: dict[str, Any] = {
             "roster_id": roster_id,
@@ -188,6 +209,83 @@ def collect_team_avatars(
         encoding="utf-8",
     )
     return manifest
+
+
+
+def import_commissioner_team_avatars(
+    league: LeagueConfig, asset_root: Path, overrides_dir: Path, *, season: str
+) -> dict[str, Any]:
+    """Merge the commissioner's actual files into an existing Sleeper manifest.
+
+    Files must be named roster-N-original.jpg/png/webp; a supplied image is
+    never mistaken for one downloaded from Sleeper. These entries survive
+    future collection runs so long as their originals remain on disk.
+    """
+    directory = Path(asset_root) / league.key / str(season)
+    manifest_path = directory / "manifest.json"
+    if not manifest_path.is_file():
+        raise AvatarCollectionError("Run collect-team-avatars before importing overrides")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if (manifest.get("league_key") != league.key
+        or str(manifest.get("league_id")) != league.sleeper_league_id
+        or str(manifest.get("season")) != str(season)):
+        raise AvatarCollectionError("Commissioner override manifest league/season mismatch")
+    index = {int(row["roster_id"]): row for row in manifest.get("teams") or []}
+    override_files = sorted(
+        path for path in Path(overrides_dir).iterdir()
+        if path.is_file() and re.fullmatch(
+            r"roster-[0-9]+-original\.(jpg|jpeg|png|webp)", path.name, re.IGNORECASE
+        )
+    )
+    if not override_files:
+        raise AvatarCollectionError("No roster-N-original images found in override directory")
+    imported = []
+    for file in override_files:
+        roster_id = int(file.name.split("-")[1])
+        if roster_id not in index:
+            raise AvatarCollectionError(f"Override roster {roster_id} is not in this league")
+        raw = file.read_bytes()
+        if len(raw) > MAX_BYTES:
+            raise AvatarCollectionError(f"Override {file.name} exceeded size limit")
+        try:
+            with Image.open(BytesIO(raw)) as image:
+                if image.format not in EXTENSIONS or not image.width or not image.height:
+                    raise AvatarCollectionError(f"Unsupported commissioner logo: {file.name}")
+                image.load()
+                size = (image.width, image.height)
+                png_buf = BytesIO()
+                image.convert("RGBA").save(png_buf, format="PNG")
+        except (UnidentifiedImageError, OSError, ValueError) as exc:
+            raise AvatarCollectionError(f"Invalid commissioner logo: {file.name}") from exc
+        original_name = f"roster-{roster_id}-original{EXTENSIONS[image.format]}"
+        (directory / original_name).write_bytes(raw)
+        (directory / f"roster-{roster_id}.png").write_bytes(png_buf.getvalue())
+        index[roster_id].update({
+            "status": "downloaded",
+            "avatar_id": None,
+            "avatar_source": "commissioner_supplied",
+            "team_image_url": None,
+            "full_size_url": None,
+            "original_path": original_name,
+            "image_path": f"roster-{roster_id}.png",
+            "sha256": sha256(raw).hexdigest(),
+            "width": size[0],
+            "height": size[1],
+            "resolution_warning": min(size) < 256,
+        })
+        index[roster_id].pop("error", None)
+        imported.append(roster_id)
+    manifest["downloaded"] = sum(row.get("status") == "downloaded" for row in index.values())
+    manifest["commissioner_supplied_rosters"] = sorted(
+        roster for roster, row in index.items()
+        if row.get("avatar_source") == "commissioner_supplied"
+    )
+    manifest["overrides_imported_at_utc"] = datetime.now(timezone.utc).isoformat()
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return {"imported_roster_ids": imported, "manifest": manifest, "manifest_path": str(manifest_path)}
 
 
 def attach_team_avatars(

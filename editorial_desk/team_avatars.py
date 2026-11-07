@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import shutil
 from typing import Any
+from urllib.parse import urlsplit
 
 from PIL import Image, UnidentifiedImageError
 import requests
@@ -32,33 +33,51 @@ class AvatarCollectionError(RuntimeError):
     pass
 
 
+def _team_image_url(value: Any) -> str | None:
+    """Validate Sleeper's team-upload URL or legacy avatar ID.
+
+    League-specific uploads are often complete /uploads/ URLs, NOT the
+    opaque account avatar IDs returned as user.avatar. Only Sleeper CDN
+    resources are permitted. Unknown formats are not guessed at.
+    """
+    if value is None:
+        return None
+    candidate = str(value).strip()
+    if not candidate or candidate.lower() in {"0", "none", "null", "false"}:
+        return None
+    if candidate.startswith("/uploads/") or candidate.startswith("/avatars/"):
+        candidate = "https://sleepercdn.com" + candidate
+    if AVATAR_ID.fullmatch(candidate):
+        return f"{CDN_ROOT}/{candidate}"
+    parts = urlsplit(candidate)
+    if (parts.scheme != "https" or parts.netloc != "sleepercdn.com"
+        or parts.username or parts.password or parts.fragment
+        or not parts.path.startswith(("/uploads/", "/avatars/"))
+        or ".." in parts.path.split("/") or "\\" in parts.path):
+        return None
+    return candidate
+
+
 def choose_avatar(user: dict[str, Any], roster: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Prefer a league-specific avatar, falling back to the account avatar."""
+    """Return a league-specific TEAM image URL, never the account avatar."""
     metadata = user.get("metadata") or {}
     roster_metadata = roster.get("metadata") or {}
     for source, value in (
         ("user.metadata.avatar", metadata.get("avatar")),
         ("user.metadata.team_avatar", metadata.get("team_avatar")),
         ("roster.metadata.avatar", roster_metadata.get("avatar")),
-        ("user.avatar", user.get("avatar")),
     ):
-        if value is None or str(value).lower() in {"", "0", "none", "null", "false"}:
-            continue
-        candidate = str(value).strip()
-        # Never permit arbitrary URLs/hosts in network fetches.
-        if candidate.startswith(CDN_ROOT + "/"):
-            candidate = candidate.removeprefix(CDN_ROOT + "/").removeprefix("thumbs/")
-        if AVATAR_ID.fullmatch(candidate):
-            return candidate, source
+        url = _team_image_url(value)
+        if url:
+            return url, source
     return None, None
 
 
 def _fetch_image(
-    session: requests.Session, avatar_id: str, timeout: int
+    session: requests.Session, image_url: str, timeout: int
 ) -> tuple[bytes, str, tuple[int, int], bytes]:
-    url = f"{CDN_ROOT}/{avatar_id}"
     response = session.get(
-        url,
+        image_url,
         timeout=timeout,
         headers={"User-Agent": USER_AGENT, "Accept": "image/*"},
         stream=True,
@@ -120,30 +139,21 @@ def collect_team_avatars(
         user = by_owner.get(owner_id) or {}
         meta = user.get("metadata") or {}
         name = str(meta.get("team_name") or user.get("display_name") or f"Roster {roster_id}")
-        aid, source = choose_avatar(user, roster)
-        if not aid and owner_id:
-            # Individual Sleeper profile can sometimes have an avatar even
-            # when the league-user record omits it.
-            try:
-                profile = client.get_json(f"user/{owner_id}")
-                if isinstance(profile, dict):
-                    aid, source = choose_avatar(profile, roster)
-                    if source:
-                        source = "individual_profile." + source
-            except (requests.RequestException, ValueError, KeyError):
-                pass
+        image_url, source = choose_avatar(user, roster)
         row: dict[str, Any] = {
             "roster_id": roster_id,
             "owner_id": owner_id,
             "team_name": name,
-            "avatar_id": aid,
+            "avatar_id": None,
+            "team_image_url": image_url,
             "avatar_source": source,
-            "status": "missing_avatar" if not aid else "pending",
+            "status": "missing_team_upload" if not image_url else "pending",
+            "team_metadata_keys": sorted((user.get("metadata") or {}).keys()),
         }
-        if aid:
-            row["full_size_url"] = f"{CDN_ROOT}/{aid}"
+        if image_url:
+            row["full_size_url"] = image_url
             try:
-                data, ext, (w, h), png = _fetch_image(session, aid, timeout)
+                data, ext, (w, h), png = _fetch_image(session, image_url, timeout)
                 original_name = f"roster-{roster_id}-original{ext}"
                 image_name = f"roster-{roster_id}.png"
                 (directory / original_name).write_bytes(data)
@@ -168,7 +178,7 @@ def collect_team_avatars(
         "league_name": league_data.get("name") or league.name,
         "season": season,
         "collected_at_utc": datetime.now(timezone.utc).isoformat(),
-        "asset_kind": "original Sleeper team/avatar images, unmodified + PNG derivative",
+        "asset_kind": "verified league-specific team images only; originals and PNG derivatives",
         "teams": records,
         "expected_rosters": len(rosters),
         "downloaded": sum(r["status"] == "downloaded" for r in records),
@@ -218,7 +228,7 @@ def attach_team_avatars(
             "roster_id": roster_id,
             "owner_id": row.get("owner_id"),
             "team_name": row.get("team_name"),
-            "avatar_id": row.get("avatar_id"),
+            "team_image_url": row.get("team_image_url"),
             "image_path": f"publication-assets/team-avatars/{source.name}",
             "width": row.get("width"),
             "height": row.get("height"),

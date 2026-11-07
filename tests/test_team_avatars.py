@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from PIL import Image
 from pytest import raises
 
-from editorial_desk.team_avatars import collect_team_avatars, attach_team_avatars, choose_avatar
+from editorial_desk.team_avatars import collect_team_avatars, attach_team_avatars, import_commissioner_team_avatars, choose_avatar
 
 
 def image_bytes():
@@ -93,3 +93,24 @@ def test_account_avatar_alone_is_not_team_artwork():
 
 def test_rejects_non_sleeper_urls():
     assert choose_avatar({"metadata": {"avatar": "https://evil.example/uploads/team.png"}}, {}) == (None, None)
+
+
+def test_commissioner_images_survive_refresh(tmp_path: Path):
+    obj = league()
+    root = tmp_path / "assets"
+    collect_team_avatars(obj, root, client=Client(), session=Session())
+    override_dir = tmp_path / "overrides"
+    override_dir.mkdir()
+    (override_dir / "roster-9-original.jpg").write_bytes(_jpeg_bytes())
+    result = import_commissioner_team_avatars(obj, root, override_dir, season="2026")
+    assert result["imported_roster_ids"] == [9]
+    assert result["manifest"]["teams"][0]["avatar_source"] == "commissioner_supplied"
+    again = collect_team_avatars(obj, root, client=Client(), session=Session())
+    assert again["teams"][0]["avatar_source"] == "commissioner_supplied"
+    assert (root / obj.key / "2026" / "roster-9-original.jpg").read_bytes() == _jpeg_bytes()
+
+
+def _jpeg_bytes():
+    buf = BytesIO()
+    Image.new("RGB", (400, 400), (240, 220, 2)).save(buf, format="JPEG")
+    return buf.getvalue()

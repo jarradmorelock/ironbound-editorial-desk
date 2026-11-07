@@ -29,7 +29,7 @@ from .emailer import (
 from .enriched_collector import collect_all
 from .period import PeriodDetectionError, detect_completed_period
 from .retention import prune_diagnostics
-from .team_avatars import collect_team_avatars, attach_team_avatars, AvatarCollectionError
+from .team_avatars import collect_team_avatars, attach_team_avatars, import_commissioner_team_avatars, AvatarCollectionError
 from .sleeper import SleeperClient
 from .supplement import generate_supplements
 
@@ -42,6 +42,13 @@ def parser() -> argparse.ArgumentParser:
     avatars.add_argument("--config", type=Path, default=Path("config/leagues.example.json"))
     avatars.add_argument("--league-key", required=True)
     avatars.add_argument("--asset-root", type=Path, default=Path("output/team-avatars"))
+
+    override = subcommands.add_parser("import-team-avatars", help="Add commissioner-supplied originals for roster IDs")
+    override.add_argument("--config", type=Path, default=Path("config/leagues.example.json"))
+    override.add_argument("--league-key", required=True)
+    override.add_argument("--season", required=True)
+    override.add_argument("--asset-root", type=Path, default=Path("output/team-avatars"))
+    override.add_argument("--overrides-dir", type=Path, required=True)
 
     attach = subcommands.add_parser("attach-team-avatars", help="Attach saved logos to a magazine issue")
     attach.add_argument("--config", type=Path, default=Path("config/leagues.example.json"))
@@ -301,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Configuration error: {exc}")
         return 2
 
-    if args.command in {"collect-team-avatars", "attach-team-avatars"}:
+    if args.command in {"collect-team-avatars", "attach-team-avatars", "import-team-avatars"}:
         selected = next((row for row in leagues if row.key == args.league_key), None)
         if selected is None:
             print(f"Unknown league key: {args.league_key}")
@@ -312,6 +319,12 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Sleeper avatars: {report['downloaded']}/{report['expected_rosters']} downloaded")
                 print(f"Manifest: {args.asset_root / selected.key / report['season'] / 'manifest.json'}")
                 return 1 if any(t["status"] == "download_failed" for t in report["teams"]) else 0
+            if args.command == "import-team-avatars":
+                report = import_commissioner_team_avatars(
+                    selected, args.asset_root, args.overrides_dir, season=args.season
+                )
+                print(f"Commissioner logos imported: {report['imported_roster_ids']}")
+                return 0
             report = attach_team_avatars(
                 selected, args.asset_root, args.issue_dir, season=args.season
             )

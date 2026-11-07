@@ -311,7 +311,7 @@ def main(argv: list[str] | None = None) -> int:
                 report = collect_team_avatars(selected, args.asset_root)
                 print(f"Sleeper avatars: {report['downloaded']}/{report['expected_rosters']} downloaded")
                 print(f"Manifest: {args.asset_root / selected.key / report['season'] / 'manifest.json'}")
-                return 0 if report["downloaded"] == report["expected_rosters"] else 1
+                return 1 if any(t["status"] == "download_failed" for t in report["teams"]) else 0
             report = attach_team_avatars(
                 selected, args.asset_root, args.issue_dir, season=args.season
             )

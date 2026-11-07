@@ -22,3 +22,24 @@ This copies each PNG into the publication-assets/team-avatars issue folder, emit
 Run the separate "RUN THIS - Collect Sleeper Team Avatars" workflow. Choose a configured league, then download the resulting team-avatar-archive artifact. Keep a permanent copy of the downloaded folder because GitHub's workflow artifacts have finite retention.
 
 The collection and attachment operations are intentionally independent. Nothing automatically writes binary image files to the application repository or replaces commissioner-selected logos.
+
+
+## Commissioner-supplied team-logo overrides
+
+When Sleeper does not expose a team's icon, obtain the actual image from
+the commissioner, name it `roster-N-original.jpg` (PNG and WebP are also
+accepted), and save it in an overrides folder. Run:
+
+    python -m editorial_desk import-team-avatars --config config/leagues.example.json --league-key ironbound_sixteen --season 2026 --asset-root output/team-avatars --overrides-dir path/to/overrides
+
+The input filename's roster ID is checked against the existing league manifest,
+the bytes are preserved without modification, and a presentation PNG is
+created. The source remains explicitly `commissioner_supplied`. Subsequent
+Sleeper collection runs preserve these logos instead of replacing them with a
+different image. The same `attach-team-avatars` step copies them into
+magazine publication assets.
+
+For the 2026 Ironbound Sixteen correction, commissioner-provided assets are:
+roster 10 The #1 Loser, roster 11 Happy Hippies, and roster 15 The Night Sky
+Hellhawks. The completed 16-team archive belongs in the persistent asset
+library, not in the weekly editorial research output.

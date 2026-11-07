@@ -29,6 +29,7 @@ from .emailer import (
 from .enriched_collector import collect_all
 from .period import PeriodDetectionError, detect_completed_period
 from .retention import prune_diagnostics
+from .team_avatars import collect_team_avatars, attach_team_avatars, AvatarCollectionError
 from .sleeper import SleeperClient
 from .supplement import generate_supplements
 
@@ -36,6 +37,18 @@ from .supplement import generate_supplements
 def parser() -> argparse.ArgumentParser:
     command = argparse.ArgumentParser(description="Ironbound weekly editorial desk")
     subcommands = command.add_subparsers(dest="command", required=True)
+
+    avatars = subcommands.add_parser("collect-team-avatars", help="Collect originals from Sleeper; no weekly data collection")
+    avatars.add_argument("--config", type=Path, default=Path("config/leagues.example.json"))
+    avatars.add_argument("--league-key", required=True)
+    avatars.add_argument("--asset-root", type=Path, default=Path("output/team-avatars"))
+
+    attach = subcommands.add_parser("attach-team-avatars", help="Attach saved logos to a magazine issue")
+    attach.add_argument("--config", type=Path, default=Path("config/leagues.example.json"))
+    attach.add_argument("--league-key", required=True)
+    attach.add_argument("--season", required=True)
+    attach.add_argument("--asset-root", type=Path, default=Path("output/team-avatars"))
+    attach.add_argument("--issue-dir", type=Path, required=True)
 
     validate = subcommands.add_parser("validate-config")
     validate.add_argument("--config", type=Path, required=True)
@@ -287,6 +300,26 @@ def main(argv: list[str] | None = None) -> int:
     except ConfigurationError as exc:
         print(f"Configuration error: {exc}")
         return 2
+
+    if args.command in {"collect-team-avatars", "attach-team-avatars"}:
+        selected = next((row for row in leagues if row.key == args.league_key), None)
+        if selected is None:
+            print(f"Unknown league key: {args.league_key}")
+            return 2
+        try:
+            if args.command == "collect-team-avatars":
+                report = collect_team_avatars(selected, args.asset_root)
+                print(f"Sleeper avatars: {report['downloaded']}/{report['expected_rosters']} downloaded")
+                print(f"Manifest: {args.asset_root / selected.key / report['season'] / 'manifest.json'}")
+                return 0 if report["downloaded"] == report["expected_rosters"] else 1
+            report = attach_team_avatars(
+                selected, args.asset_root, args.issue_dir, season=args.season
+            )
+            print(f"Magazine team avatars attached: {report['attached']}/{report['expected']}")
+            return 0 if report["attached"] == report["expected"] else 1
+        except (AvatarCollectionError, OSError, ValueError) as exc:
+            print(f"Team avatar error: {exc}")
+            return 1
 
     if args.command == "validate-config":
         print(f"Configuration valid: {len(leagues)} enabled leagues")

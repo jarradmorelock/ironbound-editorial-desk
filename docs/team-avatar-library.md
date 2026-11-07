@@ -6,7 +6,7 @@ This is an independent research-desk feature, not part of weekly scoring, rankin
 Run:
     python -m editorial_desk collect-team-avatars --config config/leagues.example.json --league-key ironbound_sixteen --asset-root output/team-avatars
 
-It uses public Sleeper league/users/rosters endpoints and retrieves full-size images from the official CDN, preferring metadata.avatar for the team over the manager account avatar. It preserves original image bytes, writes a presentation-ready PNG at its original dimensions, and records dimensions, checksum, source and failure diagnostics. It never upscales or fabricates a missing icon.
+It uses public Sleeper league/users/rosters endpoints and retrieves full-size images from the official CDN, requiring league-user metadata.avatar (a Sleeper team upload URL or legacy avatar identifier), with no fallback to user.avatar or individual account profiles. It preserves original image bytes, writes a presentation-ready PNG at its original dimensions, and records dimensions, checksum, source and failure diagnostics. It never upscales or fabricates a missing icon. Missing team metadata is reported as missing_team_upload instead of silently substituting the manager profile photo.
 
 The stable mapping is league key + season + roster ID, never mutable team name.
 

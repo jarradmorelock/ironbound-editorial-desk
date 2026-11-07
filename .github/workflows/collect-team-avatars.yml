@@ -16,6 +16,9 @@ on:
           - rocky_top_rumble
           - sec_dynasty
           - best_characters_dynasty
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - feature/sleeper-team-avatars

@@ -24,7 +24,7 @@ class Client:
     def users(self, league_id):
         return [{"user_id": "u1", "display_name": "Manager",
                  "avatar": "account-avatar",
-                 "metadata": {"team_name": "The Buckaneers", "avatar": "team-original"}}]
+                 "metadata": {"team_name": "The Buckaneers", "avatar": "https://sleepercdn.com/uploads/team-original.png"}}]
 
     def rosters(self, league_id):
         return [{"roster_id": 9, "owner_id": "u1"}]
@@ -43,7 +43,7 @@ class Response:
 
 class Session:
     def get(self, url, **kwargs):
-        assert url == "https://sleepercdn.com/avatars/team-original"
+        assert url == "https://sleepercdn.com/uploads/team-original.png"
         return Response()
 
 
@@ -55,8 +55,8 @@ def league():
 
 def test_team_avatar_precedes_account_avatar():
     assert choose_avatar(
-        {"metadata": {"avatar": "team-original"}, "avatar": "account-avatar"}, {}
-    ) == ("team-original", "user.metadata.avatar")
+        {"metadata": {"avatar": "https://sleepercdn.com/uploads/team-original.png"}, "avatar": "account-avatar"}, {}
+    ) == ("https://sleepercdn.com/uploads/team-original.png", "user.metadata.avatar")
 
 
 def test_collect_and_attach(tmp_path: Path):
@@ -85,3 +85,11 @@ def test_attach_rejects_wrong_league(tmp_path: Path):
     wrong = SimpleNamespace(key=obj.key, sleeper_league_id="999", name="other")
     with raises(Exception, match="mismatch"):
         attach_team_avatars(wrong, root, tmp_path / "issue", season="2026")
+
+
+def test_account_avatar_alone_is_not_team_artwork():
+    assert choose_avatar({"avatar": "account-avatar", "metadata": {}}, {}) == (None, None)
+
+
+def test_rejects_non_sleeper_urls():
+    assert choose_avatar({"metadata": {"avatar": "https://evil.example/uploads/team.png"}}, {}) == (None, None)

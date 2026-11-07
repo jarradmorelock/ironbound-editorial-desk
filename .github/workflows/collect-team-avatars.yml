@@ -23,6 +23,7 @@ on:
     branches:
       - feature/sleeper-team-avatars
       - fix/league-team-avatar-uploads
+      - feature/commissioner-team-logo-overrides
     paths:
       - ".github/workflows/collect-team-avatars.yml"
       - "editorial_desk/team_avatars.py"

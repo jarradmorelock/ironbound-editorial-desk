@@ -1,0 +1,71 @@
+name: RUN THIS - Collect Sleeper Team Avatars
+
+on:
+  workflow_dispatch:
+    inputs:
+      league_key:
+        description: League whose original team avatars should be retrieved
+        required: true
+        default: ironbound_sixteen
+        type: choice
+        options:
+          - ironbound_sixteen
+          - free_ironbound_sixteen
+          - ballad_of_broken_hearts
+          - nine_five
+          - rocky_top_rumble
+          - sec_dynasty
+          - best_characters_dynasty
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - feature/sleeper-team-avatars
+    paths:
+      - ".github/workflows/collect-team-avatars.yml"
+      - "editorial_desk/team_avatars.py"
+      - "editorial_desk/cli.py"
+      - "tests/test_team_avatars.py"
+      - "requirements.txt"
+
+permissions:
+  contents: read
+
+jobs:
+  collect-team-avatars:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Verify implementation
+        run: python -m pytest -q tests/test_team_avatars.py
+      - name: Collect original full-size Sleeper avatars
+        id: collect
+        continue-on-error: true
+        env:
+          LEAGUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.league_key || 'ironbound_sixteen' }}
+        run: |
+          python -m editorial_desk collect-team-avatars \
+            --config config/leagues.example.json \
+            --league-key "$LEAGUE_KEY" \
+            --asset-root output/team-avatars
+      - name: Upload images and team-to-logo manifest
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sleeper-team-avatars-${{ github.run_number }}
+          path: output/team-avatars/
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Report collection result
+        if: steps.collect.outcome != 'success'
+        run: |
+          echo "Avatar collection did not finish successfully. Review the run logs and manifest."
+          exit 1

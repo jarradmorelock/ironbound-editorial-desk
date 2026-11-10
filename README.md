@@ -21,6 +21,48 @@ is opt-in and uses repository secrets.
 - Gmail credentials are read only from GitHub Actions secrets and are never
   committed to the repository.
 
+## Private weekly future-pick audit
+
+The normal Tuesday production workflow now prepares a **separate commissioner-only
+future-draft-pick audit email** for both `ironbound_sixteen` and
+`free_ironbound_sixteen`. It reuses the two existing Editorial Desk flagship
+snapshots and the same already-configured Gmail credentials. It does **not**
+read from the Trade Tribunal, create public Discord messages, or need a new
+webhook/secret.
+
+The email reports completed trade transfers of **next-season and later picks**
+from the preceding seven days, with one row per pick. Fields include league,
+transaction date and ID, pick year/round, original team's pick, team that
+traded it away (`previous_owner_id`), and recipient (`owner_id`). Original
+pick ownership (`roster_id`) must never be confused with the sender; missing
+previous owners are flagged for review rather than inferred.
+
+For easy spreadsheet updates, the email includes two CSV attachments:
+
+- `future-pick-transfers.csv`: this week's transfer events (with a header-only
+  file on weeks without any activity).
+- `future-pick-holdings.csv`: Sleeper's current traded-pick ownership snapshot,
+  allowing reconciliation against the commissioner's full audit spreadsheet.
+
+The weekly message sends even in a quiet week, stating that no transfers were
+detected. If one league's snapshot or transaction collection is missing or
+partial, the audit **fails instead of falsely reporting no trades**. The
+workflow runs this only on Tuesday production delivery, or a manual production
+run where `send_email` was explicitly enabled. Existing publication and Card
+Shop emails remain unchanged.
+
+Manual command (uses the same `IRONBOUND_GMAIL_ADDRESS`,
+`IRONBOUND_GMAIL_APP_PASSWORD`, and optional `IRONBOUND_EMAIL_RECIPIENT`
+environment variables as the other Editorial Desk emails):
+
+```bash
+python -m editorial_desk email-future-picks \
+  --season 2026 --week 10 --output-dir ../output/primary
+```
+
+The audit does not edit the user's spreadsheet automatically; that stays a
+manual commissioner approval step.
+
 ## Phase 1 output
 
 Each publication-enabled league receives:

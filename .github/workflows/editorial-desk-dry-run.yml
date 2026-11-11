@@ -431,6 +431,7 @@ jobs:
           IRONBOUND_GMAIL_ADDRESS: ${{ secrets.IRONBOUND_GMAIL_ADDRESS }}
           IRONBOUND_GMAIL_APP_PASSWORD: ${{ secrets.IRONBOUND_GMAIL_APP_PASSWORD }}
           IRONBOUND_EMAIL_RECIPIENT: ${{ secrets.IRONBOUND_EMAIL_RECIPIENT }}
+          IRONBOUND_PICK_AUDIT_BASELINE_JSON: ${{ secrets.IRONBOUND_PICK_AUDIT_BASELINE_JSON }}
         run: >-
           python -m editorial_desk email-future-picks
           --season ${{ steps.plan.outputs.season }}

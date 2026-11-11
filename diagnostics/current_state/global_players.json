@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-11-11T17:54:52.836421+00:00",
+  "observed_at": "2026-11-11T18:43:47.102341+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -137,19 +137,11 @@
       "injury_status": "Questionable",
       "status": "Active"
     },
-    "10935": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "10940": {
       "injury_status": null,
       "status": "Active"
     },
     "10947": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "10949": {
       "injury_status": null,
       "status": "Active"
     },
@@ -313,10 +305,6 @@
       "injury_status": null,
       "status": "Active"
     },
-    "11623": {
-      "injury_status": "IR",
-      "status": "Inactive"
-    },
     "11624": {
       "injury_status": "Questionable",
       "status": "Active"
@@ -365,10 +353,6 @@
       "injury_status": "Questionable",
       "status": "Active"
     },
-    "11644": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "11646": {
       "injury_status": null,
       "status": "Active"
@@ -414,10 +398,6 @@
       "status": "Active"
     },
     "11674": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "11675": {
       "injury_status": null,
       "status": "Active"
     },
@@ -1069,10 +1049,6 @@
       "injury_status": null,
       "status": "Active"
     },
-    "13350": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "13353": {
       "injury_status": "IR",
       "status": "Inactive"
@@ -1138,10 +1114,6 @@
       "status": "Active"
     },
     "13388": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "13389": {
       "injury_status": null,
       "status": "Active"
     },
@@ -1294,10 +1266,6 @@
       "status": "Active"
     },
     "2064": {
-      "injury_status": null,
-      "status": "Active"
-    },
-    "2078": {
       "injury_status": null,
       "status": "Active"
     },
@@ -2245,10 +2213,6 @@
       "injury_status": "IR",
       "status": "Inactive"
     },
-    "8170": {
-      "injury_status": null,
-      "status": "Active"
-    },
     "8172": {
       "injury_status": null,
       "status": "Active"
@@ -2541,10 +2505,6 @@
       "injury_status": null,
       "status": null
     },
-    "CAR": {
-      "injury_status": null,
-      "status": null
-    },
     "CHI": {
       "injury_status": null,
       "status": null
@@ -2586,10 +2546,6 @@
       "status": null
     },
     "LAR": {
-      "injury_status": null,
-      "status": null
-    },
-    "LV": {
       "injury_status": null,
       "status": null
     },

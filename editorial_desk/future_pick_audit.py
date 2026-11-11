@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from io import StringIO
 import json
+import os
+from .future_pick_baseline import compare_paid_baseline, REVIEW_FIELDS
 from pathlib import Path
 from typing import Any
 
@@ -71,6 +73,7 @@ def _csv_text(rows: list[dict[str, str]], columns: tuple[str, ...]) -> str:
 
 def build_future_pick_report(
     output_root: Path, season: str, week: int, *, as_of: datetime | None = None,
+    baseline: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Last-seven-day trade delta, plus current holdings for full reconciliation.
 
@@ -91,6 +94,8 @@ def build_future_pick_report(
     holdings: list[dict[str, str]] = []
     notes: list[str] = []
     seen: set[tuple[str, str, int, int, str]] = set()
+    paid_snapshot: dict[str, Any] | None = None
+    paid_all_trades: dict[str, dict[str, Any]] | None = None
 
     for key, label in AUDITED_LEAGUES:
         source = Path(output_root) / str(season) / f"week-{week:02d}" / key / "snapshot.json"
@@ -115,6 +120,10 @@ def build_future_pick_report(
                     continue
                 if tx.get("transaction_id"):
                     unique[str(tx["transaction_id"])] = tx
+
+        if key == "ironbound_sixteen":
+            paid_snapshot = snapshot
+            paid_all_trades = unique
 
         undated = 0
         for tx_id, transaction in unique.items():
@@ -173,6 +182,11 @@ def build_future_pick_report(
                 "verification": "Sleeper current traded-picks snapshot",
             })
 
+    baseline_review = None
+    if baseline is not None:
+        if paid_snapshot is None or paid_all_trades is None:
+            raise ValueError("Paid Ironbound baseline source unavailable")
+        baseline_review = compare_paid_baseline(baseline, paid_snapshot, paid_all_trades)
     transfers.sort(key=lambda r: (r["trade_utc"], r["league"], r["transaction_id"], int(r["pick_year"]), int(r["round"])))
     holdings.sort(key=lambda r: (r["league"], int(r["pick_year"]), int(r["round"]), r["original_team"]))
     return {
@@ -180,6 +194,7 @@ def build_future_pick_report(
         "start_utc": datetime.fromtimestamp(lower_ms / 1000, timezone.utc).isoformat(),
         "end_utc": as_of.isoformat(),
         "transfers": transfers, "holdings": holdings, "notes": notes,
+        "baseline_review": baseline_review,
     }
 
 
@@ -211,11 +226,33 @@ def build_future_pick_audit_email(report: dict[str, Any], sender: str, recipient
         "Missing previous-owner values are flagged for verification, never guessed.",
         "", "Attached: future-pick-transfers.csv and future-pick-holdings.csv.",
     ])
+    baseline_review = report.get("baseline_review")
+    if baseline_review is None:
+        lines.extend(["", "WORKBOOK BASELINE COMPARISON NOT CONFIGURED",
+                      "Add the private IRONBOUND_PICK_AUDIT_BASELINE_JSON secret to enable workbook reconciliation."])
+    else:
+        flags = baseline_review["flagged"]
+        lines.extend([
+            "", "PAID IRONBOUND PAYMENT-LOG BASELINE RECONCILIATION",
+            f"Workbook snapshot dated {baseline_review['baseline_date']}",
+            f"Rows requiring review: {len(flags)}",
+            f"Sleeper future-pick trades with missing previous holder: {len(baseline_review['ambiguous_picks'])}",
+            baseline_review["coverage"],
+        ])
+        for row in flags:
+            lines.append(f"  {row['draft_year']} | {row['team']} | {row['finding']}")
+        for issue in baseline_review["ambiguous_picks"]:
+            lines.append("  Source review: " + issue)
     if report["notes"]:
         lines.extend(["", "SOURCE REVIEW FLAGS", *report["notes"]])
     message.set_content("\n".join(lines) + "\n")
     message.add_attachment(_csv_text(transfers, TRANSFER_FIELDS), subtype="csv", filename="future-pick-transfers.csv")
     message.add_attachment(_csv_text(holdings, HOLDING_FIELDS), subtype="csv", filename="future-pick-holdings.csv")
+    if baseline_review is not None:
+        message.add_attachment(
+            _csv_text(baseline_review["rows"], REVIEW_FIELDS),
+            subtype="csv", filename="future-pick-payment-baseline-review.csv",
+        )
     return message
 
 
@@ -223,7 +260,17 @@ def send_future_pick_audit_email(
     output_root: Path, season: str, week: int,
     sender: str, app_password: str, recipient: str | None = None,
 ) -> int:
-    report = build_future_pick_report(output_root, season, week)
+    raw_baseline = os.environ.get("IRONBOUND_PICK_AUDIT_BASELINE_JSON", "").strip()
+    if raw_baseline:
+        try:
+            baseline = json.loads(raw_baseline)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid IRONBOUND_PICK_AUDIT_BASELINE_JSON secret") from exc
+        if not isinstance(baseline, dict):
+            raise ValueError("Future-pick baseline must be an object")
+    else:
+        baseline = None
+    report = build_future_pick_report(output_root, season, week, baseline=baseline)
     message = build_future_pick_audit_email(report, sender, recipient or sender)
     _deliver(message, sender, app_password)
     return sum(1 for _ in message.iter_attachments())

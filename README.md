@@ -63,6 +63,37 @@ python -m editorial_desk email-future-picks \
 The audit does not edit the user's spreadsheet automatically; that stays a
 manual commissioner approval step.
 
+### Optional private payment-log baseline comparison
+
+The upload `Ironbound Sixteen Payment Log.xlsx` was examined locally (its
+2027–2029 sheets). The audit can compare its **paid league only** team/year
+`Picks traded` and `Payment Status` columns against completed Sleeper
+transactions. The workbook and its personal/contact data are **never**
+committed to this public repository.
+
+To activate comparison, add a GitHub Actions repository secret named
+`IRONBOUND_PICK_AUDIT_BASELINE_JSON` containing a validated, minimized JSON
+snapshot of the spreadsheet. Its format is
+`{"league_key":"ironbound_sixteen","recorded_as_of":"2026-11-10",
+"seasons":{"2027":[{"team":"Example","picks_traded":true,"paid":false},...]}}`;
+each included season must have 16 unique teams. The secret is optional and
+not configured by merging this PR. When absent, the weekly email states
+plainly that comparison is unavailable. When present, the private email adds
+`future-pick-payment-baseline-review.csv` and includes mismatches and
+recorded unpaid trade years. It never updates payment statuses, infers
+obligations, or marks teams as paid.
+
+**Evidence limits:** The current 2026 Sleeper league's completed transactions
+may not prove trades made in earlier league seasons. A workbook `Yes` is
+not called incorrect merely because the current season has no matching event.
+A workbook `No` with an identifiable outgoing future pick is flagged.
+Missing or ambiguous previous holders and renamed teams are explicitly
+reported for manual review. Only exact name matches are accepted; unresolved
+teams cannot silently match by spreadsheet row order.
+
+The baseline remains a **dated snapshot** and must be refreshed as you
+update your workbook. No automatic connection to a local XLSX exists.
+
 ## Phase 1 output
 
 Each publication-enabled league receives:

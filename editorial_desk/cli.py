@@ -26,6 +26,7 @@ from .emailer import (
     send_dossier_email,
     send_supplement_email,
 )
+from .future_pick_audit import send_future_pick_audit_email
 from .enriched_collector import collect_all
 from .period import PeriodDetectionError, detect_completed_period
 from .retention import prune_diagnostics
@@ -122,6 +123,11 @@ def parser() -> argparse.ArgumentParser:
     mvp_email.add_argument("--week", type=int, required=True)
     mvp_email.add_argument("--output-dir", type=Path, required=True)
 
+    audit_email = subcommands.add_parser("email-future-picks", help="Email the weekly private commissioner pick audit")
+    audit_email.add_argument("--week", type=int, required=True)
+    audit_email.add_argument("--season", required=True)
+    audit_email.add_argument("--output-dir", type=Path, required=True)
+
     subcommands.add_parser("completed-period")
 
     supplement = subcommands.add_parser("supplement")
@@ -215,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Supplement comparison complete: {len(generated) // 2} updates")
         return 0
 
-    if args.command in {"email", "email-supplement", "email-divisional-mvps"}:
+    if args.command in {"email", "email-supplement", "email-divisional-mvps", "email-future-picks"}:
         if args.command == "email-supplement" and not list(
             args.output_dir.glob(f"*/week-{args.week:02d}/*/supplement.md")
         ):
@@ -242,6 +248,11 @@ def main(argv: list[str] | None = None) -> int:
                     monthly_receipt_root=args.monthly_receipt_root,
                     chronicle_revision=args.chronicle_revision,
                 )
+            elif args.command == "email-future-picks":
+                attachment_count = send_future_pick_audit_email(
+                    args.output_dir, args.season, args.week,
+                    sender, app_password, recipient,
+                )
             elif args.command == "email-divisional-mvps":
                 attachment_count = send_divisional_mvp_email(
                     args.output_dir,
@@ -258,13 +269,13 @@ def main(argv: list[str] | None = None) -> int:
                     app_password,
                     recipient,
                 )
-        except EmailDeliveryError as exc:
+        except (EmailDeliveryError, ValueError) as exc:
             print(f"Email delivery error: {exc}")
             return 1
         print(
             f"Email delivered to {recipient} with "
             f"{attachment_count} "
-            f"{'supplements' if args.command == 'email-supplement' else 'divisional MVP handoff' if args.command == 'email-divisional-mvps' else 'publication dossiers'}"
+            f"{'supplements' if args.command == 'email-supplement' else 'divisional MVP handoff' if args.command == 'email-divisional-mvps' else 'future-pick audit CSVs' if args.command == 'email-future-picks' else 'publication dossiers'}"
         )
         return 0
 

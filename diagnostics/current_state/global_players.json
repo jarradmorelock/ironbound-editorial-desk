@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-11-12T18:58:14.102813+00:00",
+  "observed_at": "2026-11-12T22:43:14.928085+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -90,7 +90,7 @@
       "status": "Active"
     },
     "10892": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "10898": {
@@ -102,7 +102,7 @@
       "status": "Active"
     },
     "10905": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "10914": {
@@ -1106,7 +1106,7 @@
       "status": "Active"
     },
     "13384": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "13385": {
@@ -1222,7 +1222,7 @@
       "status": "Active"
     },
     "13482": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "13488": {
@@ -1330,7 +1330,7 @@
       "status": "Active"
     },
     "3163": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "3172": {
@@ -1386,7 +1386,7 @@
       "status": "Active"
     },
     "4035": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "4037": {
@@ -1566,7 +1566,7 @@
       "status": "Active"
     },
     "5372": {
-      "injury_status": "Questionable",
+      "injury_status": "Out",
       "status": "Active"
     },
     "5580": {
@@ -1626,7 +1626,7 @@
       "status": "Active"
     },
     "5857": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "5859": {
@@ -1690,7 +1690,7 @@
       "status": "Active"
     },
     "5967": {
-      "injury_status": null,
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "5991": {
@@ -2018,7 +2018,7 @@
       "status": "Active"
     },
     "7611": {
-      "injury_status": "Doubtful",
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "7626": {
@@ -2458,7 +2458,7 @@
       "status": "Active"
     },
     "9502": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "9504": {

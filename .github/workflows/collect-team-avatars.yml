@@ -24,6 +24,7 @@ on:
       - feature/sleeper-team-avatars
       - fix/league-team-avatar-uploads
       - feature/commissioner-team-logo-overrides
+      - automation/unbound-avatar-export-2026
     paths:
       - ".github/workflows/collect-team-avatars.yml"
       - "editorial_desk/team_avatars.py"
@@ -52,7 +53,7 @@ jobs:
         id: collect
         continue-on-error: true
         env:
-          LEAGUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.league_key || 'ironbound_sixteen' }}
+          LEAGUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.league_key || github.ref_name == 'automation/unbound-avatar-export-2026' && 'free_ironbound_sixteen' || 'ironbound_sixteen' }}
         run: |
           python -m editorial_desk collect-team-avatars \
             --config config/leagues.example.json \

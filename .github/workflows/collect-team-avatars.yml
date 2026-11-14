@@ -53,7 +53,7 @@ jobs:
         id: collect
         continue-on-error: true
         env:
-          LEAGUE_KEY: ${{ github.event_name == 'workflow_dispatch' && inputs.league_key || github.ref_name == 'automation/unbound-avatar-export-2026' && 'free_ironbound_sixteen' || 'ironbound_sixteen' }}
+          LEAGUE_KEY: free_ironbound_sixteen
         run: |
           python -m editorial_desk collect-team-avatars \
             --config config/leagues.example.json \

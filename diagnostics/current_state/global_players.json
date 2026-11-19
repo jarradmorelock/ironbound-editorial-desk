@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-11-19T10:17:34.842928+00:00",
+  "observed_at": "2026-11-19T19:30:24.640928+00:00",
   "players": {
     "10213": {
       "injury_status": null,
@@ -26,6 +26,10 @@
       "status": "Inactive"
     },
     "10229": {
+      "injury_status": null,
+      "status": "Active"
+    },
+    "10231": {
       "injury_status": null,
       "status": "Active"
     },
@@ -142,7 +146,7 @@
       "status": "Active"
     },
     "10940": {
-      "injury_status": "Doubtful",
+      "injury_status": "Questionable",
       "status": "Active"
     },
     "10947": {
@@ -1418,7 +1422,7 @@
       "status": "Active"
     },
     "4071": {
-      "injury_status": null,
+      "injury_status": "Out",
       "status": "Active"
     },
     "4081": {
@@ -1458,6 +1462,10 @@
       "status": "Active"
     },
     "4224": {
+      "injury_status": null,
+      "status": "Active"
+    },
+    "4413": {
       "injury_status": null,
       "status": "Active"
     },
@@ -1694,6 +1702,10 @@
       "status": "Active"
     },
     "5995": {
+      "injury_status": null,
+      "status": "Active"
+    },
+    "6001": {
       "injury_status": null,
       "status": "Active"
     },
@@ -2086,7 +2098,7 @@
       "status": "Active"
     },
     "7811": {
-      "injury_status": "Questionable",
+      "injury_status": null,
       "status": "Active"
     },
     "7828": {
